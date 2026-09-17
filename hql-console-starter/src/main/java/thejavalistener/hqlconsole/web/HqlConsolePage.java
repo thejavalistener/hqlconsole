@@ -46,7 +46,6 @@ public final class HqlConsolePage
 		  .barra { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; flex:0 0 auto; }
 		  .ruta { font-family: ui-monospace, Consolas, monospace; font-size:12px; opacity:.6; }
 		  .aviso { font-size:12px; color:var(--error); }
-		  .acciones { display:flex; align-items:center; gap:12px; flex-wrap:wrap; flex:0 0 auto; }
 		  button { padding:7px 16px; font-size:13px; font-weight:600; color:#fff; background:var(--acento); border:0; border-radius:6px; cursor:pointer; }
 		  button:disabled { opacity:.5; cursor:progress; }
 		  .estado { font-size:12px; opacity:.75; }
@@ -58,10 +57,14 @@ public final class HqlConsolePage
 
 		  /* --- el área partida: editor a la izquierda, resultados a la derecha --- */
 		  #split { flex:1 1 auto; min-height:0; display:flex; align-items:stretch; --ancho-editor:48%; }
-		  #panel-editor { flex:0 0 var(--ancho-editor); display:flex; min-width:0; }
+		  #panel-editor { flex:0 0 var(--ancho-editor); display:flex; flex-direction:column; gap:8px; min-width:0; }
 		  #hql { flex:1 1 auto; width:100%; min-height:0; margin:0; padding:10px; background:#fff;
 		         font-family: ui-monospace, Consolas, monospace; font-size:13px; line-height:1.5;
 		         border:1px solid var(--borde); border-radius:6px; resize:none; tab-size:2; }
+		  /* La barra del pie del editor: el aviso de alcance a la izquierda, el botón a la derecha. */
+		  .pie-editor { flex:0 0 auto; display:flex; align-items:center; gap:8px; min-width:0; }
+		  .pie-editor .alcance { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+		  .pie-editor #run { margin-left:auto; flex:0 0 auto; }
 		  #divisor { flex:0 0 10px; display:flex; align-items:center; justify-content:center;
 		             cursor:col-resize; touch-action:none; background:none; border:0; padding:0; }
 		  #divisor::before { content:''; width:3px; height:100%; border-radius:2px; background:var(--borde);
@@ -100,20 +103,20 @@ public final class HqlConsolePage
 		  <span class="ruta">__PATH__</span>
 		  <span class="aviso">herramienta de desarrollo: ejecuta HQL contra el EntityManager vivo</span>
 		</div>
-		<div class="acciones">
-		  <button id="run" title="Ctrl+Enter">Ejecutar</button>
-		  <span class="estado">Ctrl+Enter: sólo la selección; sin selección, todo el texto</span>
-		  <span class="estado sel" id="seleccion" hidden></span>
-		  <span class="estado" id="estado"></span>
-		</div>
 		<div id="error"><div id="error-msg"></div><pre id="error-sql"></pre></div>
 		<div id="split">
 		  <div id="panel-editor">
 		    <textarea id="hql" spellcheck="false" placeholder="SELECT e.id, e.nombre FROM Empleado e"></textarea>
+		    <div class="pie-editor">
+		      <span class="estado" id="pista">Ctrl+Enter:</span>
+		      <span class="estado sel alcance" id="seleccion"></span>
+		      <button id="run" title="Ctrl+Enter">Ejecutar</button>
+		    </div>
 		  </div>
 		  <div id="divisor" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Redimensionar el editor"
 		       title="Arrastra para redimensionar. Flechas: de a 2%. Inicio/Fin: extremos. Doble clic: 50/50."></div>
 		  <div id="panel-resultado">
+		    <span class="estado" id="estado"></span>
 		    <div class="vacio" id="vacio">Los resultados aparecen acá.</div>
 		    <div class="tabla" id="tabla" hidden><table id="t"></table></div>
 		    <div class="pie" id="pie"></div>
@@ -185,28 +188,87 @@ public final class HqlConsolePage
 		  if (document.visibilityState === 'hidden') { guardarTexto(); }
 		});
 
-		// Lo que se ejecuta: la selección si tiene texto, y si no todo el texto.
+		// INICIO funciones puras: sin DOM ni estado, así verify-demo.ps1 las corre tal cual en Node.
+		// Lo que se ejecuta cuando hay texto pintado: la selección, y nada más.
 		function textoAejecutar(valor, inicio, fin) {
 		  if (inicio < fin) { return valor.substring(inicio, fin); }
 		  return valor;
 		}
 
+		// El texto, partido en líneas con sus offsets. Una línea en blanco (o con sólo espacios) es
+		// la frontera entre párrafos. Se conserva el salto de línea final implícito: un texto que
+		// termina en salto tiene una última línea vacía, y eso es correcto.
+		//
+		// OJO al editar este archivo: esto vive dentro de un text block de Java, así que una barra
+		// invertida en el código de abajo hay que escribirla doble. Con una sola, Java la convierte
+		// en un salto de línea o un retorno de carro de verdad dentro del literal de JS y rompe la
+		// página entera (el error se ve recién en el navegador, no al compilar).
+		function lineasDe(texto) {
+		  const salida = [];
+		  let i = 0;
+		  for (;;) {
+		    const j = texto.indexOf('\\n', i);
+		    const fin = (j === -1) ? texto.length : j;
+		    salida.push({ inicio: i, fin: fin, blanco: !texto.substring(i, fin).trim() });
+		    if (j === -1) { return salida; }
+		    i = j + 1;
+		  }
+		}
+
+		// El párrafo donde está el cursor: desde la línea en blanco de arriba (o el inicio del
+		// textarea) hasta la de abajo (o el final). Si el cursor cae en una línea en blanco no hay
+		// párrafo propio, así que se usa el de arriba y, si no hay, el de abajo.
+		function rangoParrafo(texto, posicion) {
+		  const lineas = lineasDe(texto);
+		  const p = Math.max(0, Math.min(texto.length, posicion));
+
+		  let indice = 0;
+		  for (let i = 0; i < lineas.length; i++) { if (lineas[i].inicio <= p) { indice = i; } else { break; } }
+
+		  if (lineas[indice].blanco) {
+		    let arriba = -1, abajo = -1;
+		    for (let i = indice - 1; i >= 0; i--) { if (!lineas[i].blanco) { arriba = i; break; } }
+		    if (arriba === -1) {
+		      for (let i = indice + 1; i < lineas.length; i++) { if (!lineas[i].blanco) { abajo = i; break; } }
+		    }
+		    if (arriba === -1 && abajo === -1) { return { inicio: p, fin: p }; }
+		    indice = (arriba === -1) ? abajo : arriba;
+		  }
+
+		  let primero = indice, ultimo = indice;
+		  while (primero > 0 && !lineas[primero - 1].blanco) { primero--; }
+		  while (ultimo + 1 < lineas.length && !lineas[ultimo + 1].blanco) { ultimo++; }
+
+		  return { inicio: lineas[primero].inicio, fin: lineas[ultimo].fin };
+		}
+		// FIN funciones puras
+
+		// Qué se manda al servidor: la selección si tiene texto; si no, el párrafo del cursor. Sólo
+		// se ejecuta todo el textarea cuando todo el textarea es un único párrafo.
 		function rangoAEjecutar() {
 		  const inicio = ta.selectionStart, fin = ta.selectionEnd;
 		  const recorte = textoAejecutar(ta.value, inicio, fin);
-		  // Una selección de sólo espacios en blanco no es una intención: se ejecuta todo.
-		  if (fin > inicio && recorte.trim()) { return { hql: recorte, parcial: true }; }
-		  return { hql: ta.value, parcial: false };
+		  if (fin > inicio && recorte.trim()) {
+		    return { hql: recorte, etiqueta: 'sólo la selección' };
+		  }
+		  const parrafo = rangoParrafo(ta.value, inicio);
+		  return { hql: ta.value.substring(parrafo.inicio, parrafo.fin), etiqueta: 'el párrafo del cursor' };
 		}
 
+		// El aviso de alcance que se ve al pie del editor: qué se va a ejecutar con Ctrl+Enter.
 		function refrescarSeleccion() {
-		  const caracteres = Math.max(0, ta.selectionEnd - ta.selectionStart);
-		  if (caracteres > 0) {
-		    seleccion.textContent = 'se ejecutará sólo la selección (' + caracteres + ' caracteres)';
-		    seleccion.hidden = false;
+		  const inicio = ta.selectionStart, fin = ta.selectionEnd;
+		  const caracteres = Math.max(0, fin - inicio);
+		  let cantidad, leyenda;
+		  if (caracteres > 0 && ta.value.substring(inicio, fin).trim()) {
+		    cantidad = caracteres;
+		    leyenda = 'se ejecutará sólo la selección';
 		  } else {
-		    seleccion.hidden = true;
+		    const parrafo = rangoParrafo(ta.value, inicio);
+		    cantidad = ta.value.substring(parrafo.inicio, parrafo.fin).trim().length;
+		    leyenda = 'se ejecutará el párrafo del cursor';
 		  }
+		  seleccion.textContent = leyenda + ' (' + cantidad + ' caracteres)';
 		}
 
 		btn.addEventListener('click', ejecutar);
@@ -216,7 +278,7 @@ public final class HqlConsolePage
 		ta.addEventListener('keydown', function(ev) {
 		  if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); ejecutar(); }
 		});
-		['keyup', 'mouseup', 'select', 'input'].forEach(function(evento) {
+		['keyup', 'mouseup', 'select', 'input', 'click'].forEach(function(evento) {
 		  ta.addEventListener(evento, refrescarSeleccion);
 		});
 		document.addEventListener('selectionchange', function() {
@@ -290,14 +352,16 @@ public final class HqlConsolePage
 		  // Se guarda el contenido del editor, no lo último ejecutado: es el estado del textarea.
 		  guardarTexto();
 		  const rango = rangoAEjecutar();
-		  const hql = rango.hql.trim();
+		  // Un pegado desde Windows puede traer CRLF: el retorno de carro sobra y Hibernate no lo
+		  // necesita. (Barra invertida doble por el text block de Java.)
+		  const hql = rango.hql.split('\\r').join('').trim();
 		  if (!hql) {
-		    mostrarError({ error: 'No hay nada que ejecutar: el área está vacía o la selección no tiene texto.' });
+		    mostrarError({ error: 'No hay nada que ejecutar: ni la selección ni el párrafo del cursor tienen texto.' });
 		    return;
 		  }
 		  btn.disabled = true;
 		  cajaError.style.display = 'none';
-		  estado.textContent = (rango.parcial ? 'Ejecutando la selección...' : 'Ejecutando todo el texto...');
+		  estado.textContent = 'Ejecutando ' + rango.etiqueta + '...';
 		  try {
 		    const respuesta = await fetch(BASE + '/api/execute', {
 		      method: 'POST',

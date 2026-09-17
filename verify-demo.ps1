@@ -255,25 +255,66 @@ try {
     $r = Exec 'SELECT l.titulo FROM Libro l'
     Check 'y con el case correcto funciona' ($r.status -eq 200 -and $r.json.rowCount -ge 1) $r.status
 
-    # --- ejecutar solo lo seleccionado ---
+    # --- que se ejecuta: la seleccion, o el parrafo del cursor ---
     Check 'la pagina trae el ejecutar-por-seleccion' ($page.Content -match 'id="seleccion"' -and $page.Content -match 'ta\.selectionStart' -and $page.Content -match 'function textoAejecutar') 'falta el codigo de seleccion'
     Check 'el boton no le roba la seleccion al textarea' ($page.Content -match "btn\.addEventListener\('mousedown'") 'falta el preventDefault del mousedown'
-    Check 'una seleccion en blanco cae en ejecutar todo' ($page.Content -match 'recorte\.trim\(\)') 'no esta el fallback de seleccion vacia'
-    if (Get-Command node -ErrorAction SilentlyContinue) {
-        # La funcion se extrae de la pagina que sirve el jar y se ejecuta de verdad, en Node.
-        $m = [regex]::Match($page.Content, '(?s)function textoAejecutar.*?return valor;\s*\}')
-        $js = $m.Value + @'
+    Check 'la pagina trae el ejecutar-por-parrafo' ($page.Content -match 'function rangoParrafo' -and $page.Content -match 'function lineasDe' -and $page.Content -match 'INICIO funciones puras') 'falta el calculo del parrafo'
+    Check 'una seleccion en blanco cae en el parrafo' ($page.Content -match 'recorte\.trim\(\)') 'no esta el fallback de seleccion vacia'
 
-function check(n, o, e) { if (o === e) { console.log('PASS ' + n); } else { console.log('FAIL ' + n + ' -> ' + o); process.exitCode = 1; } }
+    # --- el boton, dentro del panel izquierdo y debajo del textarea ---
+    $panelIzq = [regex]::Match($page.Content, '(?s)id="panel-editor"(.*?)id="divisor"')
+    Check 'el boton esta dentro del panel izquierdo' ($panelIzq.Success -and $panelIzq.Groups[1].Value -match 'id="run"') 'el boton no esta en el panel izquierdo'
+    Check 'el boton va despues del textarea' ($panelIzq.Success -and $panelIzq.Groups[1].Value -match '(?s)<textarea.*id="run"') 'el boton no esta debajo del textarea'
+    Check 'el boton se alinea a la derecha' ($page.Content -match '\.pie-editor #run' -and $page.Content -match 'margin-left:auto') 'no esta el margin-left:auto'
+    Check 'el alcance se avisa al pie del editor' ($page.Content -match 'id="pista"' -and $page.Content -match 'seleccion\.textContent') 'no esta el aviso de alcance'
+
+    if (Get-Command node -ErrorAction SilentlyContinue) {
+        # Las funciones puras se extraen de la pagina que sirve el jar y se corren de verdad, en Node.
+        # El marcador se consume entero (hasta el fin de linea) para que el bloque no arranque a
+        # mitad del comentario.
+        $bloque = [regex]::Match($page.Content, '(?s)// INICIO funciones puras[^\r\n]*(.*?)// FIN funciones puras')
+        if ($bloque.Success) {
+            $js = $bloque.Groups[1].Value + @'
+
+function check(n, o, e) { if (o === e) { console.log('PASS ' + n); } else { console.log('FAIL ' + n + ' -> [' + o + '] esperado [' + e + ']'); process.exitCode = 1; } }
+
+// --- la seleccion ---
 var t = 'SELECT 1\nfrom A';
-check('sin seleccion ejecuta todo', textoAejecutar(t, 0, 0), t);
-check('con seleccion ejecuta solo eso', textoAejecutar(t, 0, 8), 'SELECT 1');
-check('seleccion invertida ejecuta todo', textoAejecutar(t, 5, 2), t);
+check('sin seleccion textoAejecutar devuelve todo', textoAejecutar(t, 0, 0), t);
+check('con seleccion devuelve solo eso', textoAejecutar(t, 0, 8), 'SELECT 1');
+check('seleccion invertida devuelve todo', textoAejecutar(t, 5, 2), t);
+
+// --- el parrafo del cursor ---
+function par(texto, pos) { var r = rangoParrafo(texto, pos); return texto.substring(r.inicio, r.fin); }
+var doc = ['-- uno', 'SELECT 1', '', '-- dos', 'SELECT 2', '', '', '-- tres', 'SELECT 3'].join('\n');
+check('parrafo: cursor en el primero', par(doc, doc.indexOf('SELECT 1') + 2), '-- uno\nSELECT 1');
+check('parrafo: cursor en el primero por su nombre', par(doc, doc.indexOf('-- uno')), '-- uno\nSELECT 1');
+check('parrafo: cursor en el segundo', par(doc, doc.indexOf('SELECT 2') + 2), '-- dos\nSELECT 2');
+check('parrafo: cursor al final de una linea no se come la de abajo', par(doc, doc.indexOf('SELECT 2') + 8), '-- dos\nSELECT 2');
+check('parrafo: cursor en la linea en blanco ancla al de arriba', par(doc, doc.indexOf('SELECT 2') + 9), '-- dos\nSELECT 2');
+check('parrafo: cursor en el tercero', par(doc, doc.indexOf('SELECT 3') + 4), '-- tres\nSELECT 3');
+check('parrafo: cursor al final del texto', par(doc, doc.length), '-- tres\nSELECT 3');
+
+var soloUno = 'SELECT 1\nSELECT 2\nSELECT 3';
+check('parrafo: sin lineas en blanco todo el texto es un parrafo', par(soloUno, 12), soloUno);
+check('parrafo: recorta las lineas en blanco de los bordes', par('\n\nSELECT 1\n\n\n', 4), 'SELECT 1');
+check('parrafo: linea en blanco al inicio ancla hacia abajo', par('\n\nSELECT 9', 0), 'SELECT 9');
+check('parrafo: un texto solo de blancos no tiene parrafo', par('   \n\n', 2).trim(), '');
+check('parrafo: con CRLF el de abajo no se mezcla', par('A\r\n\r\nB', 6), 'B');
 '@
-        $archivo = Join-Path $env:TEMP 'hql-console-sel-test.js'
-        Set-Content -Path $archivo -Value $js -Encoding UTF8
-        $salida = & node $archivo 2>&1
-        Check 'la seleccion ejecuta solo lo pintado (Node sobre la pagina servida)' ($LASTEXITCODE -eq 0) ($salida -join ' | ')
+            $archivo = Join-Path $env:TEMP 'hql-console-sel-test.js'
+            Set-Content -Path $archivo -Value $js -Encoding UTF8
+            # Con ErrorActionPreference='Stop', un node que escribe en stderr aborta el script entero
+            # y el FAIL se pierde: acá interesa el codigo de salida, no la excepcion de PowerShell.
+            $previo = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            $salida = & node $archivo 2>&1
+            $codigo = $LASTEXITCODE
+            $ErrorActionPreference = $previo
+            Check 'seleccion y parrafos, en Node sobre la pagina servida' ($codigo -eq 0) ($salida -join ' | ')
+        } else {
+            Check 'seleccion y parrafos, en Node sobre la pagina servida' $false 'no encontre el bloque de funciones puras'
+        }
     }
 
     # --- layout partido con divisor movible ---

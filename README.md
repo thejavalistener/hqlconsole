@@ -10,9 +10,10 @@ consola HQL en `http://localhost:8080/hqlconsole` ejecutando consultas contra el
 │ FROM Empleado e                          │  id | nombre    | salario │
 │                                          │  1  | Ana Gomez | 1500000 │
 │                                          │  2  | Bruno Diaz| 1200000 │
+│ Ctrl+Enter: el párrafo del cursor (38)   │                           │
+│                          [ Ejecutar ]    │                           │
 └──────────────────────────────────────────┴───────────────────────────┘
-  [ Ejecutar ]   Ctrl+Enter: sólo la selección; sin selección, todo el texto
-                    ↑ el divisor del medio se arrastra
+        ↑ el divisor del medio se arrastra
 ```
 
 ## Por qué no alcanza la consola HQL del IDE
@@ -108,20 +109,43 @@ poner el jar en ese entorno.
 
 ### Qué se ejecuta
 
-- **Sin nada seleccionado**, `Ctrl+Enter` (o el botón) ejecuta **todo** el textarea.
-- **Con texto pintado**, ejecuta **sólo la selección** y el resto se ignora. La página lo avisa:
-  *"se ejecutará sólo la selección (N caracteres)"*. Así podés dejar varias sentencias en el área y
-  correr la que quieras sin borrar nada.
-- Una selección que sólo tiene espacios en blanco cuenta como "sin selección": ejecuta todo, en vez
-  de fallar por estar vacía.
+- **Con texto pintado**, `Ctrl+Enter` (o el botón) ejecuta **sólo la selección** y el resto se
+  ignora. La página lo avisa al pie del editor: *"se ejecutará sólo la selección (N caracteres)"*.
+- **Sin nada seleccionado**, ejecuta el **párrafo donde está el cursor**: desde la línea en blanco
+  de arriba hasta la de abajo. Un párrafo es un bloque de líneas no vacías; lo que separa párrafos
+  es una o más líneas en blanco (o con sólo espacios).
+- **Ya no hay "ejecutar todo"**: sólo se ejecuta el textarea completo cuando todo el textarea es un
+  único párrafo (o sea, cuando no hay ninguna línea en blanco en el medio).
+
+Así podés dejar varias consultas separadas por líneas en blanco y correr la que quieras con sólo
+poner el cursor adentro:
+
+```sql
+-- los que más ganan
+SELECT e.nombre, e.salario FROM Empleado e ORDER BY e.salario DESC
+
+-- cuántos hay por departamento
+SELECT d.nombre, count(e) FROM Empleado e JOIN e.departamento d GROUP BY d.nombre
+```
+
+Detalles del párrafo, que están cubiertos por los tests:
+
+- El límite son las líneas en blanco: el párrafo se lleva también sus líneas de comentario.
+- El cursor al final de una línea pertenece a **esa** línea, no a la de abajo.
+- Si el cursor cae en una línea en blanco (no hay párrafo propio), se usa el de **arriba** y, si no
+  hay, el de **abajo**. Si el textarea está vacío, avisa que no hay nada que ejecutar.
+- Una selección de sólo espacios en blanco cuenta como "sin selección" y cae en el párrafo.
+- Si pegás texto con CRLF de Windows, el retorno de carro se descarta antes de mandarlo.
 
 ### La página
 
 - **Dos paneles con divisor movible.** El editor queda a la izquierda y los resultados (la grilla,
-  el resumen y el JSON crudo) a la derecha. El divisor del medio se arrastra con el mouse; con el
-  foco puesto en él, las flechas lo mueven de a 2% (con `Shift`, de a 10%), `Inicio`/`Fin` van a los
-  extremos y el doble clic vuelve a 50/50. El ancho elegido se recuerda. Por debajo de 720 px de
-  ancho los paneles se apilan y el divisor desaparece.
+  el resumen y el JSON crudo) a la derecha. El botón **Ejecutar** vive dentro del panel izquierdo,
+  debajo del textarea y alineado a la derecha; al lado está el aviso de qué se va a ejecutar. El
+  divisor del medio se arrastra con el mouse; con el foco puesto en él, las flechas lo mueven de a
+  2% (con `Shift`, de a 10%), `Inicio`/`Fin` van a los extremos y el doble clic vuelve a 50/50. El
+  ancho elegido se recuerda. Por debajo de 720 px de ancho los paneles se apilan y el divisor
+  desaparece.
 - **El texto del editor es persistente.** Lo que escribís queda en el `localStorage` del navegador y
   reaparece la próxima vez que abrís la página: sobrevive a recargar, a cerrar el navegador y a
   bajar y volver a levantar la aplicación. Se guarda mientras tipeás (con un retardo de 400 ms) y
@@ -354,8 +378,8 @@ Verificado end-to-end con `verify-demo.ps1`, que compila, levanta el fat jar del
 comprobaciones contra una H2 en memoria (Spring Boot 3.2.5, Hibernate 6.4.4, Java 21):
 
 ```
-.\verify-demo.ps1                                  # 78 PASS / 0 FAIL
-.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 81 PASS / 0 FAIL
+.\verify-demo.ps1                                  # 83 PASS / 0 FAIL
+.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 86 PASS / 0 FAIL
 ```
 
 Cubre: descubrimiento de la auto-configuración por el `.imports` del jar, la página servida desde
@@ -368,14 +392,18 @@ relación por id, campos omitidos en NULL y fallo por `NOT NULL`, y `UPDATE` que
 con `NOW`, con `WHERE` compuesto, sin alias, sin `WHERE` (y el aviso de truncado), más los errores
 de entidad, atributo y alias mal capitalizados, y el fallback de `INSERT ... SELECT` a HQL.
 
-La ejecución por selección se verifica de verdad: el script extrae la función `textoAejecutar` del
-HTML **que sirve el jar** y la corre en Node con tres casos (sin selección, con selección y
-selección invertida). Requiere `node` en el PATH; si no está, ese chequeo se saltea.
+Las funciones puras del ejecutar se verifican de verdad: el script extrae el bloque marcado en el
+HTML **que sirve el jar** y lo corre en Node, con los casos de la selección (sin selección, con
+selección y selección invertida) y doce casos del párrafo (cursor en cada párrafo, al final de una
+línea, en una línea en blanco, en los bordes, sin líneas en blanco, con CRLF y con el textarea
+vacío). Requiere `node` en el PATH; si no está, ese chequeo se saltea. Ojo si editás
+`HqlConsolePage.java`: el JS vive en un text block de Java, así que una barra invertida va doble.
 
 Del layout partido se comprueba que la página traiga los dos paneles, el divisor arrastrable, el
-ancho variable por CSS y que los resultados vivan en el panel derecho; de la persistencia, que el
-texto se guarde, se restituya y se guarde al tipear, que el ancho también se persista, y que la
-respuesta venga con `Cache-Control: no-store`.
+ancho variable por CSS, que los resultados vivan en el panel derecho y que el botón quede dentro
+del panel izquierdo y después del textarea; de la persistencia, que el texto se guarde, se restituya
+y se guarde al tipear, que el ancho también se persista, y que la respuesta venga con
+`Cache-Control: no-store`.
 
 Aparte se comprobó a mano el caso difícil del banner: con `--server.port=0` anuncia el puerto real
 que le asignó Tomcat y esa URL responde 200 (o sea que `local.server.port` se resuelve bien).
@@ -406,7 +434,7 @@ hql-console-starter/            el jar que se distribuye (java-library, ~20 KB, 
     HqlResult                     el JSON que sale
   web/
     HqlConsoleController          GET {path} y POST {path}/api/execute
-    HqlConsolePage                el HTML+CSS+JS, en un text block
+    HqlConsolePage                el HTML+CSS+JS, en un text block (ojo: barras invertidas dobles)
 hql-console-demo/               aplicación de ejemplo: Empleado/Departamento + H2, sin config
 verify-demo.ps1                 la verificación end-to-end
 ```
