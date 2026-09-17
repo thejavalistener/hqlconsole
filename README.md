@@ -5,15 +5,14 @@ consola HQL en `http://localhost:8080/hqlconsole` ejecutando consultas contra el
 **vivo** de tu aplicación.
 
 ```
-┌─ HQL Console ────────────────────────────────────────────────┐
-│ SELECT e.id, e.nombre, e.salario FROM Empleado e             │
-└──────────────────────────────────────────────────────────────┘
-  [ Ejecutar ]   Ctrl+Enter para ejecutar   6 filas en 7 ms
-
-  id | nombre      | salario
-  1  | Ana Gomez   | 1500000.50
-  2  | Bruno Diaz  | 1200000.00
-  ...
+┌─ HQL Console ────────────────────────────┬───────────────────────────┐
+│ SELECT e.id, e.nombre, e.salario         │  6 filas en 7 ms          │
+│ FROM Empleado e                          │  id | nombre    | salario │
+│                                          │  1  | Ana Gomez | 1500000 │
+│                                          │  2  | Bruno Diaz| 1200000 │
+└──────────────────────────────────────────┴───────────────────────────┘
+  [ Ejecutar ]   Ctrl+Enter: sólo la selección; sin selección, todo el texto
+                    ↑ el divisor del medio se arrastra
 ```
 
 ## Por qué no alcanza la consola HQL del IDE
@@ -113,6 +112,24 @@ poner el jar en ese entorno.
 - **Con texto pintado**, ejecuta **sólo la selección** y el resto se ignora. La página lo avisa:
   *"se ejecutará sólo la selección (N caracteres)"*. Así podés dejar varias sentencias en el área y
   correr la que quieras sin borrar nada.
+- Una selección que sólo tiene espacios en blanco cuenta como "sin selección": ejecuta todo, en vez
+  de fallar por estar vacía.
+
+### La página
+
+- **Dos paneles con divisor movible.** El editor queda a la izquierda y los resultados (la grilla,
+  el resumen y el JSON crudo) a la derecha. El divisor del medio se arrastra con el mouse; con el
+  foco puesto en él, las flechas lo mueven de a 2% (con `Shift`, de a 10%), `Inicio`/`Fin` van a los
+  extremos y el doble clic vuelve a 50/50. El ancho elegido se recuerda. Por debajo de 720 px de
+  ancho los paneles se apilan y el divisor desaparece.
+- **El texto del editor es persistente.** Lo que escribís queda en el `localStorage` del navegador y
+  reaparece la próxima vez que abrís la página: sobrevive a recargar, a cerrar el navegador y a
+  bajar y volver a levantar la aplicación. Se guarda mientras tipeás (con un retardo de 400 ms) y
+  también al ejecutar y al cerrar la pestaña, así que no hace falta ejecutar para no perderlo. El
+  almacén es lo único que se comparte entre aplicaciones distintas servidas desde el mismo
+  `host:puerto`; si querés borrarlo, limpiá los datos del sitio.
+- **La página se sirve con `Cache-Control: no-store`.** Si el navegador cacheara el HTML, un cambio
+  en la consola seguiría invisible hasta un `Ctrl+F5`, con la sensación de que el jar no se actualizó.
 
 Las **entidades y los atributos son case sensitive**, igual que en HQL: `SELECT l.titulo FROM Libro l`
 funciona, `SELECT l.tiTulo FROM libro l` no. Las palabras clave (`select`, `from`, `insert`,
@@ -337,8 +354,8 @@ Verificado end-to-end con `verify-demo.ps1`, que compila, levanta el fat jar del
 comprobaciones contra una H2 en memoria (Spring Boot 3.2.5, Hibernate 6.4.4, Java 21):
 
 ```
-.\verify-demo.ps1                                  # 67 PASS / 0 FAIL
-.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 70 PASS / 0 FAIL
+.\verify-demo.ps1                                  # 78 PASS / 0 FAIL
+.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 81 PASS / 0 FAIL
 ```
 
 Cubre: descubrimiento de la auto-configuración por el `.imports` del jar, la página servida desde
@@ -354,6 +371,11 @@ de entidad, atributo y alias mal capitalizados, y el fallback de `INSERT ... SEL
 La ejecución por selección se verifica de verdad: el script extrae la función `textoAejecutar` del
 HTML **que sirve el jar** y la corre en Node con tres casos (sin selección, con selección y
 selección invertida). Requiere `node` en el PATH; si no está, ese chequeo se saltea.
+
+Del layout partido se comprueba que la página traiga los dos paneles, el divisor arrastrable, el
+ancho variable por CSS y que los resultados vivan en el panel derecho; de la persistencia, que el
+texto se guarde, se restituya y se guarde al tipear, que el ancho también se persista, y que la
+respuesta venga con `Cache-Control: no-store`.
 
 Aparte se comprobó a mano el caso difícil del banner: con `--server.port=0` anuncia el puerto real
 que le asignó Tomcat y esa URL responde 200 (o sea que `local.server.port` se resuelve bien).

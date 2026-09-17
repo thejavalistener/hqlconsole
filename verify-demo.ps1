@@ -257,6 +257,8 @@ try {
 
     # --- ejecutar solo lo seleccionado ---
     Check 'la pagina trae el ejecutar-por-seleccion' ($page.Content -match 'id="seleccion"' -and $page.Content -match 'ta\.selectionStart' -and $page.Content -match 'function textoAejecutar') 'falta el codigo de seleccion'
+    Check 'el boton no le roba la seleccion al textarea' ($page.Content -match "btn\.addEventListener\('mousedown'") 'falta el preventDefault del mousedown'
+    Check 'una seleccion en blanco cae en ejecutar todo' ($page.Content -match 'recorte\.trim\(\)') 'no esta el fallback de seleccion vacia'
     if (Get-Command node -ErrorAction SilentlyContinue) {
         # La funcion se extrae de la pagina que sirve el jar y se ejecuta de verdad, en Node.
         $m = [regex]::Match($page.Content, '(?s)function textoAejecutar.*?return valor;\s*\}')
@@ -273,6 +275,21 @@ check('seleccion invertida ejecuta todo', textoAejecutar(t, 5, 2), t);
         $salida = & node $archivo 2>&1
         Check 'la seleccion ejecuta solo lo pintado (Node sobre la pagina servida)' ($LASTEXITCODE -eq 0) ($salida -join ' | ')
     }
+
+    # --- layout partido con divisor movible ---
+    Check 'la pagina trae el layout partido' ($page.Content -match 'id="panel-editor"' -and $page.Content -match 'id="panel-resultado"') 'faltan los paneles'
+    Check 'la separacion es vertical y movible' ($page.Content -match 'id="divisor"' -and $page.Content -match 'cursor:col-resize' -and $page.Content -match 'pointerdown') 'falta el divisor arrastrable'
+    Check 'el ancho del editor es configurable por CSS' ($page.Content -match '--ancho-editor' -and $page.Content -match 'flex:0 0 var\(--ancho-editor\)') 'no esta el ancho variable'
+    Check 'los resultados viven en el panel derecho' (([regex]::Match($page.Content, '(?s)id="panel-resultado".*?id="crudo"')).Success -and $page.Content -match 'id="vacio"') 'los resultados no estan en el panel derecho'
+
+    # --- persistencia del texto ---
+    Check 'el texto del editor se persiste en el navegador' ($page.Content -match "CLAVE_TEXTO = 'hql-console\.consulta'" -and $page.Content -match 'ALMACEN\.setItem\(CLAVE_TEXTO') 'no se guarda el texto'
+    Check 'el texto se restituye al abrir la pagina' ($page.Content -match 'ta\.value = \(textoGuardado === null') 'no se restituye el texto'
+    Check 'se guarda tambien mientras se escribe' ($page.Content -match "ta\.addEventListener\('input'" -and $page.Content -match 'setTimeout\(guardarTexto') 'no hay guardado al tipear'
+    Check 'el ancho del divisor tambien se persiste' ($page.Content -match 'CLAVE_ANCHO') 'no se persiste el ancho'
+
+    # --- nada de cache: si el navegador guarda la pagina, los cambios no se ven ---
+    Check 'la pagina se sirve sin cache' ("$($page.Headers['Cache-Control'])" -match 'no-store') "Cache-Control: $($page.Headers['Cache-Control'])"
 
     # --- tope de filas ---
     if ($MaxRows -lt 6) {

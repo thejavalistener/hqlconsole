@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseBody;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import thejavalistener.hqlconsole.autoconfigure.HqlConsoleProperties;
 import thejavalistener.hqlconsole.engine.HqlQueryRunner;
 
@@ -43,8 +44,14 @@ public class HqlConsoleController
 	@GetMapping(path={"${hql-console.path:/hqlconsole}","${hql-console.path:/hqlconsole}/"},
 	            produces=MediaType.TEXT_HTML_VALUE)
 	@ResponseBody
-	public String page(HttpServletRequest request)
+	public String page(HttpServletRequest request,HttpServletResponse response)
 	{
+		// La página no se cachea a propósito. Sin esta cabecera el navegador se queda con el HTML
+		// viejo y parece que el jar no se actualizó: se cambia la consola, se reconstruye y en
+		// pantalla sigue la versión anterior hasta un Ctrl+F5.
+		response.setHeader("Cache-Control","no-store, no-cache, must-revalidate");
+		response.setHeader("Pragma","no-cache");
+
 		String path=properties.normalizedPath();
 		// El context-path de la aplicación (server.servlet.context-path) no está dentro del mapeo
 		// del controller, así que el fetch de la página lo necesita explícito.
