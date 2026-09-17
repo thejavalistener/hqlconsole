@@ -1,0 +1,94 @@
+// El jar de la consola. Es un java-library PURO: sin spring-boot-maven-plugin.
+//
+// Si este módulo se repackageara como fat jar, META-INF/spring/...AutoConfiguration.imports
+// terminaría dentro de BOOT-INF/classes/ y Spring Boot no descubriría la auto-configuración
+// cuando alguien lo use como dependencia. Ese es el motivo de que no haya plugin de Boot acá.
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+    id 'io.spring.dependency-management'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+    withSourcesJar()
+}
+
+dependencyManagement {
+    // Misma versión que settings.gradle.
+    imports {
+        mavenBom 'org.springframework.boot:spring-boot-dependencies:3.2.5'
+    }
+}
+
+dependencies {
+    // Todo compileOnly: estas clases las provee la aplicación que aloja la consola.
+    // El starter no le impone ninguna dependencia.
+    compileOnly 'org.springframework.boot:spring-boot-autoconfigure'
+    compileOnly 'org.springframework.boot:spring-boot-starter-web'
+    compileOnly 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+    annotationProcessor 'org.springframework.boot:spring-boot-autoconfigure-processor'
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+        }
+    }
+}
+
+// Guarda arquitectónica.
+//
+// Este jar se compila contra Spring Boot 3 pero se ejecuta contra la versión que tenga la
+// aplicación anfitriona. Referenciar una clase interna de Boot que cambia de paquete entre
+// versiones mayores compila perfecto y explota en runtime con NoClassDefFoundError, en la app de
+// otro. Pasó una vez: el banner usaba ServletWebServerApplicationContext, y Spring Boot 4.0 movió
+// org.springframework.boot.web.servlet.context a org.springframework.boot.web.server.servlet.context.
+//
+// La regla: de Boot sólo se pueden tocar las anotaciones de auto-configuración, las de
+// @ConfigurationProperties y ApplicationRunner/ApplicationArguments. Para todo lo demás —
+// puerto, context-path, server web— se leen propiedades del Environment.
+tasks.register('checkBootSurface') {
+    description = 'Falla si el jar referencia paquetes internos de Spring Boot que se mueven entre versiones mayores.'
+    group = 'verification'
+    dependsOn tasks.named('jar')
+
+    def jarProvider = tasks.named('jar').flatMap { it.archiveFile }
+    def forbidden = [
+        'org/springframework/boot/web/',      // en Boot 4: contexto servlet y servers embebidos reubicados
+        'org/springframework/boot/tomcat/',
+        'org/springframework/boot/jetty/',
+        'org/springframework/boot/undertow/', // eliminado en Boot 4
+        'org/springframework/boot/reactor/',
+    ]
+
+    doLast {
+        def hits = []
+        new java.util.zip.ZipFile(jarProvider.get().asFile).withCloseable { zip ->
+            zip.entries().each { entry ->
+                if (!entry.isDirectory() && entry.name.endsWith('.class')) {
+                    def text = zip.getInputStream(entry).withCloseable { it.getText('ISO-8859-1') }
+                    forbidden.each { prefix ->
+                        if (text.contains(prefix)) {
+                            hits << "${entry.name} -> ${prefix}".toString()
+                        }
+                    }
+                }
+            }
+        }
+        if (!hits.isEmpty()) {
+            throw new GradleException(
+                'El jar referencia clases internas de Spring Boot que cambian de paquete entre versiones mayores:\n  '
+                    + hits.join('\n  ')
+                    + '\nUsa propiedades del Environment o nombres de clase en lugar de referencias directas.')
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('checkBootSurface')
+}

@@ -1,0 +1,13 @@
+// Versión única de Spring Boot para todo el build. Si la cambiás acá, cambiala
+// también en la BOM que importa hql-console-starter/build.gradle.
+pluginManagement {
+    plugins {
+        id 'org.springframework.boot' version '3.2.5'
+        id 'io.spring.dependency-management' version '1.1.4'
+    }
+}
+
+rootProject.name = 'hql-console'
+
+include 'hql-console-starter'
+include 'hql-console-demo'

@@ -1,0 +1,19 @@
+server:
+  port: 18080
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:hqlconsole;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+
+# Acá no hay NI UNA línea de configuración de la consola HQL: la página tiene que aparecer
+# sola por el solo hecho de estar el jar en el classpath.
+logging:
+  level:
+    org.hibernate.SQL: info

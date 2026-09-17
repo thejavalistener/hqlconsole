@@ -1,0 +1,3 @@
+# Mantener wrapper correcto en todos los SO
+gradlew text eol=lf
+gradlew.bat text eol=crlf
