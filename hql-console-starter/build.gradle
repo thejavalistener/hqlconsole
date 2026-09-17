@@ -41,6 +41,30 @@ publishing {
     }
 }
 
+// El jar que se distribuye, copiado a dist/ con nombre fijo.
+//
+// Vive fuera de build/ a propósito, por dos motivos:
+//   1. build/ está ignorado por git, y una regla de negación no puede rescatar un archivo cuya
+//      carpeta padre está excluida. En dist/ sí se puede versionar.
+//   2. gradlew clean borra build/ y con él se llevaría el jar que está en el repositorio.
+//
+// El nombre no lleva la versión: así el archivo es siempre el mismo y git no acumula un jar nuevo
+// por cada versión publicada.
+tasks.register('dist', Copy) {
+    description = 'Copia el jar del starter a dist/ (es el que se versiona en el repositorio).'
+    group = 'distribution'
+    dependsOn tasks.named('jar')
+
+    from tasks.named('jar').flatMap { it.archiveFile }
+    into new File(rootProject.projectDir, 'dist')
+    rename { 'hql-console-starter.jar' }
+}
+
+// Para que 'gradlew build' (y 'assemble') lo deje listo sin que haya que acordarse de nada.
+tasks.named('assemble') {
+    finalizedBy tasks.named('dist')
+}
+
 // Guarda arquitectónica.
 //
 // Este jar se compila contra Spring Boot 3 pero se ejecuta contra la versión que tenga la

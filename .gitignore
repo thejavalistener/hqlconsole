@@ -12,6 +12,10 @@ bin/
 *.nar
 *.ear
 !gradle/wrapper/gradle-wrapper.jar
+# El jar del starter SÍ se versiona: es el entregable. La tarea 'dist' de
+# hql-console-starter/build.gradle lo copia acá con nombre fijo después de compilar. No puede
+# vivir en build/ porque una negación no rescata archivos de una carpeta excluida.
+!dist/hql-console-starter.jar
 
 # --- Logs ---
 *.log
