@@ -23,6 +23,32 @@ IntelliJ o Hibernate Tools levantan **su propia** `SessionFactory` contra la bas
 y no llegan a una base embebida o a un Testcontainers. Esta consola se cuelga del contexto que ya
 está corriendo, así que consulta exactamente lo mismo que consulta tu código.
 
+## Descargar los jars
+
+En [Releases](https://github.com/thejavalistener/hqlconsole/releases) hay un jar por versión:
+
+| Asset | Qué es |
+|---|---|
+| `hql-console-demo.jar` | fat jar ejecutable de la demo: `java -jar hql-console-demo.jar` y la consola queda en `http://localhost:18080/hqlconsole` (Tomcat, Hibernate y H2 adentro) |
+| `hql-console-starter-<version>.jar` | la consola sola, para usar como dependencia |
+| `hql-console-starter-<version>-sources.jar` | las fuentes |
+| `SHA256SUMS` | el sha256 de los tres |
+
+Los jars **no** están versionados en el repositorio: se construyen en cada release. El workflow
+`.github/workflows/release.yml` se dispara con un tag `v*`, comprueba que el tag coincida con la
+versión que declara `build.gradle` (le pregunta con `gradlew -q printVersion`; si no coincide, corta
+antes de publicar nada) y adjunta los artefactos. Para cortar una release:
+
+```powershell
+# primero: subí la versión en build.gradle y commiteá
+git tag -a v0.1.0 -m "0.1.0"
+git push origin v0.1.0
+```
+
+> Para consumir el starter como dependencia (`implementation ...`) hace falta un repositorio Maven:
+> JitPack apuntando al tag, o GitHub Packages. Bajar el jar del release y meterlo a mano con
+> `files(...)` funciona, pero perdés las dependencias transitivas y las actualizaciones.
+
 ## Uso
 
 ```gradle
@@ -381,8 +407,8 @@ Verificado end-to-end con `verify-demo.ps1`, que compila, levanta el fat jar del
 comprobaciones contra una H2 en memoria (Spring Boot 3.2.5, Hibernate 6.4.4, Java 21):
 
 ```
-.\verify-demo.ps1                                  # 85 PASS / 0 FAIL
-.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 88 PASS / 0 FAIL
+.\verify-demo.ps1                                  # 86 PASS / 0 FAIL
+.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 89 PASS / 0 FAIL
 ```
 
 Cubre: descubrimiento de la auto-configuración por el `.imports` del jar, la página servida desde
@@ -408,6 +434,12 @@ ancho variable por CSS, que los resultados vivan en el panel derecho y que el bo
 del panel izquierdo y después del textarea; de la persistencia, que el texto se guarde, se restituya
 y se guarde al tipear, que el ancho también se persista, y que la respuesta venga con
 `Cache-Control: no-store`.
+
+También se comprueba `gradlew -q printVersion`: el release le pregunta la versión al build con esa
+tarea, así que si dejara de imprimirla el release saldría con los jars titulados con otro número. El
+chequeo la compara contra el nombre real del jar del starter. El workflow de release en sí no se
+puede correr desde acá (necesita un runner de GitHub); lo que sí se validó es su YAML y que la
+versión que consume sea la del build.
 
 Aparte se comprobó a mano el caso difícil del banner: con `--server.port=0` anuncia el puerto real
 que le asignó Tomcat y esa URL responde 200 (o sea que `local.server.port` se resuelve bien).
@@ -441,6 +473,7 @@ hql-console-starter/            el jar que se distribuye (java-library, ~20 KB, 
     HqlConsolePage                el HTML+CSS+JS, en un text block (ojo: barras invertidas dobles)
 hql-console-demo/               aplicación de ejemplo: Empleado/Departamento + H2, sin config
 verify-demo.ps1                 la verificación end-to-end
+.github/workflows/release.yml   tag v* -> construye y publica el release con los jars
 ```
 
 ## Roadmap

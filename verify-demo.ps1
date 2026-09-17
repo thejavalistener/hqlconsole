@@ -60,6 +60,17 @@ Write-Host '== Compilando ==' -ForegroundColor Cyan
 & (Join-Path $root 'gradlew.bat') -p $root --console=plain -q build
 if ($LASTEXITCODE -ne 0) { throw 'El build fallo.' }
 
+# El workflow de release (que no se puede correr desde acá) le pregunta la version al build con
+# printVersion y la compara con el tag. Si esa tarea dejara de imprimir la version, el release
+# saldria con los jars titulados con otro numero: se comprueba contra el nombre del jar real.
+$versionImpreso = (& (Join-Path $root 'gradlew.bat') -p $root --console=plain -q printVersion | Select-Object -Last 1)
+$versionImpreso = "$versionImpreso".Trim()
+$jarStarter = Get-ChildItem (Join-Path $root 'hql-console-starter\build\libs\hql-console-starter-*.jar') -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -notmatch 'sources' } | Select-Object -First 1
+Check 'printVersion coincide con el nombre del jar del starter' `
+      ($null -ne $jarStarter -and $versionImpreso -ne '' -and $jarStarter.Name -eq "hql-console-starter-$versionImpreso.jar") `
+      "printVersion=[$versionImpreso] jar=$($jarStarter.Name)"
+
 Write-Host "== Levantando el demo en el puerto $Port (context-path '$ContextPath', tope $MaxRows) ==" -ForegroundColor Cyan
 $javaArgs = @('-jar', "`"$jar`"", "--server.port=$Port", "--hql-console.max-rows=$MaxRows")
 if ($ContextPath) { $javaArgs += "--server.servlet.context-path=$ContextPath" }

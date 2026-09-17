@@ -1,0 +1,69 @@
+# Publica un release con los jars adjuntos cada vez que se empuja un tag v*.
+#
+# Los jars NO se versionan en el repositorio: se construyen acá y quedan como assets descargables.
+# El repositorio guarda sólo las fuentes.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Va antes de usar gradlew, obviamente: el guard de abajo corre Gradle para preguntarle la
+      # versión al propio build.
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      # La versión tiene una sola fuente de verdad: el 'version' de build.gradle. Si el tag no
+      # coincide, se corta acá en vez de publicar un release con los jars titulados con otra versión.
+      - name: Verificar que el tag coincida con la version del build
+        run: |
+          chmod +x gradlew
+          VERSION="$(./gradlew -q --console=plain printVersion | tail -n1)"
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "version del build: $VERSION"
+          echo "tag:               $TAG"
+          if [ -z "$VERSION" ] || [ "$VERSION" != "$TAG" ]; then
+            echo "::error::El tag v$TAG no coincide con la version '$VERSION'. Actualizala en build.gradle antes de taggear."
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      # "build" también corre check -> checkBootSurface, la guarda de compatibilidad con Boot 4.
+      - name: Construir
+        run: |
+          chmod +x gradlew
+          ./gradlew --console=plain build
+
+      - name: Checksums
+        run: |
+          sha256sum \
+            hql-console-demo/build/libs/hql-console-demo.jar \
+            "hql-console-starter/build/libs/hql-console-starter-$VERSION.jar" \
+            "hql-console-starter/build/libs/hql-console-starter-$VERSION-sources.jar" \
+            > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Publicar el release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            hql-console-demo/build/libs/hql-console-demo.jar
+            hql-console-starter/build/libs/hql-console-starter-${{ env.VERSION }}.jar
+            hql-console-starter/build/libs/hql-console-starter-${{ env.VERSION }}-sources.jar
+            SHA256SUMS
+          fail_on_unmatched_files: true
+          generate_release_notes: true

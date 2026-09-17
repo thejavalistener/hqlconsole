@@ -17,3 +17,13 @@ subprojects {
         options.encoding = 'UTF-8'
     }
 }
+
+// La versión, dicha por el propio build. Así el workflow de release compara el tag contra esto y no
+// contra un grep del archivo: la fuente de verdad sigue siendo el 'version' de arriba.
+tasks.register('printVersion') {
+    description = 'Imprime la version del proyecto (la usa .github/workflows/release.yml).'
+    group = 'help'
+    doLast {
+        println(version)
+    }
+}
