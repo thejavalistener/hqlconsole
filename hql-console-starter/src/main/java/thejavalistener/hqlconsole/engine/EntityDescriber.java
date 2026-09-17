@@ -108,23 +108,6 @@ public class EntityDescriber
 		return HqlResult.query(HEADERS,rows,false,_millis(t0));
 	}
 
-	/**
-	 * Nombre de columna por atributo: el real de la base si se puede, y si no el derivado del
-	 * mapping. Lo usa {@code from <Entidad>} para titular las columnas igual que {@code DESC}.
-	 */
-	public Map<String,String> columnNames(Metamodel metamodel,EntityType<?> entityType)
-	{
-		Map<String,SqlColumn> columns=_columnsFromDatabase(entityType);
-		Map<String,String> names=new LinkedHashMap<>();
-		for(Attribute<?,?> attribute:Mapping.columnsInDeclarationOrder(entityType))
-		{
-			String derived=Mapping.columnName(metamodel,attribute);
-			SqlColumn real=columns.get(derived.toLowerCase(Locale.ROOT));
-			names.put(attribute.getName(),real!=null?real.name():derived);
-		}
-		return names;
-	}
-
 	/** Una columna tal como la reporta la base. */
 	private record SqlColumn(String name,String typeName) {}
 

@@ -82,6 +82,9 @@ try {
 
     Check 'GET /hqlconsole responde 200 HTML' ($page.StatusCode -eq 200 -and "$($page.Headers['Content-Type'])" -like 'text/html*') $page.StatusCode
     Check 'la pagina trae el textarea y el boton' ($page.Content -match '<textarea' -and $page.Content -match 'id="run"')
+    $barra = [regex]::Match($page.Content, '(?s)<div class="barra">(.*?)</div>')
+    Check 'el encabezado solo dice HQL Console' ($barra.Success -and $barra.Groups[1].Value -match 'HQL Console' -and $barra.Groups[1].Value -notmatch '<span') 'el encabezado tiene algo demas'
+    Check 'la pagina ya no muestra la ruta ni el aviso' ($page.Content -notmatch 'class="ruta"' -and $page.Content -notmatch 'herramienta de desarrollo') 'quedo la ruta o el aviso'
     Check 'la pagina apunta al base correcto' ($page.Content -match [regex]::Escape("const BASE = '$ContextPath/hqlconsole'")) "no encontro BASE = '$ContextPath/hqlconsole'"
     Check 'el banner avisa la URL en el log' ((Get-Content $log -Raw) -match 'Consola HQL en http') 'no aparece el banner'
 
@@ -96,7 +99,7 @@ try {
     Check 'el alias explicito con AS gana' (($r.json.headers -join ',') -eq 'identificador,nombre') ($r.json.headers -join ',')
 
     $r = Exec 'from Empleado e'
-    Check 'from Entidad aplana las columnas de Empleado' (($r.json.headers -join ',') -eq 'ID,NOMBRE,SALARIO,INGRESO,DEPARTAMENTO_ID') ($r.json.headers -join ',')
+    Check 'from Entidad aplana los atributos de Empleado' (($r.json.headers -join ',') -eq 'id,nombre,salario,ingreso,departamento') ($r.json.headers -join ',')
     Check 'la relacion sale como el id de la FK' ($r.json.rows[0][4] -eq 1) ($r.json.rows[0] -join '|')
 
     $r = Exec 'select e from Empleado e'
@@ -147,7 +150,8 @@ try {
     Check 'DESC trae el TIPO SQL real de la base' ($fecha[1] -eq 'DATE' -and $fecha[3] -eq 'LocalDate') ($fecha -join ' | ')
     $titulo = $r.json.rows | Where-Object { $_[2] -eq 'titulo' }
     Check 'DESC trae el TIPO SQL de un texto' ($titulo[1] -match 'CHAR|VARCHAR|TEXT') $titulo[1]
-    $camposDesc = ($r.json.rows | ForEach-Object { $_[0] }) -join ','
+    # La columna ATRIBUTO de DESC es el contrato de titulos de "from <Entidad>".
+    $atributosDesc = ($r.json.rows | ForEach-Object { $_[2] }) -join ','
 
     $r = Exec 'DESC'
     Check 'DESC sin argumentos lista las entidades' (($r.json.headers -join ',') -eq 'ENTIDAD,TABLA,CAMPOS' -and $r.json.rowCount -ge 4) $r.raw
@@ -223,13 +227,13 @@ try {
     $esperadas = [Math]::Min($MaxRows, $libros)
 
     $r = Exec 'from Libro'
-    Check 'from <Entidad> aplana y titula igual que DESC' (($r.json.headers -join ',') -eq $camposDesc) "$($r.json.headers -join ',') vs $camposDesc"
+    Check 'from <Entidad> aplana y titula con los ATRIBUTOS de DESC' (($r.json.headers -join ',') -eq $atributosDesc) "$($r.json.headers -join ',') vs $atributosDesc"
     Check "from <Entidad> trae $esperadas fila(s)" ($r.json.rowCount -eq $esperadas) $r.json.rowCount
-    $posAutor = [array]::IndexOf($r.json.headers, 'ID_AUTOR')
+    $posAutor = [array]::IndexOf($r.json.headers, 'autor')
     Check 'la relacion se muestra como el id de la FK' ($r.json.rows[0][$posAutor] -eq 1) $r.json.rows[0][$posAutor]
 
     $r = Exec "from Libro l where l.genero = 'NOVELA' order by l.id desc"
-    Check 'from <Entidad> con WHERE y ORDER BY sigue aplanado' (($r.json.headers -join ',') -eq $camposDesc) ($r.json.headers -join ',')
+    Check 'from <Entidad> con WHERE y ORDER BY sigue aplanado' (($r.json.headers -join ',') -eq $atributosDesc) ($r.json.headers -join ',')
 
     $r = Exec 'from Libro l join fetch l.autor'
     Check 'join fetch tambien se aplana (la fila es solo la entidad)' ($r.json.headers.Count -eq 9) $r.json.headers.Count

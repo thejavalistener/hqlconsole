@@ -175,13 +175,16 @@ Y si omitís el `SELECT` y escribís sólo el `from`, las filas salen con **toda
 de la entidad, en vez de una sola columna con `Libro#1`:
 
 ```sql
-from Libro                           -- ID | TITULO | FECHA_PUBLICACION | ... | ID_AUTOR | ...
+from Libro                           -- id | titulo | fechaPublicacion | ... | autor | ...
 from Libro l where l.precio > 10000  -- idem, filtrado
 ```
 
-- Las columnas salen en el orden de declaración de la entidad y con el **mismo nombre que en
-  `DESC`**, así que `DESC Libro` es el mapa de lo que te devuelve `from Libro`.
-- Una relación `to-one` se muestra como **el id de la FK** (`ID_AUTOR` → `1`), sin inicializar el
+- Las columnas salen en el orden de declaración de la entidad y **tituladas con el nombre del
+  atributo de la clase** (`fechaPublicacion`, `autor`), no con el nombre físico de la tabla. Son los
+  nombres que escribiste en la entidad y los que podés volver a escribir en un HQL.
+- El nombre físico sigue estando en `DESC`, en la columna `CAMPO`: `DESC Libro` es el mapa de lo que
+  te devuelve `from Libro`, y sus títulos son exactamente su columna `ATRIBUTO`.
+- Una relación `to-one` se muestra como **el id de la FK** (`autor` → `1`), sin inicializar el
   proxy ni traer la entidad relacionada.
 - Las colecciones (`@OneToMany`) no se muestran: no son campos planos.
 - Un `join fetch` también se aplana, porque la fila sigue siendo sólo la entidad. Un **join
@@ -378,13 +381,14 @@ Verificado end-to-end con `verify-demo.ps1`, que compila, levanta el fat jar del
 comprobaciones contra una H2 en memoria (Spring Boot 3.2.5, Hibernate 6.4.4, Java 21):
 
 ```
-.\verify-demo.ps1                                  # 83 PASS / 0 FAIL
-.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 86 PASS / 0 FAIL
+.\verify-demo.ps1                                  # 85 PASS / 0 FAIL
+.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 88 PASS / 0 FAIL
 ```
 
 Cubre: descubrimiento de la auto-configuración por el `.imports` del jar, la página servida desde
-el jar, headers deducidos y con `AS`, `from Entidad` aplanado (y que con `SELECT` o con un join
-explícito **no** se aplane), asociaciones perezosas, `NULL`, agregados, resultados vacíos, HQL
+el jar, que el encabezado sólo diga `HQL Console`, headers deducidos y con `AS`, `from Entidad`
+aplanado y titulado con los atributos de la clase (y que con `SELECT` o con un join explícito
+**no** se aplane), asociaciones perezosas, `NULL`, agregados, resultados vacíos, HQL
 inválido, el tope de filas y el `context-path` (incluido que la ruta sin context-path dé 404). De
 las sentencias propias: las 4 columnas de `DESC` con el tipo SQL real y el orden de declaración,
 `DESC` sin argumentos, `INSERT` con conversión de fecha, `NOW` a `DATE` y a `TIMESTAMP`, enum,

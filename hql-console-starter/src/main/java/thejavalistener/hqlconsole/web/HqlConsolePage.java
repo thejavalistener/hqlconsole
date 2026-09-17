@@ -12,11 +12,16 @@ public final class HqlConsolePage
 	{
 	}
 
-	public static String html(String base,String path,int maxRows,boolean allowWrites)
+	/**
+	 * El HTML de la consola.
+	 *
+	 * <p>El {@code base} es lo único de la ruta que la página necesita: se usa para armar las
+	 * llamadas al endpoint. La ruta ya no se muestra en pantalla, así que no se pasa aparte.</p>
+	 */
+	public static String html(String base,int maxRows,boolean allowWrites)
 	{
 		return TEMPLATE
 				.replace("__BASE__",_jsString(base))
-				.replace("__PATH__",path)
 				.replace("__MAX_ROWS__",String.valueOf(maxRows))
 				.replace("__ALLOW_WRITES__",allowWrites?"true":"false");
 	}
@@ -44,8 +49,6 @@ public final class HqlConsolePage
 		  body.arrastrando { user-select:none; cursor:col-resize; }
 		  h1 { font-size:16px; margin:0; }
 		  .barra { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; flex:0 0 auto; }
-		  .ruta { font-family: ui-monospace, Consolas, monospace; font-size:12px; opacity:.6; }
-		  .aviso { font-size:12px; color:var(--error); }
 		  button { padding:7px 16px; font-size:13px; font-weight:600; color:#fff; background:var(--acento); border:0; border-radius:6px; cursor:pointer; }
 		  button:disabled { opacity:.5; cursor:progress; }
 		  .estado { font-size:12px; opacity:.75; }
@@ -100,8 +103,6 @@ public final class HqlConsolePage
 		<body>
 		<div class="barra">
 		  <h1>HQL Console</h1>
-		  <span class="ruta">__PATH__</span>
-		  <span class="aviso">herramienta de desarrollo: ejecuta HQL contra el EntityManager vivo</span>
 		</div>
 		<div id="error"><div id="error-msg"></div><pre id="error-sql"></pre></div>
 		<div id="split">

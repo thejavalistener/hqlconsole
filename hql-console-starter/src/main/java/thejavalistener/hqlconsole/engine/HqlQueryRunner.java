@@ -320,7 +320,7 @@ public class HqlQueryRunner
 				}
 				else
 				{
-					headers=_flatHeaders(emf,flatEntity);
+					headers=_flatHeaders(flatEntity);
 				}
 				log.debug("Sentencia leída con {} fila(s) y headers {}",rows.size(),headers);
 
@@ -361,13 +361,15 @@ public class HqlQueryRunner
 		return entity==null?null:_entityType(emf,entity);
 	}
 
-	private List<String> _flatHeaders(EntityManagerFactory emf,EntityType<?> entityType)
+	private List<String> _flatHeaders(EntityType<?> entityType)
 	{
-		Map<String,String> names=describer.columnNames(emf.getMetamodel(),entityType);
+		// Los títulos son los atributos de la clase, no las columnas físicas de la tabla: son los
+		// nombres que uno escribió en la entidad y los que puede volver a escribir en un HQL. El
+		// nombre físico sigue estando en DESC, que es donde tiene sentido verlo.
 		List<String> headers=new ArrayList<>();
 		for(Attribute<?,?> attribute:Mapping.columnsInDeclarationOrder(entityType))
 		{
-			headers.add(names.getOrDefault(attribute.getName(),attribute.getName()));
+			headers.add(attribute.getName());
 		}
 		return headers;
 	}
