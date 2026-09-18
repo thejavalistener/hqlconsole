@@ -38,8 +38,10 @@ function Check([string]$name, [bool]$condition, [string]$detail = '') {
     }
 }
 
-function Exec([string]$hql) {
-    $body = @{ hql = $hql } | ConvertTo-Json -Compress
+function Exec([string]$hql, $DryRun = $null) {
+    $payload = @{ hql = $hql }
+    if ($null -ne $DryRun) { $payload['dryRun'] = $DryRun }
+    $body = $payload | ConvertTo-Json -Compress
     try {
         $r = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$base/hqlconsole/api/execute" `
                                -ContentType 'application/json' -Body $body -TimeoutSec 30
@@ -175,7 +177,7 @@ try {
     $esperadas = [Math]::Min($MaxRows, 6)
     Check "UPDATE sin WHERE afecta $esperadas fila(s)" ($r.json.type -eq 'DML' -and $r.json.affectedRows -eq $esperadas) $r.raw
     if ($MaxRows -lt 6) {
-        Check 'UPDATE avisa cuando el tope lo trunco' ($r.json.message -match 'tope') $r.json.message
+        Check 'UPDATE avisa cuando el tope lo trunco' ($r.json.truncated -eq $true -and $r.json.message -match 'tope') "truncated=$($r.json.truncated) $($r.json.message)"
     }
 
     # --- INSERT ---
@@ -207,6 +209,105 @@ try {
 
     $r = Exec "INSERT INTO Libro li VALUES li.inventado='x'"
     Check 'INSERT con un campo inexistente lista los que hay' ($r.status -eq 400 -and $r.json.error -match 'no tiene el campo') $r.raw
+
+    # --- INSERT sin alias: el campo va pelado, sin el "li." adelante (formato 4.2) ---
+    $r = Exec "INSERT INTO Libro VALUES titulo='Sin alias', precio=12345, genero='ENSAYO'"
+    Check 'INSERT sin alias (VALUES campo=valor) funciona' ($r.json.type -eq 'DML' -and $r.json.affectedRows -eq 1) $r.raw
+    $r = Exec "SELECT l.titulo, l.precio, l.genero FROM Libro l WHERE l.titulo = 'Sin alias'"
+    Check 'el INSERT sin alias convirtio y guardo los valores' `
+          ($r.json.rowCount -eq 1 -and $r.json.rows[0][1] -eq 12345 -and $r.json.rows[0][2] -eq 'ENSAYO') ($r.json.rows[0] -join '|')
+    $r = Exec "INSERT INTO Libro VALUES inventado='x'"
+    Check 'el INSERT sin alias tambien avisa del campo inexistente' ($r.status -eq 400 -and $r.json.error -match 'no tiene el campo') $r.raw
+
+    # --- INSERT estilo SQL clasico: (columnas) VALUES (valores), por posicion ---
+    $r = Exec "INSERT INTO Libro (titulo, fechaPublicacion, fechaAlta, genero, precio) VALUES ('Posicional', '1999-12-31', NOW, 'NOVELA', 4321)"
+    Check 'INSERT posicional (columnas) VALUES (valores) funciona' ($r.json.type -eq 'DML' -and $r.json.affectedRows -eq 1) $r.raw
+    $r = Exec "SELECT l.titulo, l.fechaPublicacion, l.genero, l.precio FROM Libro l WHERE l.titulo = 'Posicional'"
+    Check 'el INSERT posicional convierte los tipos por posicion' `
+          ($r.json.rowCount -eq 1 -and $r.json.rows[0][1] -eq '1999-12-31' -and $r.json.rows[0][2] -eq 'NOVELA' -and $r.json.rows[0][3] -eq 4321) ($r.json.rows[0] -join '|')
+
+    $r = Exec "INSERT INTO Libro (titulo, precio) VALUES ('Dos valores', 1, 2)"
+    Check 'INSERT posicional avisa si no coinciden columnas y valores' ($r.status -eq 400 -and $r.json.error -match '2 columna.*3 valor') $r.raw
+
+    # El multi-fila y el alias con columnas NO son gramatica de la consola, pero Hibernate los
+    # entiende como HQL y los ejecuta: por eso el parser devuelve null y sigue por ese camino.
+    # Ojo: ese camino es un bulk de HQL (sin @PrePersist ni validacion) y no conoce NOW.
+    $r = Exec "INSERT INTO Libro (titulo, precio) VALUES ('Multi A', 11), ('Multi B', 22)"
+    Check 'el multi-fila lo resuelve Hibernate por el camino HQL' ($r.json.type -eq 'DML' -and $r.json.affectedRows -eq 2) $r.raw
+    $r = Exec "SELECT count(l) FROM Libro l WHERE l.titulo LIKE 'Multi %'"
+    Check 'el multi-fila inserto las dos filas' ($r.json.rows[0][0] -eq 2) $r.raw
+
+    $r = Exec "INSERT INTO Libro li (titulo) VALUES ('Con alias y columnas')"
+    Check 'el INSERT con alias y columnas tambien lo resuelve Hibernate' ($r.json.type -eq 'DML' -and $r.json.affectedRows -eq 1) $r.raw
+
+    $r = Exec "INSERT INTO Libro (titulo, inventado) VALUES ('x', 1)"
+    Check 'INSERT posicional con una columna inexistente avisa' ($r.status -eq 400 -and $r.json.error -match 'no tiene el campo') $r.raw
+
+    $r = Exec "INSERT INTO Libro (titulo) VALUES ('Sin cerrar'"
+    Check 'INSERT posicional sin cerrar el parentesis avisa' ($r.status -eq 400 -and $r.json.error -match 'no cierra') $r.raw
+
+    # --- lote de INSERT separados por punto y coma (una sola transaccion) ---
+    $r = Exec "INSERT INTO Libro (titulo, precio) VALUES ('Lote 1', 1); INSERT INTO Libro VALUES titulo='Lote 2', precio=2; INSERT INTO Libro li VALUES li.titulo='Lote 3', li.precio=3"
+    Check 'el lote devuelve BATCH con las filas y las sentencias' `
+          ($r.json.type -eq 'BATCH' -and $r.json.affectedRows -eq 3 -and $r.json.statementCount -eq 3) $r.raw
+    $r = Exec "SELECT count(l) FROM Libro l WHERE l.titulo LIKE 'Lote %'"
+    Check 'el lote inserto las tres filas (los tres formatos adentro)' ($r.json.rows[0][0] -eq 3) $r.raw
+
+    $r = Exec "INSERT INTO Libro li VALUES li.titulo='Lote 4';; INSERT INTO Libro VALUES titulo='Lote 5';"
+    Check 'el lote tolera el ; final y las sentencias vacias' `
+          ($r.json.type -eq 'BATCH' -and $r.json.affectedRows -eq 2 -and $r.json.statementCount -eq 2) $r.raw
+
+    $r = Exec "INSERT INTO Libro (titulo) VALUES ('Atomico 1'); INSERT INTO Libro (precio) VALUES (1); INSERT INTO Libro (titulo) VALUES ('Atomico 3')"
+    Check 'un lote que falla en el medio devuelve 400' ($r.status -eq 400) $r.raw
+    Check 'el error del lote dice que sentencia fallo' ($r.json.error -match 'sentencia 2 de 3') $r.raw
+    Check 'el error del lote explica la causa de la base' ($r.json.cause -match 'null') $r.raw
+    $r = Exec "SELECT count(l) FROM Libro l WHERE l.titulo LIKE 'Atomico %'"
+    Check 'el lote que falla no dejo nada (una sola transaccion)' ($r.json.rows[0][0] -eq 0) $r.raw
+
+    $r = Exec "INSERT INTO Libro (titulo) VALUES ('Lote 6'); SELECT count(l) FROM Libro l"
+    Check 'un lote con algo que no es INSERT avisa la posicion' ($r.status -eq 400 -and $r.json.error -match 'sentencia 2 de 2 no es un INSERT') $r.raw
+    $r = Exec "SELECT count(l) FROM Libro l WHERE l.titulo = 'Lote 6'"
+    Check 'el lote rechazado no inserto nada' ($r.json.rows[0][0] -eq 0) $r.raw
+
+    # El ; dentro de un literal no parte la sentencia...
+    $r = Exec "INSERT INTO Libro li VALUES li.titulo='Con ; adentro', li.precio=9"
+    Check 'el ; dentro de un literal no parte la sentencia' ($r.json.type -eq 'DML' -and $r.json.affectedRows -eq 1) $r.raw
+    $r = Exec "SELECT l.titulo FROM Libro l WHERE l.titulo = 'Con ; adentro'"
+    Check 'el texto con ; adentro se guardo entero' ($r.json.rowCount -eq 1) $r.raw
+
+    # ...y el ; final de una sentencia sola ya no se cuela dentro del valor (era un bug silencioso).
+    $r = Exec "INSERT INTO Libro li VALUES li.titulo='Punto y coma final';"
+    Check 'una sentencia sola con ; final funciona' ($r.json.type -eq 'DML' -and $r.json.affectedRows -eq 1) $r.raw
+    $r = Exec "SELECT l.titulo FROM Libro l WHERE l.titulo LIKE 'Punto y coma final%'"
+    Check 'el ; final no quedo dentro del valor' ($r.json.rowCount -eq 1 -and $r.json.rows[0][0] -eq 'Punto y coma final') ($r.json.rows[0] -join '|')
+
+    # --- dry-run: cuenta sin commitear, y solo se aplica si se confirma ---
+    $r = Exec "SELECT e.salario FROM Empleado e WHERE e.nombre = 'Ana Gomez'"
+    $salarioAntes = $r.json.rows[0][0]
+
+    $r = Exec "UPDATE Empleado e SET e.salario = 999999 WHERE e.nombre = 'Ana Gomez'" $true
+    Check 'el dry-run de un UPDATE cuenta las filas' ($r.status -eq 200 -and $r.json.type -eq 'DML' -and $r.json.affectedRows -eq 1) $r.raw
+    $r = Exec "SELECT e.salario FROM Empleado e WHERE e.nombre = 'Ana Gomez'"
+    Check 'el dry-run NO cambio los datos (rollback)' ($r.json.rows[0][0] -eq $salarioAntes) "$($r.json.rows[0][0]) vs $salarioAntes"
+
+    $r = Exec "UPDATE Empleado e SET e.salario = 999999 WHERE e.nombre = 'Ana Gomez'"
+    Check 'confirmado (sin dry-run) el UPDATE se aplica' ($r.json.affectedRows -eq 1) $r.raw
+    $r = Exec "SELECT e.salario FROM Empleado e WHERE e.nombre = 'Ana Gomez'"
+    Check 'el UPDATE confirmado quedo en la base' ($r.json.rows[0][0] -eq 999999) $r.json.rows[0][0]
+
+    $r = Exec 'SELECT count(l) FROM Libro l'
+    $librosAntes = $r.json.rows[0][0]
+    $r = Exec 'DELETE FROM Libro l' $true
+    Check 'el dry-run de un DELETE cuenta todas las filas' ($r.status -eq 200 -and $r.json.affectedRows -eq $librosAntes) $r.raw
+    $r = Exec 'SELECT count(l) FROM Libro l'
+    Check 'el dry-run del DELETE no borro nada' ($r.json.rows[0][0] -eq $librosAntes) "$($r.json.rows[0][0]) vs $librosAntes"
+
+    # Si el dry-run dejara la transaccion abierta, la consola quedaria trabada: se comprueba que no.
+    $r = Exec 'SELECT count(l) FROM Libro l'
+    Check 'despues de un dry-run la consola sigue respondiendo' ($r.status -eq 200 -and $r.json.rows[0][0] -eq $librosAntes) $r.raw
+
+    $r = Exec 'DESC Libro'
+    Check 'despues de un dry-run las lecturas siguen bien' ($r.status -eq 200 -and $r.json.rowCount -ge 4) $r.status
 
     # --- UPDATE ---
     $r = Exec "UPDATE Libro li SET li.titulo='Las 1000 y dos noches', li.fechaModif=NOW WHERE li.id=$idHoy"
@@ -316,6 +417,25 @@ check('parrafo: recorta las lineas en blanco de los bordes', par('\n\nSELECT 1\n
 check('parrafo: linea en blanco al inicio ancla hacia abajo', par('\n\nSELECT 9', 0), 'SELECT 9');
 check('parrafo: un texto solo de blancos no tiene parrafo', par('   \n\n', 2).trim(), '');
 check('parrafo: con CRLF el de abajo no se mezcla', par('A\r\n\r\nB', 6), 'B');
+
+// --- el alert del INSERT (el texto va con escapes porque este archivo lo lee PowerShell como ANSI) ---
+check('insert: una fila', mensajeInsercion(1, 1), 'Se insert\u00f3 1 fila');
+check('insert: varias filas en una sentencia', mensajeInsercion(3, 1), 'Se insertaron 3 filas');
+check('insert: varias filas en varias sentencias', mensajeInsercion(5, 4), 'Se insertaron 5 filas en 4 sentencias');
+check('insert: sin el dato de sentencias asume una', mensajeInsercion(2), 'Se insertaron 2 filas');
+check('insert: cero filas', mensajeInsercion(0, 1), 'Se insertaron 0 filas');
+
+// --- la confirmacion antes de commitear (dry-run de UPDATE y DELETE) ---
+check('confirmar: un update', pideConfirmacion('UPDATE Libro li SET li.titulo=1'), true);
+check('confirmar: un update con espacios y minusculas', pideConfirmacion('  update Libro li SET li.titulo=1'), true);
+check('confirmar: un delete', pideConfirmacion('DELETE FROM Libro l'), true);
+check('confirmar: un insert no', pideConfirmacion('INSERT INTO Libro li VALUES li.titulo=1'), false);
+check('confirmar: un select no', pideConfirmacion('SELECT e.id FROM Empleado e'), false);
+check('confirmar: un desc no', pideConfirmacion('DESC Libro'), false);
+check('confirmar: un lote de insert no', pideConfirmacion('INSERT INTO Libro li VALUES li.titulo=1; INSERT INTO Libro li VALUES li.titulo=2'), false);
+check('mensaje: modificar una fila', mensajeConfirmacion('UPDATE x', 1, false), 'Se van a modificar 1 fila.\n\n\u00bfConfirm\u00e1s?');
+check('mensaje: borrar varias', mensajeConfirmacion('DELETE FROM Libro l', 4, false), 'Se van a borrar 4 filas.\n\n\u00bfConfirm\u00e1s?');
+check('mensaje: avisa si el tope trunco', mensajeConfirmacion('UPDATE x', 3, true), 'Se van a modificar 3 filas.\n\n\u00bfConfirm\u00e1s?\n\n(se alcanz\u00f3 el tope de filas: el resto NO se toca)');
 '@
             $archivo = Join-Path $env:TEMP 'hql-console-sel-test.js'
             Set-Content -Path $archivo -Value $js -Encoding UTF8
@@ -330,7 +450,23 @@ check('parrafo: con CRLF el de abajo no se mezcla', par('A\r\n\r\nB', 6), 'B');
         } else {
             Check 'seleccion y parrafos, en Node sobre la pagina servida' $false 'no encontre el bloque de funciones puras'
         }
+
+        # El JS vive en un text block de Java: una barra invertida mal puesta lo rompe sin que falle
+        # la compilacion. Esto lo caza sin abrir un navegador (paso dos veces durante el desarrollo).
+        $jsPagina = [regex]::Match($page.Content, '(?s)<script>(.*?)</script>').Groups[1].Value
+        $archivoPagina = Join-Path $env:TEMP 'hql-console-pagina.js'
+        Set-Content -Path $archivoPagina -Value $jsPagina -Encoding UTF8
+        $previo2 = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        $salidaCheck = & node --check $archivoPagina 2>&1
+        $codigoCheck = $LASTEXITCODE
+        $ErrorActionPreference = $previo2
+        Check 'el JS de la pagina parsea (node --check)' ($codigoCheck -eq 0) ($salidaCheck -join ' | ')
     }
+
+    # --- el alert del INSERT ---
+    Check 'la pagina avisa los INSERT con un alert' ($page.Content -match 'function mensajeInsercion' -and $page.Content -match 'alert\(mensajeInsercion') 'no esta el alert del INSERT'
+    Check 'el alert del INSERT mira que el texto empiece con insert' ($page.Content -match "indexOf\('insert'\) === 0") 'no se detecta el INSERT'
 
     # --- layout partido con divisor movible ---
     Check 'la pagina trae el layout partido' ($page.Content -match 'id="panel-editor"' -and $page.Content -match 'id="panel-resultado"') 'faltan los paneles'
@@ -347,10 +483,21 @@ check('parrafo: con CRLF el de abajo no se mezcla', par('A\r\n\r\nB', 6), 'B');
     # --- nada de cache: si el navegador guarda la pagina, los cambios no se ven ---
     Check 'la pagina se sirve sin cache' ("$($page.Headers['Cache-Control'])" -match 'no-store') "Cache-Control: $($page.Headers['Cache-Control'])"
 
+    # --- la confirmacion antes de commitear: lo que la pagina hace con el dry-run ---
+    Check 'la pagina hace el dry-run antes de confirmar' ($page.Content -match 'pedir\(hql, true\)' -and $page.Content -match 'pideConfirmacion\(hql\)') 'no esta el flujo de confirmacion'
+    Check 'la pagina manda dryRun al servidor' ($page.Content -match 'dryRun: dryRun') 'no manda dryRun'
+    Check 'la pagina confirma con el conteo' ($page.Content -match 'confirm\(mensajeConfirmacion') 'no usa confirm con el conteo'
+    Check 'la pagina avisa cuando se cancela' ($page.Content -match 'Cancelado: no se modific') 'no avisa la cancelacion'
+
     # --- tope de filas ---
     if ($MaxRows -lt 6) {
         $r = Exec 'SELECT e.id FROM Empleado e'
         Check 'el tope de filas trunca el resultado' ($r.json.truncated -eq $true -and $r.json.rowCount -eq $MaxRows) "truncated=$($r.json.truncated) rowCount=$($r.json.rowCount)"
+
+        # El dry-run de un UPDATE sin WHERE tambien avisa del tope: es justo el caso donde el numero
+        # evita que alguien toque toda la tabla creyendo que toca una fila.
+        $r = Exec 'UPDATE Libro li SET li.disponible=true' $true
+        Check 'el dry-run avisa cuando el tope trunco' ($r.json.truncated -eq $true -and $r.json.affectedRows -eq $MaxRows) "truncated=$($r.json.truncated) filas=$($r.json.affectedRows)"
     }
 
     # --- context-path ---

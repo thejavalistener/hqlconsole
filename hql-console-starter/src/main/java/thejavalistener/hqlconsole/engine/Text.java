@@ -151,6 +151,92 @@ public final class Text
 		return -1;
 	}
 
+	/**
+	 * Índice del paréntesis que cierra al que está en {@code openAt}, o -1 si no cierra nunca.
+	 * Entiende los paréntesis anidados y no se confunde con los que están dentro de un literal.
+	 */
+	public static int matchParenthesis(String text,int openAt)
+	{
+		if( openAt<0||openAt>=text.length()||text.charAt(openAt)!='(' )
+		{
+			return -1;
+		}
+		int depth=0;
+		boolean inString=false;
+		for(int i=openAt;i<text.length();i++)
+		{
+			char c=text.charAt(i);
+			if( inString )
+			{
+				if( c=='\'' )
+				{
+					inString=false;
+				}
+				continue;
+			}
+			if( c=='\'' )
+			{
+				inString=true;
+			}
+			else if( c=='(' )
+			{
+				depth++;
+			}
+			else if( c==')' )
+			{
+				depth--;
+				if( depth==0 )
+				{
+					return i;
+				}
+			}
+		}
+		return -1;
+	}
+
+	/**
+	 * Índice del último paréntesis que queda sin cerrar, o -1 si todos cierran. Sirve para distinguir
+	 * una sentencia de la consola mal escrita de una que directamente no es de la consola: si los
+	 * paréntesis no cierran, no puede ser HQL válido tampoco.
+	 */
+	public static int unclosedParenthesis(String text)
+	{
+		int depth=0;
+		int abierto=-1;
+		boolean inString=false;
+		for(int i=0;i<text.length();i++)
+		{
+			char c=text.charAt(i);
+			if( inString )
+			{
+				if( c=='\'' )
+				{
+					inString=false;
+				}
+				continue;
+			}
+			if( c=='\'' )
+			{
+				inString=true;
+			}
+			else if( c=='(' )
+			{
+				depth++;
+				abierto=i;
+			}
+			else if( c==')' )
+			{
+				depth--;
+				if( depth<=0 )
+				{
+					depth=0;
+					abierto=-1;
+				}
+			}
+		}
+		return depth>0?abierto:-1;
+	}
+
 	/** Separa por comas de primer nivel, respetando paréntesis y literales. */
 	public static List<String> splitTopLevel(String text)
 	{
@@ -189,6 +275,63 @@ public final class Text
 		}
 		parts.add(text.substring(start));
 		return parts;
+	}
+
+	/**
+	 * Parte el texto en sentencias por punto y coma de primer nivel, sin las vacías.
+	 *
+	 * <p>Un punto y coma dentro de un literal no parte nada ({@code 'a;b'} es un solo valor), y se
+	 * toleran los punto y coma de más: el del final y los de {@code ;;} simplemente no son una
+	 * sentencia. El corte va acá, antes de parsear, para que cualquier formato de sentencia funcione
+	 * igual adentro de un lote.</p>
+	 */
+	public static List<String> splitStatements(String text)
+	{
+		List<String> partes=new ArrayList<>();
+		int depth=0;
+		boolean inString=false;
+		int start=0;
+		for(int i=0;i<text.length();i++)
+		{
+			char c=text.charAt(i);
+			if( inString )
+			{
+				if( c=='\'' )
+				{
+					inString=false;
+				}
+				continue;
+			}
+			if( c=='\'' )
+			{
+				inString=true;
+			}
+			else if( c=='(' )
+			{
+				depth++;
+			}
+			else if( c==')' )
+			{
+				depth--;
+			}
+			else if( c==';'&&depth==0 )
+			{
+				partes.add(text.substring(start,i));
+				start=i+1;
+			}
+		}
+		partes.add(text.substring(start));
+
+		List<String> sentencias=new ArrayList<>();
+		for(String parte:partes)
+		{
+			String limpia=parte.trim();
+			if( !limpia.isEmpty() )
+			{
+				sentencias.add(limpia);
+			}
+		}
+		return sentencias;
 	}
 
 	/** Identificador a partir de {@code at}, admitiendo puntos (nombres de clase y de atributo). */

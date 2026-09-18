@@ -125,7 +125,7 @@ Si cambiás el `server.servlet.context-path`, la consola se mueve con él sin qu
 | `enabled` | `true` | Kill switch. `false` deja el jar completamente inerte. |
 | `path` | `/hqlconsole` | Ruta base. Tiene que empezar con `/`. |
 | `max-rows` | `500` | Tope de filas por consulta (0 = sin tope). Avisa cuando trunca. |
-| `allow-writes` | `true` | Habilita `update` / `delete`. |
+| `allow-writes` | `true` | Habilita las sentencias de escritura (`insert`, `update`, `delete`), incluidas las de un lote. |
 | `show-stacktrace` | `false` | Incluye el stacktrace completo en la respuesta de error. |
 
 Para dejarla apagada en producción alcanza con `hql-console.enabled=false`, o directamente no
@@ -142,6 +142,8 @@ poner el jar en ese entorno.
   es una o más líneas en blanco (o con sólo espacios).
 - **Ya no hay "ejecutar todo"**: sólo se ejecuta el textarea completo cuando todo el textarea es un
   único párrafo (o sea, cuando no hay ninguna línea en blanco en el medio).
+- La selección o el párrafo pueden tener **varias sentencias separadas por `;`**: se ejecutan juntas,
+  como un lote (ver [Varias filas de una vez](#varias-filas-de-una-vez)).
 
 Así podés dejar varias consultas separadas por líneas en blanco y correr la que quieras con sólo
 poner el cursor adentro:
@@ -222,22 +224,66 @@ from Libro l where l.precio > 10000  -- idem, filtrado
 
 Hibernate no las conoce. Son éstas:
 
-### `INSERT ... VALUES`
+### `INSERT`
+
+Tres formatos, los tres equivalentes:
 
 ```sql
+-- 1) con alias: el más explícito, y el que sugiere el mensaje de error
 INSERT INTO Libro li VALUES li.titulo='Las mil y una noches',
                             li.fechaPublicacion='1994-11-23',
                             li.fechaAlta=NOW
+
+-- 2) sin alias: el campo va pelado
+INSERT INTO Libro VALUES titulo='Las mil y una noches', fechaPublicacion='1994-11-23'
+
+-- 3) estilo SQL: primero las columnas, después los valores en el mismo orden
+INSERT INTO Libro (titulo, fechaPublicacion, fechaAlta)
+     VALUES ('Las mil y una noches', '1994-11-23', NOW)
 ```
 
+- En el (3) los nombres entre paréntesis son **atributos de la clase** (`fechaPublicacion`), no
+  columnas físicas, y la cantidad de columnas tiene que coincidir con la de valores. Como los valores
+  van **por posición**, el orden es toda la información: si te equivocás entre dos columnas del mismo
+  tipo, entra sin chistar. Cuando el INSERT es uno solo y lo escribís a mano, el (1) es más seguro
+  porque el nombre viaja pegado al valor.
 - El **id se genera solo** si es `@GeneratedValue`. La consola te lo devuelve en el mensaje:
   `Insertado Libro#7`.
 - Los **campos que no nombrás quedan en NULL**, o falla la sentencia con el error de la base si la
   columna no los acepta. No se inventan valores.
 - Una **relación se asigna por el id**: `li.autor=5` y `li.autor.id=5` son equivalentes y resuelven
   la FK sin que tengas el objeto.
-- El alias es opcional y la ruta puede ir con él o sin él: `li.titulo`, `titulo`, o directamente
-  `INSERT INTO Libro VALUES titulo='...'`.
+- Al terminar avisa con un **alert**: *"Se insertó 1 fila"*.
+
+### Varias filas de una vez
+
+Varias sentencias separadas por `;` se ejecutan como un **lote**: una sola transacción (o entran todas
+o no entra ninguna) y **un solo alert** al final.
+
+```sql
+INSERT INTO Libro (titulo, precio) VALUES ('Uno', 100);
+INSERT INTO Libro li VALUES li.titulo='Dos', li.precio=200;
+INSERT INTO Libro VALUES titulo='Tres', precio=300
+```
+
+→ *"Se insertaron 3 filas en 3 sentencias"*.
+
+- Los tres formatos se pueden **mezclar** en el mismo lote, y son la misma cosa para el motor.
+- Se tolera el `;` del final y los `;;` de más. Un `;` dentro de un texto (`titulo='a;b'`) **no**
+  corta la sentencia.
+- **Un lote es sólo de INSERT**: sirve para dar de alta datos de prueba. Si alguna sentencia no lo es,
+  el error dice cuál: *"La sentencia 2 de 4 no es un INSERT..."*.
+- Si una falla, el error dice **cuál** y no se inserta ninguna.
+- El lote es **atómico**: se valida entero antes de tocar la base y va en una sola transacción.
+- Con **una sola** sentencia se ejecuta como siempre (y el `;` final se descarta, en vez de quedar
+  dentro del último valor).
+- Ojo con las **conversiones**: adentro del lote, cada sentencia entra por el camino de la consola, así
+  que `NOW`, los enums y las relaciones por id funcionan igual que sueltas.
+
+> **El multi-fila de SQL no es gramática de la consola.** `VALUES (1,2), (3,4)` lo entiende Hibernate
+> como HQL y lo ejecuta igual, pero por otro camino: es un *bulk*, así que **no dispara
+> `@PrePersist`**, no valida y **no conoce `NOW`**. Para cargar datos, usá el lote con `;`.
+
 
 ### `UPDATE ... SET ... WHERE ...`
 
@@ -256,6 +302,34 @@ UPDATE Libro li SET li.titulo='Las 1000 y dos noches',
 - **Sin `WHERE` modifica todas las filas**, acotado por `max-rows`, y te avisa si truncó.
 - Si el `UPDATE` no entra en esta gramática se intenta como **bulk de HQL**, así que un update con
   join o con una función rara sigue funcionando.
+
+### La confirmación antes de commitear
+
+`UPDATE` y `DELETE` **no se ejecutan de una**: primero la consola los corre en seco (*dry-run*), cuenta
+cuántas filas tocaría y te pregunta.
+
+```
+Escribís:  DELETE FROM Empleado e WHERE e.salario < 100000
+Ctrl+Enter
+   → la consola lo ejecuta, cuenta 4 filas y tira todo atrás (rollback)
+   → "Se van a borrar 4 filas. ¿Confirmás?"    [Aceptar] [Cancelar]
+   → si aceptás, recién ahí se commitea
+```
+
+El número es la alarma: si esperabas borrar **una** fila y el aviso dice 4 porque te comiste el
+`WHERE`, cancelás y te salvaste. Si el tope de filas (`max-rows`) truncó el `UPDATE`, el aviso también
+lo dice.
+
+- **Es automático**: no hay que activar nada. La página lo hace sola con `UPDATE` y `DELETE`. Los
+  `INSERT` sólo avisan al terminar, porque ahí no hay nada que confirmar.
+- **No queda nada colgado**: el dry-run termina en `rollback` y cierra su transacción, así que
+  mientras el diálogo está en pantalla no hay filas bloqueadas ni conexiones tomadas. Si cerrás la
+  pestaña en vez de contestar, no hay nada que limpiar del lado del servidor.
+- **El número es exacto**, no una estimación: sale de haber ejecutado la sentencia de verdad.
+- **La contra, que conviene saber**: la sentencia corre dos veces (una descartada y una de verdad).
+  Los `@PreUpdate` / `@PreRemove` que hagan algo **por fuera** de la transacción —mandar un mail,
+  escribir una auditoría en otra conexión— lo hacen dos veces.
+- Con `allow-writes=false` no hay dry-run que valga: la sentencia se rechaza antes de ejecutarse.
 
 ### `DESC <Entidad>`
 
@@ -407,8 +481,8 @@ Verificado end-to-end con `verify-demo.ps1`, que compila, levanta el fat jar del
 comprobaciones contra una H2 en memoria (Spring Boot 3.2.5, Hibernate 6.4.4, Java 21):
 
 ```
-.\verify-demo.ps1                                  # 86 PASS / 0 FAIL
-.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 89 PASS / 0 FAIL
+.\verify-demo.ps1                                  # 125 PASS / 0 FAIL
+.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 129 PASS / 0 FAIL
 ```
 
 Cubre: descubrimiento de la auto-configuración por el `.imports` del jar, la página servida desde
@@ -417,10 +491,15 @@ aplanado y titulado con los atributos de la clase (y que con `SELECT` o con un j
 **no** se aplane), asociaciones perezosas, `NULL`, agregados, resultados vacíos, HQL
 inválido, el tope de filas y el `context-path` (incluido que la ruta sin context-path dé 404). De
 las sentencias propias: las 4 columnas de `DESC` con el tipo SQL real y el orden de declaración,
-`DESC` sin argumentos, `INSERT` con conversión de fecha, `NOW` a `DATE` y a `TIMESTAMP`, enum,
-relación por id, campos omitidos en NULL y fallo por `NOT NULL`, y `UPDATE` que sólo toca el SET,
-con `NOW`, con `WHERE` compuesto, sin alias, sin `WHERE` (y el aviso de truncado), más los errores
-de entidad, atributo y alias mal capitalizados, y el fallback de `INSERT ... SELECT` a HQL.
+`DESC` sin argumentos, los **tres formatos de `INSERT`** (con alias, sin alias y posicional) con la
+conversión de fecha, `NOW` a `DATE` y a `TIMESTAMP`, enum, relación por id, campos omitidos en NULL,
+fallo por `NOT NULL`, columna inexistente, columnas y valores que no coinciden, paréntesis sin
+cerrar, los **lotes** con `;` (filas y sentencias, formatos mezclados, `;` final y `;;`, `;` dentro
+de un literal, atomicidad comprobada, y el rechazo de lo que no es INSERT), el **dry-run** de
+`UPDATE` y `DELETE` (que cuenta bien, que **no** cambia los datos, que al confirmar sí los cambia, y
+que después la consola sigue respondiendo), y `UPDATE` que sólo toca el SET, con `NOW`, con `WHERE`
+compuesto, sin alias, sin `WHERE` (y el aviso de truncado), más los errores de entidad, atributo y
+alias mal capitalizados, y el fallback de `INSERT ... SELECT` a HQL.
 
 Las funciones puras del ejecutar se verifican de verdad: el script extrae el bloque marcado en el
 HTML **que sirve el jar** y lo corre en Node, con los casos de la selección (sin selección, con
@@ -461,7 +540,7 @@ hql-console-starter/            el jar que se distribuye (java-library, ~20 KB, 
     HqlConsoleProperties          hql-console.*
     HqlConsoleBanner              el aviso en el log al arrancar (sólo Environment, nunca clases de Boot)
   engine/
-    HqlQueryRunner                despacho, transacción, aplanado de filas, mapeo de celdas, headers
+    HqlQueryRunner                despacho, transacción, lotes, aplanado de filas, mapeo de celdas, headers
     Statement + StatementParser   las sentencias propias de la consola (sólo sintaxis)
     AttributeBinder               ruta -> tipo destino -> valor, y la asignación por reflection
     EntityDescriber               DESC (metamodelo + metadata real de la base)

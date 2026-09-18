@@ -242,6 +242,30 @@ public final class HqlConsolePage
 
 		  return { inicio: lineas[primero].inicio, fin: lineas[ultimo].fin };
 		}
+
+		// El texto del alert de un INSERT. Cuando hubo varias sentencias se aclara en cuántas fueron,
+		// que es lo que permite ver de un vistazo que ninguna se cortó mal al partir por punto y coma.
+		function mensajeInsercion(filas, sentencias) {
+		  const cuantas = (sentencias === undefined || sentencias === null) ? 1 : sentencias;
+		  const encabezado = (filas === 1 ? 'Se insertó 1 fila' : 'Se insertaron ' + filas + ' filas');
+		  return cuantas > 1 ? (encabezado + ' en ' + cuantas + ' sentencias') : encabezado;
+		}
+
+		// UPDATE y DELETE se confirman antes de commitear; el resto se ejecuta de una.
+		function pideConfirmacion(hql) {
+		  const t = hql.trim().toLowerCase();
+		  return t.indexOf('update') === 0 || t.indexOf('delete') === 0;
+		}
+
+		// El texto del confirm(). El número es la alarma: si esperabas 1 fila y dice 4, cancelás.
+		// (Las barras invertidas van dobles por el text block de Java.)
+		function mensajeConfirmacion(hql, filas, truncado) {
+		  const accion = (hql.trim().toLowerCase().indexOf('delete') === 0) ? 'borrar' : 'modificar';
+		  const cuantas = (filas === 1) ? '1 fila' : (filas + ' filas');
+		  let texto = 'Se van a ' + accion + ' ' + cuantas + '.\\n\\n¿Confirmás?';
+		  if (truncado) { texto += '\\n\\n(se alcanzó el tope de filas: el resto NO se toca)'; }
+		  return texto;
+		}
 		// FIN funciones puras
 
 		// Qué se manda al servidor: la selección si tiene texto; si no, el párrafo del cursor. Sólo
@@ -360,28 +384,54 @@ public final class HqlConsolePage
 		    mostrarError({ error: 'No hay nada que ejecutar: ni la selección ni el párrafo del cursor tienen texto.' });
 		    return;
 		  }
+		  // Se decide acá si hay que avisar al terminar, sin depender de que el backend lo diga: lo
+		  // único que importa es qué se pidió ejecutar.
+		  const esInsercion = hql.toLowerCase().indexOf('insert') === 0;
+		  const confirmar = pideConfirmacion(hql);
 		  btn.disabled = true;
 		  cajaError.style.display = 'none';
-		  estado.textContent = 'Ejecutando ' + rango.etiqueta + '...';
 		  try {
-		    const respuesta = await fetch(BASE + '/api/execute', {
-		      method: 'POST',
-		      headers: { 'Content-Type': 'application/json' },
-		      body: JSON.stringify({ hql: hql })
-		    });
-		    let datos;
-		    try {
-		      datos = await respuesta.json();
-		    } catch (e) {
-		      datos = { error: 'El servidor respondio HTTP ' + respuesta.status + ' sin JSON.' };
+		    // En UPDATE y DELETE, primero un dry-run: el servidor ejecuta, cuenta y tira atrás. Con
+		    // ese número se pregunta; recién si se confirma se manda la sentencia de verdad.
+		    if (confirmar) {
+		      estado.textContent = 'Contando ' + rango.etiqueta + ' (todavía sin tocar nada)...';
+		      const prueba = await pedir(hql, true);
+		      if (!prueba.ok) { mostrarError(prueba.datos); return; }
+		      if (!confirm(mensajeConfirmacion(hql, prueba.datos.affectedRows, prueba.datos.truncated))) {
+		        estado.textContent = 'Cancelado: no se modificó nada.';
+		        return;
+		      }
 		    }
-		    if (!respuesta.ok) { mostrarError(datos); return; }
-		    mostrarResultado(datos);
+		    estado.textContent = 'Ejecutando ' + rango.etiqueta + '...';
+		    const respuesta = await pedir(hql, false);
+		    if (!respuesta.ok) { mostrarError(respuesta.datos); return; }
+		    mostrarResultado(respuesta.datos);
+		    // DML es una escritura sola; BATCH, varias en una transacción. Las dos avisan si son INSERT.
+		    if (esInsercion && (respuesta.datos.type === 'DML' || respuesta.datos.type === 'BATCH')) {
+		      alert(mensajeInsercion(respuesta.datos.affectedRows, respuesta.datos.statementCount));
+		    }
 		  } catch (e) {
 		    mostrarError({ error: 'No se pudo contactar la consola: ' + e });
 		  } finally {
 		    btn.disabled = false;
 		  }
+		}
+
+		// Un POST al endpoint. Devuelve {ok, datos}: ok es si el HTTP fue 2xx, y datos el JSON (o un
+		// error armado a mano si el servidor no mandó JSON).
+		async function pedir(hql, dryRun) {
+		  const respuesta = await fetch(BASE + '/api/execute', {
+		    method: 'POST',
+		    headers: { 'Content-Type': 'application/json' },
+		    body: JSON.stringify({ hql: hql, dryRun: dryRun })
+		  });
+		  let datos;
+		  try {
+		    datos = await respuesta.json();
+		  } catch (e) {
+		    datos = { error: 'El servidor respondio HTTP ' + respuesta.status + ' sin JSON.' };
+		  }
+		  return { ok: respuesta.ok, datos: datos };
 		}
 
 		function mostrarError(datos) {
@@ -400,7 +450,7 @@ public final class HqlConsolePage
 		  crudo.hidden = false;
 		  vacio.hidden = true;
 
-		  if (datos.type === 'DML') {
+		  if (datos.type === 'DML' || datos.type === 'BATCH') {
 		    cajaTabla.hidden = true;
 		    pie.textContent = '';
 		    const detalle = datos.message ? datos.message : (datos.affectedRows + ' fila(s) afectada(s)');

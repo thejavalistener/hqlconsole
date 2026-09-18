@@ -3,6 +3,7 @@ package thejavalistener.hqlconsole.web;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -19,6 +20,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import thejavalistener.hqlconsole.autoconfigure.HqlConsoleProperties;
 import thejavalistener.hqlconsole.engine.HqlQueryRunner;
+import thejavalistener.hqlconsole.engine.Text;
 
 /**
  * Interfaz HTTP de la consola: la página en {@code hql-console.path} y el endpoint que ejecuta
@@ -59,7 +61,13 @@ public class HqlConsoleController
 		return HqlConsolePage.html(base,properties.getMaxRows(),properties.isAllowWrites());
 	}
 
-	/** Ejecuta una sentencia HQL contra el EntityManager vivo. */
+	/**
+	 * Ejecuta HQL contra el EntityManager vivo.
+	 *
+	 * <p>El texto se parte por punto y coma <b>antes</b> de parsear: una sola sentencia se comporta
+	 * como siempre (y de paso se le saca el {@code ;} final, que si no termina dentro del último
+	 * valor), y varias se ejecutan como lote de INSERT en una única transacción.</p>
+	 */
 	@PostMapping(path="${hql-console.path:/hqlconsole}/api/execute",
 	             consumes=MediaType.APPLICATION_JSON_VALUE,produces=MediaType.APPLICATION_JSON_VALUE)
 	@ResponseBody
@@ -71,6 +79,14 @@ public class HqlConsoleController
 			return ResponseEntity.badRequest().body(Map.of("error","Falta el campo 'hql'."));
 		}
 
+		List<String> statements=Text.splitStatements(hql);
+		if( statements.isEmpty() )
+		{
+			return ResponseEntity.badRequest().body(Map.of("error","No hay ninguna sentencia para ejecutar."));
+		}
+
+		// allow-writes se mira ANTES de cualquier cosa: con la consola en solo-lectura, un dry-run
+		// tampoco ejecuta (no tiene sentido correr y tirar atrás una escritura prohibida).
 		if( _isWrite(hql)&&!properties.isAllowWrites() )
 		{
 			return ResponseEntity.status(HttpStatus.FORBIDDEN)
@@ -78,9 +94,17 @@ public class HqlConsoleController
 							     "statement",hql.trim()));
 		}
 
+		// El dry-run sólo tiene sentido en UPDATE y DELETE (en un INSERT no hay nada que confirmar) y
+		// en una sentencia sola: un lote es siempre de INSERT.
+		boolean dryRun=Boolean.TRUE.equals(body.get("dryRun"));
+
 		try
 		{
-			return ResponseEntity.ok(runner.execute(hql));
+			// Con una sola sentencia se usa el texto ya recortado (sin el ';' del final); con más de
+			// una, el lote.
+			return ResponseEntity.ok(statements.size()==1
+					?runner.execute(statements.get(0),dryRun)
+					:runner.executeBatch(statements));
 		}
 		catch(Exception e)
 		{

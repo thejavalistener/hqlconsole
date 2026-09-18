@@ -65,6 +65,23 @@ public class HqlQueryRunner
 
 	public HqlResult execute(String hql)
 	{
+		return execute(hql,false);
+	}
+
+	/**
+	 * Igual que {@link #execute(String)}, pero con {@code dryRun} el trabajo se hace y después se
+	 * tira atrás: la transacción termina en {@code rollback} en vez de {@code commit}.
+	 *
+	 * <p>Es lo que permite contar cuántas filas va a tocar un {@code UPDATE} o un {@code DELETE} sin
+	 * tocar nada, para que la página lo muestre antes de confirmar. El trabajo es exactamente el
+	 * mismo, así que el número es el real y no una estimación.</p>
+	 *
+	 * <p>Lo que hay que saber: la sentencia se ejecuta dos veces (una descartada y una de verdad), y
+	 * los efectos por fuera de la transacción —un listener que manda un mail, un trigger que escribe
+	 * en otra conexión— pasan dos veces.</p>
+	 */
+	public HqlResult execute(String hql,boolean dryRun)
+	{
 		EntityManagerFactory emf=_entityManagerFactory();
 		String statement=hql.trim();
 		String first=Text.firstWord(statement);
@@ -76,11 +93,11 @@ public class HqlQueryRunner
 		}
 		if( "insert".equalsIgnoreCase(first)||"update".equalsIgnoreCase(first) )
 		{
-			return _runConsoleWriteOrHql(emf,statement,t0);
+			return _runConsoleWriteOrHql(emf,statement,t0,dryRun);
 		}
 		if( "delete".equalsIgnoreCase(first) )
 		{
-			return _runBulkWrite(emf,statement,t0);
+			return _runBulkWrite(emf,statement,t0,dryRun);
 		}
 		return _runQuery(emf,statement,t0);
 	}
@@ -92,7 +109,7 @@ public class HqlQueryRunner
 	 * entra en esa gramática, cae al bulk de HQL de siempre: un {@code insert into ... select} o un
 	 * update con join siguen funcionando.
 	 */
-	private HqlResult _runConsoleWriteOrHql(EntityManagerFactory emf,String statement,long t0)
+	private HqlResult _runConsoleWriteOrHql(EntityManagerFactory emf,String statement,long t0,boolean dryRun)
 	{
 		Statement parsed=null;
 		IllegalArgumentException parseFailure=null;
@@ -110,7 +127,7 @@ public class HqlQueryRunner
 			EntityManager em=emf.createEntityManager();
 			try
 			{
-				return _runConsoleWrite(em,emf,parsed,t0);
+				return _runConsoleWrite(em,emf,parsed,t0,dryRun);
 			}
 			finally
 			{
@@ -120,7 +137,7 @@ public class HqlQueryRunner
 
 		try
 		{
-			return _runBulkWrite(emf,statement,t0);
+			return _runBulkWrite(emf,statement,t0,dryRun);
 		}
 		catch(RuntimeException hqlFailure)
 		{
@@ -133,7 +150,7 @@ public class HqlQueryRunner
 		}
 	}
 
-	private HqlResult _runConsoleWrite(EntityManager em,EntityManagerFactory emf,Statement parsed,long t0)
+	private HqlResult _runConsoleWrite(EntityManager em,EntityManagerFactory emf,Statement parsed,long t0,boolean dryRun)
 	{
 		EntityType<?> entityType=_entityType(emf,parsed.entity());
 		EntityTransaction tx=_begin(em);
@@ -142,13 +159,31 @@ public class HqlQueryRunner
 			HqlResult result=parsed.kind()==Statement.Kind.INSERT
 					?_insert(em,emf,entityType,parsed,t0)
 					:_update(em,entityType,parsed,t0);
-			tx.commit();
+			_cerrar(tx,dryRun);
 			return result;
 		}
 		catch(RuntimeException e)
 		{
 			_rollbackQuietly(tx);
 			throw e;
+		}
+	}
+
+	/**
+	 * Termina la transacción: commit, o rollback si es un dry-run.
+	 *
+	 * <p>Es lo único que cambia entre ejecutar de verdad y contar sin tocar nada, y por eso el
+	 * dry-run usa el mismo camino de código que la ejecución real.</p>
+	 */
+	private void _cerrar(EntityTransaction tx,boolean dryRun)
+	{
+		if( dryRun )
+		{
+			tx.rollback();
+		}
+		else
+		{
+			tx.commit();
 		}
 	}
 
@@ -212,7 +247,7 @@ public class HqlQueryRunner
 		em.flush();
 		String message=targets.size()+" fila(s) actualizada(s)"
 				+(truncated?" — se alcanzó el tope de "+maxRows+" filas y NO se tocó el resto":"");
-		return HqlResult.dml("UPDATE",targets.size(),_millis(t0),message);
+		return HqlResult.dml("UPDATE",targets.size(),truncated,_millis(t0),message);
 	}
 
 	/** {@code DESC} o {@code DESC <Entidad>} */
@@ -233,7 +268,7 @@ public class HqlQueryRunner
 	// ==================== HQL ====================
 
 	/** Bulk de HQL: un solo UPDATE/DELETE/INSERT ... SELECT, sin pasar por el persistence context. */
-	private HqlResult _runBulkWrite(EntityManagerFactory emf,String statement,long t0)
+	private HqlResult _runBulkWrite(EntityManagerFactory emf,String statement,long t0,boolean dryRun)
 	{
 		EntityManager em=emf.createEntityManager();
 		try
@@ -242,7 +277,7 @@ public class HqlQueryRunner
 			try
 			{
 				int affected=em.createQuery(statement).executeUpdate();
-				tx.commit();
+				_cerrar(tx,dryRun);
 				return HqlResult.dml(Text.firstWord(statement).toUpperCase(Locale.ROOT),affected,_millis(t0),
 						affected+" fila(s) afectada(s)");
 			}
@@ -337,6 +372,91 @@ public class HqlQueryRunner
 		{
 			em.close();
 		}
+	}
+
+	// ==================== lote de sentencias ====================
+
+	/**
+	 * Ejecuta varias sentencias de la consola en <b>una sola transacción</b>: o entran todas o no
+	 * entra ninguna. Es para dar de alta datos de prueba de un saque.
+	 *
+	 * <p>Sólo INSERT. Cada sentencia entra por el mismo camino que una suelta, así que los tres
+	 * formatos de INSERT funcionan igual adentro del lote y se conservan las conversiones
+	 * ({@code NOW}, enums, relaciones por id). Lo que no entra en la gramática de la consola se
+	 * rechaza con la posición, en vez de mandarlo a Hibernate: un bulk de HQL se maneja su propia
+	 * transacción y rompería la promesa de "todo o nada".</p>
+	 */
+	public HqlResult executeBatch(List<String> statements)
+	{
+		EntityManagerFactory emf=_entityManagerFactory();
+		long t0=System.nanoTime();
+
+		List<Statement> parsed=_parseBatch(statements);
+
+		EntityManager em=emf.createEntityManager();
+		try
+		{
+			EntityTransaction tx=_begin(em);
+			try
+			{
+				int filas=0;
+				for(int i=0;i<parsed.size();i++)
+				{
+					Statement statement=parsed.get(i);
+					try
+					{
+						EntityType<?> entityType=_entityType(emf,statement.entity());
+						filas+=_insert(em,emf,entityType,statement,t0).affectedRows();
+					}
+					catch(RuntimeException e)
+					{
+						// En un lote de 50 sentencias, saber cuál falló es la mitad del diagnóstico.
+						throw new IllegalArgumentException("La sentencia "+(i+1)+" de "+parsed.size()
+								+" falló, así que no se insertó ninguna: "+e.getMessage(),e);
+					}
+				}
+				tx.commit();
+				return HqlResult.batch(filas,parsed.size(),_millis(t0),
+						filas+" fila(s) insertada(s) en "+parsed.size()+" sentencia(s)");
+			}
+			catch(RuntimeException e)
+			{
+				_rollbackQuietly(tx);
+				throw e;
+			}
+		}
+		finally
+		{
+			em.close();
+		}
+	}
+
+	/** Valida el lote entero antes de tocar la base: si una sentencia no sirve, no se ejecuta nada. */
+	private List<Statement> _parseBatch(List<String> statements)
+	{
+		List<Statement> parsed=new ArrayList<>(statements.size());
+		for(int i=0;i<statements.size();i++)
+		{
+			String texto=statements.get(i);
+			Statement statement;
+			try
+			{
+				statement=StatementParser.parse(texto);
+			}
+			catch(IllegalArgumentException e)
+			{
+				throw new IllegalArgumentException("La sentencia "+(i+1)+" de "+statements.size()
+						+" no se entiende: "+e.getMessage(),e);
+			}
+			if( statement==null||statement.kind()!=Statement.Kind.INSERT )
+			{
+				throw new IllegalArgumentException("La sentencia "+(i+1)+" de "+statements.size()
+						+" no es un INSERT: un lote sólo sirve para dar de alta datos (empieza con '"
+						+Text.firstWord(texto)+"')");
+			}
+			parsed.add(statement);
+		}
+		return parsed;
 	}
 
 	// ==================== "from Entidad" aplanado ====================

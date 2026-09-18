@@ -62,20 +62,136 @@ public final class StatementParser
 		int values=Text.indexOfKeyword(text,"values");
 		if( values<0 )
 		{
-			// No es la gramática de la consola: puede ser el "insert into ... select" de HQL.
+			// No es la gramática de la consola: puede ser el "insert into ... select" de HQL. Pero un
+			// paréntesis sin cerrar no puede ser HQL válido tampoco, así que en vez de mandarlo a
+			// Hibernate (que contesta con un error de sintaxis suyo, que no dice nada de la consola)
+			// se avisa acá.
+			int abierto=Text.unclosedParenthesis(text);
+			if( abierto>=0 )
+			{
+				throw new IllegalArgumentException("INSERT: hay un paréntesis abierto (posición "+(abierto+1)
+						+" de la sentencia) que no cierra");
+			}
 			return null;
 		}
 
 		int into=Text.indexOfKeyword(text,"into",6);
 		String head=text.substring(into<0?6:into+4,values).trim();
+		String afterValues=text.substring(values+6);
+
+		// La forma clásica se reconoce por el paréntesis de las columnas: INSERT INTO X (a, b)
+		// VALUES (1, 2). Sin ese paréntesis, cada valor lleva el nombre de su campo.
+		int parentesis=head.indexOf('(');
+		if( parentesis>=0 )
+		{
+			return _parseInsertPositional(head,parentesis,afterValues);
+		}
+
 		String[] parts=_entityAndAlias(head,"INSERT INTO <Entidad> [alias] VALUES ...");
 
-		List<Statement.Assignment> assignments=_parseAssignments(text.substring(values+6));
+		List<Statement.Assignment> assignments=_parseAssignments(afterValues);
 		if( assignments.isEmpty() )
 		{
 			throw new IllegalArgumentException("INSERT: VALUES no tiene ninguna asignación (esperaba campo=valor)");
 		}
 		return new Statement(Statement.Kind.INSERT,parts[0],parts[1],assignments,null);
+	}
+
+	/**
+	 * La forma clásica: {@code INSERT INTO Libro (titulo, fechaAlta) VALUES ('Un titulo', NOW)}.
+	 *
+	 * <p>Los nombres entre paréntesis son <b>atributos de la clase</b>, no columnas físicas: es lo
+	 * mismo que se escribe en las otras dos formas, y lo que muestra la columna {@code ATRIBUTO} de
+	 * {@code DESC}.</p>
+	 *
+	 * <p>Los valores van por posición, así que la cantidad tiene que coincidir con la de columnas.
+	 * El multi-fila de SQL ({@code VALUES (...), (...)}) no está soportado y el error lo dice, en
+	 * vez de intentar adivinar.</p>
+	 */
+	private static Statement _parseInsertPositional(String head,int parentesis,String afterValues)
+	{
+		String entity=head.substring(0,parentesis).trim();
+		if( entity.isEmpty() )
+		{
+			throw new IllegalArgumentException("INSERT: falta la entidad antes de la lista de columnas");
+		}
+		if( entity.split("\\s+").length>1 )
+		{
+			// Con alias: HQL acepta "insert into X x (a) values (1)" y lo resuelve Hibernate. No es
+			// gramática de la consola, así que se devuelve null y sigue por el camino de HQL.
+			return null;
+		}
+
+		int cierra=Text.matchParenthesis(head,parentesis);
+		if( cierra<0 )
+		{
+			throw new IllegalArgumentException("INSERT: la lista de columnas no cierra su paréntesis");
+		}
+		String sobraColumnas=head.substring(cierra+1).trim();
+		if( !sobraColumnas.isEmpty() )
+		{
+			throw new IllegalArgumentException("No entiendo '"+sobraColumnas+"' después de la lista de columnas");
+		}
+
+		List<String> columnas=_columnNames(Text.splitTopLevel(head.substring(parentesis+1,cierra)));
+
+		String valores=afterValues.trim();
+		if( valores.isEmpty()||valores.charAt(0)!='(' )
+		{
+			throw new IllegalArgumentException("INSERT: después de VALUES esperaba la lista de valores entre paréntesis");
+		}
+		int cierraValores=Text.matchParenthesis(valores,0);
+		if( cierraValores<0 )
+		{
+			throw new IllegalArgumentException("INSERT: la lista de valores no cierra su paréntesis");
+		}
+		String sobraValores=valores.substring(cierraValores+1).trim();
+		if( !sobraValores.isEmpty() )
+		{
+			// Varias filas en un VALUES: "(...), (...)". Hibernate entiende ese insert como HQL y lo
+			// ejecuta, así que se devuelve null para que siga por ahí en vez de rechazarlo acá. Ojo:
+			// ese camino es un bulk de HQL, sin @PrePersist ni validación, y no conoce NOW.
+			return null;
+		}
+
+		List<String> literales=Text.splitTopLevel(valores.substring(1,cierraValores));
+		if( columnas.size()!=literales.size() )
+		{
+			throw new IllegalArgumentException("INSERT: hay "+columnas.size()+" columna(s) y "+literales.size()
+					+" valor(es); tiene que ser la misma cantidad");
+		}
+
+		List<Statement.Assignment> assignments=new ArrayList<>();
+		for(int i=0;i<columnas.size();i++)
+		{
+			String literal=literales.get(i).trim();
+			if( literal.isEmpty() )
+			{
+				throw new IllegalArgumentException("INSERT: el valor "+(i+1)+" de la lista está vacío");
+			}
+			assignments.add(new Statement.Assignment(columnas.get(i),literal));
+		}
+		return new Statement(Statement.Kind.INSERT,entity,null,assignments,null);
+	}
+
+	/** Los nombres de la lista de columnas, recortados y sin permitir cosas que no son un nombre. */
+	private static List<String> _columnNames(List<String> partes)
+	{
+		List<String> nombres=new ArrayList<>();
+		for(String parte:partes)
+		{
+			String nombre=parte.trim();
+			if( nombre.isEmpty() )
+			{
+				throw new IllegalArgumentException("INSERT: la lista de columnas tiene un nombre vacío");
+			}
+			if( nombre.indexOf(' ')>=0||nombre.indexOf('\t')>=0 )
+			{
+				throw new IllegalArgumentException("La columna '"+nombre+"' no es un nombre válido");
+			}
+			nombres.add(nombre);
+		}
+		return nombres;
 	}
 
 	// ==================== UPDATE ====================
