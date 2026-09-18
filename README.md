@@ -412,8 +412,12 @@ escribirlo:
   no `libros`.
 - Es una **lectura**: funciona aunque la consola esté en `allow-writes=false`, y no puede cambiar
   nada. Si el detalle falla, el error aparece **abajo** y la lista de arriba queda intacta.
-- Cualquier otro resultado (un `SELECT`, un `INSERT`, un error) **cierra** el detalle: toda
-  ejecución nueva arranca de cero, para que no quede abajo el detalle de la sentencia anterior.
+- **Cada sentencia nueva resetea todo el panel derecho**: si estaba partido, se cierra el detalle, y
+  se borra lo que hubiera quedado de la ejecución anterior (la grilla, el detalle, el título y el
+  JSON crudo). Así lo que ves siempre es el resultado de la última sentencia, nunca una mezcla. El
+  reset también corre cuando la sentencia falla. Lo único que **no** borra es una confirmación
+  cancelada: si cancelás un `DELETE`, el resultado que estabas mirando queda donde estaba, porque no
+  se ejecutó nada.
 
 **Y desde el detalle se navegan las relaciones.** Los atributos que apuntan a otra entidad
 (`@ManyToOne`) salen en la grilla con la entidad destino en la columna `TIPO JAVA`, y esa fila
@@ -547,8 +551,8 @@ Verificado end-to-end con `verify-demo.ps1`, que compila, levanta el fat jar del
 comprobaciones contra una H2 en memoria (Spring Boot 3.2.5, Hibernate 6.4.4, Java 21):
 
 ```
-.\verify-demo.ps1                                  # 141 PASS / 0 FAIL
-.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 145 PASS / 0 FAIL
+.\verify-demo.ps1                                  # 144 PASS / 0 FAIL
+.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 148 PASS / 0 FAIL
 ```
 
 Cubre: descubrimiento de la auto-configuración por el `.imports` del jar, la página servida desde
@@ -581,6 +585,13 @@ relaciones**: que toda ejecución nueva cierre el panel de abajo, que el `DESC` 
 los atributos clickeables por la columna `TIPO JAVA`, que la lista de entidades se pida sola si no se
 tiene, que el panel de abajo también encadene, y que la fila elegida se marque y se desmarque.
 **El clic y el layout en sí no los ve ningún test**: eso hay que mirarlo en el navegador.
+
+Del **reset del panel derecho** se comprueba que corra antes de mostrar cada resultado, que cierre el
+detalle y borre lo anterior, que también corra cuando la sentencia falla, y que el CSS respete el
+atributo `hidden`. Ese último es un bug que apareció al usarlo: un panel con `display:flex` en su
+propia regla de CSS se quedaba **visible** aunque el JS le pusiera `hidden`, porque el `id` pesa más
+en la cascada que la regla del navegador. Ahora `[hidden] { display:none !important }` lo garantiza
+para cualquier panel de la página.
 
 Las funciones puras del ejecutar se verifican de verdad: el script extrae el bloque marcado en el
 HTML **que sirve el jar** y lo corre en Node, con los casos de la selección (sin selección, con

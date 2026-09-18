@@ -520,7 +520,12 @@ check('desc de entidad: una palabra que empieza igual no', esDescDeUnaEntidad('d
     Check 'otro resultado cierra el detalle' ($page.Content -match 'cerrarDetalle\(\)') 'no se cierra el detalle'
 
     # --- navegar las relaciones @ManyToOne desde el detalle ---
-    Check 'toda ejecucion nueva cierra el detalle de abajo' ($page.Content -match '(?s)cerrarDetalle\(\);(.*?)hacerListaClickeable') 'no se cierra el detalle antes de rearmar la grilla'
+    Check 'cada sentencia resetea el panel derecho antes de mostrar' ($page.Content -match '(?s)resetPanelDerecho\(\);\s*const cabeceras = mostrarResultado') 'no se resetea el panel derecho'
+    Check 'el reset cierra el detalle y borra lo anterior' ($page.Content -match '(?s)function resetPanelDerecho\(\)(.*?)crudoPre\.textContent' -and $page.Content -match 'tablaDetalle\.textContent = ' -and $page.Content -match 'cajaTabla\.hidden = true') 'el reset no limpia todo'
+    Check 'el reset tambien corre cuando la sentencia falla' ($page.Content -match '(?s)function mostrarError\(datos\)(.*?)resetPanelDerecho\(\)') 'un error deja el panel viejo'
+    # El bug que destapo esto: un panel con display:flex en su propia regla se quedaba visible aunque
+    # el JS le pusiera hidden, porque el id pesa mas que la regla del navegador.
+    Check 'el CSS respeta el atributo hidden' ($page.Content -match '\[hidden\] \{ display:none !important') 'un panel con display:flex puede quedar visible con hidden'
     Check 'el DESC de una entidad arma las relaciones clickeables' ($page.Content -match 'esDescDeUnaEntidad\(hql\)' -and $page.Content -match 'hacerRelacionesClickeables\(cabeceras, tabla\)') 'no se cablean las relaciones del detalle'
     Check 'la relacion se detecta por la columna TIPO JAVA' ($page.Content -match "indexOf\('TIPO JAVA'\)") 'no se busca la columna TIPO JAVA'
     Check 'la lista de entidades se pide sola si no se tiene' ($page.Content -match 'asegurarEntidades' -and $page.Content -match "pedir\('DESC', false\)") 'no se asegura la lista de entidades'

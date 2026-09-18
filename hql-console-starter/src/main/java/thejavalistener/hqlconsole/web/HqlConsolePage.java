@@ -43,6 +43,10 @@ public final class HqlConsolePage
 		<style>
 		  :root { color-scheme: light dark; --borde:#d0d4da; --fondo:#f6f7f9; --acento:#1f6feb; --error:#b3261e; }
 		  * { box-sizing: border-box; }
+		  /* El atributo hidden tiene que ganar siempre. Sin esto, un panel con display:flex en su
+		     propia regla de CSS se queda visible aunque el JS le ponga hidden: es el mismo nivel de
+		     cascada y el id pesa mas que la regla del navegador. */
+		  [hidden] { display:none !important; }
 		  html, body { height:100%; }
 		  body { margin:0; padding:12px; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 		         background:var(--fondo); display:flex; flex-direction:column; gap:8px; height:100vh; overflow:hidden; }
@@ -523,14 +527,16 @@ public final class HqlConsolePage
 		    estado.textContent = 'Ejecutando ' + rango.etiqueta + '...';
 		    const respuesta = await pedir(hql, false);
 		    if (!respuesta.ok) { mostrarError(respuesta.datos); return; }
+		    // Toda sentencia nueva arranca con el panel derecho limpio: si estaba partido, se cierra
+		    // el detalle, y se borra lo que hubiera quedado de la sentencia anterior. Va acá (y no
+		    // antes del dry-run) para que cancelar la confirmación no borre el resultado que ya
+		    // estabas mirando.
+		    resetPanelDerecho();
 		    const cabeceras = mostrarResultado(respuesta.datos);
 		    // DML es una escritura sola; BATCH, varias en una transacción. Las dos avisan si son INSERT.
 		    if (esInsercion && (respuesta.datos.type === 'DML' || respuesta.datos.type === 'BATCH')) {
 		      alert(mensajeInsercion(respuesta.datos.affectedRows, respuesta.datos.statementCount));
 		    }
-		    // Toda ejecución nueva arranca de cero: si había un detalle abajo, se cierra. Dejarlo
-		    // mostrando lo anterior confunde, y un DESC nuevo tiene que empezar limpio.
-		    cerrarDetalle();
 		    // El DESC sin argumentos es la lista de entidades: cada fila abre su detalle abajo.
 		    // El DESC de una entidad muestra sus atributos: los que son relaciones @ManyToOne abren
 		    // el detalle de la entidad relacionada, también abajo.
@@ -567,12 +573,9 @@ public final class HqlConsolePage
 		  errorMsg.textContent = datos.error || 'Error desconocido.';
 		  errorSql.textContent = datos.cause ? ('causa: ' + datos.cause) : (datos.statement || '');
 		  cajaError.style.display = 'block';
-		  cajaTabla.hidden = true;
-		  vacio.hidden = true;
-		  crudo.hidden = true;
+		  resetPanelDerecho();
 		  estado.textContent = '';
 		  pie.textContent = '';
-		  cerrarDetalle();
 		}
 
 		// Dibuja una grilla en la caja y la tabla que le pasen, y devuelve las cabeceras que usó.
@@ -733,6 +736,25 @@ public final class HqlConsolePage
 		function cerrarDetalle() {
 		  divisorAlto.hidden = true;
 		  panelDetalle.hidden = true;
+		}
+
+		// Toda sentencia nueva arranca con el panel derecho limpio: si estaba partido, se cierra el
+		// detalle, y se borra lo que hubiera quedado de la sentencia anterior. Así lo que se ve
+		// siempre es el resultado de la última sentencia y no una mezcla de las dos.
+		function resetPanelDerecho() {
+		  cerrarDetalle();
+		  detalleTitulo.textContent = '';
+		  detalleError.textContent = '';
+		  detalleError.hidden = true;
+		  cajaDetalle.hidden = true;
+		  tablaDetalle.textContent = '';
+		  const filas = document.querySelectorAll('#t tbody tr, #t-detalle tbody tr');
+		  filas.forEach(function(fila) { fila.classList.remove('fila-elegida'); });
+		  cajaTabla.hidden = true;
+		  tabla.textContent = '';
+		  vacio.hidden = true;
+		  crudo.hidden = true;
+		  crudoPre.textContent = '';
 		}
 
 		function cabecerasDeFilas(filas) {
