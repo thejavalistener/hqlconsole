@@ -315,4 +315,28 @@ public final class Mapping
 	{
 		return value==null?null:value.toUpperCase(Locale.ROOT);
 	}
+
+	/**
+	 * Un nombre físico (tabla o columna) como lo muestra la consola: en MAYÚSCULAS si viene en un
+	 * solo caso, y tal cual si tiene mayúsculas mezcladas.
+	 *
+	 * <p>Es la convención para que la misma aplicación se vea igual en cualquier base —H2 guarda los
+	 * identificadores sin comillas en mayúsculas y Postgres en minúsculas, así que sin esto la grilla
+	 * de {@code DESC} cambia según dónde corra—. Los <b>atributos y las clases</b> no se tocan: se
+	 * muestran como están escritos en el código.</p>
+	 *
+	 * <p>El corte en las mayúsculas mezcladas no es capricho: en SQL un identificador así sólo existe
+	 * si está entrecomillado, y mayusculizarlo apuntaría a otro identificador. Un nombre en un solo
+	 * caso, en cambio, se puede escribir sin comillas en cualquier base y resuelve igual. La metadata
+	 * de JDBC no dice si el nombre estaba entrecomillado, pero las mayúsculas mezcladas lo delatan.</p>
+	 */
+	public static String physicalName(String name)
+	{
+		if( name==null )
+		{
+			return null;
+		}
+		String lower=name.toLowerCase(Locale.ROOT);
+		return name.equals(lower)||name.equals(upper(name))?upper(name):name;
+	}
 }

@@ -350,6 +350,25 @@ DESC Libro
   su entidad: `ID_AUTOR | BIGINT | autor | Autor`.
 - El orden es el **de declaración de los campos en la entidad**. Una colección (`@OneToMany`) no
   tiene columna en esta tabla y sale con `-`.
+- **Las filas de una relación son clickeables**: `ID_AUTOR | BIGINT | autor | Autor` abre el detalle
+  de `Autor` en el panel de abajo. Y desde ahí se puede seguir encadenando (`Autor` → su relación →
+  …), porque la detección es la misma columna `TIPO JAVA`.
+
+### Mayúsculas: tablas y columnas, no atributos
+
+La consola usa una convención para que **la misma aplicación se vea igual en cualquier base**:
+
+| Qué | Cómo se muestra | Ejemplo |
+|---|---|---|
+| Tablas y columnas (lo que existe en la base) | **MAYÚSCULAS**, si el nombre viene en un solo caso | `LIBROS`, `FECHA_PUBLICACION` |
+| …con mayúsculas mezcladas | **tal cual** | `EtiquetaRara` |
+| Atributos y clases (lo que está en el código) | **tal cual**, case sensitive | `fechaPublicacion`, `Libro` |
+
+El corte no es capricho. H2 guarda los identificadores sin comillas en mayúsculas y **Postgres en
+minúsculas**, así que sin normalizar la grilla de `DESC` cambiaría según dónde corra. Y un nombre con
+mayúsculas mezcladas, en SQL, **sólo existe si está entrecomillado**: pasarlo a mayúsculas apuntaría
+a otro identificador. La metadata de JDBC no dice si estaba entrecomillado, pero las mayúsculas
+mezcladas lo delatan, así que esos se muestran sin tocar.
 
 ### `DESC` (sin argumentos)
 
@@ -361,10 +380,11 @@ Lista todas las entidades del contexto, con su tabla y su cantidad de columnas:
 
 | ENTIDAD | TABLA | CAMPOS |
 |---|---|---|
-| Autor | autores | 2 |
-| Departamento | departamentos | 2 |
-| Empleado | empleados | 5 |
-| Libro | libros | 9 |
+| Autor | AUTORES | 2 |
+| Departamento | DEPARTAMENTOS | 2 |
+| Empleado | EMPLEADOS | 5 |
+| Etiqueta | EtiquetaRara | 2 |
+| Libro | LIBROS | 9 |
 
 **Cada fila de esa lista es clickeable.** Al hacer clic, el panel de resultados se parte en dos y
 abajo aparece el detalle de esa entidad — el mismo `DESC <Entidad>` de arriba, pero sin tener que
@@ -392,7 +412,25 @@ escribirlo:
   no `libros`.
 - Es una **lectura**: funciona aunque la consola esté en `allow-writes=false`, y no puede cambiar
   nada. Si el detalle falla, el error aparece **abajo** y la lista de arriba queda intacta.
-- Cualquier otro resultado (un `SELECT`, un `INSERT`, un error) **cierra** el detalle.
+- Cualquier otro resultado (un `SELECT`, un `INSERT`, un error) **cierra** el detalle: toda
+  ejecución nueva arranca de cero, para que no quede abajo el detalle de la sentencia anterior.
+
+**Y desde el detalle se navegan las relaciones.** Los atributos que apuntan a otra entidad
+(`@ManyToOne`) salen en la grilla con la entidad destino en la columna `TIPO JAVA`, y esa fila
+también es clickeable. La cadena entera:
+
+```
+DESC              →  la lista de entidades              (clic en una fila)
+  ↓
+DESC Libro        →  sus campos y atributos             (clic en el atributo autor)
+  ↓
+detalle de Autor  →  abajo, en el mismo panel           (y de ahí se sigue)
+```
+
+Para saber cuál `TIPO JAVA` es una entidad y cuál un tipo común (`String`, `Long`, `LocalDate`), la
+página pide una vez la lista de entidades —el mismo `DESC` de siempre— y compara. Sale de la misma
+fuente de verdad que todo lo demás, no hay heurísticas sobre el nombre ni cambios en el motor. Si esa
+lista no se puede obtener, la grilla simplemente queda sin clickear.
 
 ### Literales y `NOW`
 
@@ -509,8 +547,8 @@ Verificado end-to-end con `verify-demo.ps1`, que compila, levanta el fat jar del
 comprobaciones contra una H2 en memoria (Spring Boot 3.2.5, Hibernate 6.4.4, Java 21):
 
 ```
-.\verify-demo.ps1                                  # 132 PASS / 0 FAIL
-.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 136 PASS / 0 FAIL
+.\verify-demo.ps1                                  # 141 PASS / 0 FAIL
+.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 145 PASS / 0 FAIL
 ```
 
 Cubre: descubrimiento de la auto-configuración por el `.imports` del jar, la página servida desde
@@ -529,11 +567,20 @@ que después la consola sigue respondiendo), y `UPDATE` que sólo toca el SET, c
 compuesto, sin alias, sin `WHERE` (y el aviso de truncado), más los errores de entidad, atributo y
 alias mal capitalizados, y el fallback de `INSERT ... SELECT` a HQL.
 
+De la **convención de mayúsculas** se comprueba end-to-end: que una tabla en un solo caso salga en
+mayúsculas (`LIBROS`), que una con mayúsculas mezcladas salga tal cual (`EtiquetaRara`) y que la
+entidad salga como la clase (`Etiqueta`). Para poder ejercitar el caso mezclado —H2 nunca lo produce,
+porque todo lo que crea sin comillas lo pasa a mayúsculas— el demo tiene a propósito la entidad
+`Etiqueta`, mapeada a la tabla `EtiquetaRara`.
+
 Del **detalle de `DESC`** se comprueba que la página traiga el split horizontal, que el divisor del
 detalle tenga su persistencia, que la lista clickeable salga de la columna `ENTIDAD` y sólo de un
 `DESC` sin argumentos, que el clic pida el `DESC` de esa entidad, que el detalle maneje su propio
-error sin tocar la lista de arriba, y que otro resultado cierre el detalle. **El clic y el layout en
-sí no los ve ningún test**: eso hay que mirarlo en el navegador.
+error sin tocar la lista de arriba, y que otro resultado cierre el detalle. De la **navegación por
+relaciones**: que toda ejecución nueva cierre el panel de abajo, que el `DESC` de una entidad cablee
+los atributos clickeables por la columna `TIPO JAVA`, que la lista de entidades se pida sola si no se
+tiene, que el panel de abajo también encadene, y que la fila elegida se marque y se desmarque.
+**El clic y el layout en sí no los ve ningún test**: eso hay que mirarlo en el navegador.
 
 Las funciones puras del ejecutar se verifican de verdad: el script extrae el bloque marcado en el
 HTML **que sirve el jar** y lo corre en Node, con los casos de la selección (sin selección, con
@@ -584,7 +631,8 @@ hql-console-starter/            el jar que se distribuye (java-library, ~20 KB, 
   web/
     HqlConsoleController          GET {path} y POST {path}/api/execute
     HqlConsolePage                el HTML+CSS+JS, en un text block (ojo: barras invertidas dobles)
-hql-console-demo/               aplicación de ejemplo: Empleado/Departamento + H2, sin config
+hql-console-demo/               aplicación de ejemplo: Empleado/Departamento/Libro + H2, sin config
+                                (Etiqueta -> EtiquetaRara está sólo para probar las mayúsculas)
 verify-demo.ps1                 la verificación end-to-end
 .github/workflows/release.yml   tag v* -> construye y publica el release con los jars
 ```

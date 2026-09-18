@@ -168,7 +168,13 @@ try {
 
     $r = Exec 'DESC'
     Check 'DESC sin argumentos lista las entidades' (($r.json.headers -join ',') -eq 'ENTIDAD,TABLA,CAMPOS' -and $r.json.rowCount -ge 4) $r.raw
-    Check 'la lista incluye Libro con su tabla' (@($r.json.rows | Where-Object { $_[0] -eq 'Libro' -and $_[1] -eq 'libros' }).Count -eq 1) $r.raw
+    Check 'la lista incluye Libro con su tabla' (@($r.json.rows | Where-Object { $_[0] -eq 'Libro' -and $_[1] -eq 'LIBROS' }).Count -eq 1) $r.raw
+    # Convencion de la consola: el nombre fisico en un solo caso se muestra en MAYUSCULAS...
+    Check 'la tabla en un solo caso se muestra en mayusculas' (@($r.json.rows | Where-Object { $_[0] -eq 'Libro' -and $_[1] -ceq 'LIBROS' }).Count -eq 1) $r.raw
+    # ...y el que tiene mayusculas mezcladas (o sea, entrecomillado en SQL) se muestra tal cual.
+    Check 'la tabla con mayusculas mezcladas se muestra tal cual' (@($r.json.rows | Where-Object { $_[0] -eq 'Etiqueta' -and $_[1] -ceq 'EtiquetaRara' }).Count -eq 1) $r.raw
+    # Los atributos y las clases no se tocan: se muestran como estan escritos.
+    Check 'la entidad se muestra como la clase' (@($r.json.rows | Where-Object { $_[0] -ceq 'Etiqueta' }).Count -eq 1) $r.raw
     $r = Exec 'DESC NoExiste'
     Check 'DESC de una entidad inexistente da 400 y lista las que hay' ($r.status -eq 400 -and $r.json.error -match 'Las que hay son') $r.raw
 
@@ -444,6 +450,13 @@ check('desc sin args: con espacios y mayusculas', esDescSinArgumentos('  DeSc  '
 check('desc sin args: con entidad no', esDescSinArgumentos('DESC Libro'), false);
 check('desc sin args: un select no', esDescSinArgumentos('SELECT e.id FROM Empleado e'), false);
 check('desc sin args: un from no', esDescSinArgumentos('from Libro'), false);
+
+// --- el detalle de una entidad (para navegar las relaciones) ---
+check('desc de entidad: desc Libro', esDescDeUnaEntidad('DESC Libro'), true);
+check('desc de entidad: describe Libro', esDescDeUnaEntidad('  describe  Libro '), true);
+check('desc de entidad: desc a secas no', esDescDeUnaEntidad('DESC'), false);
+check('desc de entidad: un select no', esDescDeUnaEntidad('SELECT e.id FROM Empleado e'), false);
+check('desc de entidad: una palabra que empieza igual no', esDescDeUnaEntidad('descripcion'), false);
 '@
             $archivo = Join-Path $env:TEMP 'hql-console-sel-test.js'
             Set-Content -Path $archivo -Value $js -Encoding UTF8
@@ -505,6 +518,14 @@ check('desc sin args: un from no', esDescSinArgumentos('from Libro'), false);
     Check 'el click pide el DESC de esa entidad' ($page.Content -match "pedir\('DESC ' \+ entidad") 'el click no pide el detalle'
     Check 'el detalle tiene su propio error (no borra la lista)' ($page.Content -match 'detalleError.textContent' -and $page.Content -match 'abrirDetalle\(\)') 'el detalle no maneja su error'
     Check 'otro resultado cierra el detalle' ($page.Content -match 'cerrarDetalle\(\)') 'no se cierra el detalle'
+
+    # --- navegar las relaciones @ManyToOne desde el detalle ---
+    Check 'toda ejecucion nueva cierra el detalle de abajo' ($page.Content -match '(?s)cerrarDetalle\(\);(.*?)hacerListaClickeable') 'no se cierra el detalle antes de rearmar la grilla'
+    Check 'el DESC de una entidad arma las relaciones clickeables' ($page.Content -match 'esDescDeUnaEntidad\(hql\)' -and $page.Content -match 'hacerRelacionesClickeables\(cabeceras, tabla\)') 'no se cablean las relaciones del detalle'
+    Check 'la relacion se detecta por la columna TIPO JAVA' ($page.Content -match "indexOf\('TIPO JAVA'\)") 'no se busca la columna TIPO JAVA'
+    Check 'la lista de entidades se pide sola si no se tiene' ($page.Content -match 'asegurarEntidades' -and $page.Content -match "pedir\('DESC', false\)") 'no se asegura la lista de entidades'
+    Check 'desde el panel de abajo tambien se encadena' ($page.Content -match 'hacerRelacionesClickeables\(cabeceras, tablaDetalle\)') 'el detalle de abajo no encadena'
+    Check 'la fila elegida se marca y se desmarca' ($page.Content -match 'marcarElegida' -and $page.Content -match "classList.remove\('fila-elegida'\)") 'no se marca la fila elegida'
 
     # --- tope de filas ---
     if ($MaxRows -lt 6) {

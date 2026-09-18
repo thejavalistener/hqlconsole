@@ -184,6 +184,10 @@ public final class HqlConsolePage
 		const CLAVE_ANCHO = 'hql-console.ancho';
 		const CLAVE_ALTO = 'hql-console.alto-detalle';
 
+		// Los nombres de entidad que ya vimos (salen del DESC sin argumentos). Sirven para saber si el
+		// "TIPO JAVA" de un atributo es una entidad relacionada o un tipo común como String o Long.
+		let entidadesConocidas = null;
+
 		// localStorage puede tirar (modo privado, cookies de sitio bloqueadas). Si eso pasa, el
 		// script entero se caía y con él los listeners: la consola quedaba muerta sin decir por qué.
 		// Con este envoltorio nunca tira y, si no hay almacén, al menos dura lo que dura la pestaña.
@@ -286,12 +290,19 @@ public final class HqlConsolePage
 		  return cuantas > 1 ? (encabezado + ' en ' + cuantas + ' sentencias') : encabezado;
 		}
 
-		// "DESC" a secas (o "describe") es la lista de entidades: esa grilla es la única clickeable,
-		// porque cada fila es una entidad. La selección del editor puede venir con espacios o con
-		// mayúsculas, así que se normaliza.
+		// "DESC" a secas (o "describe") es la lista de entidades: esa grilla es la única clickeable
+		// por fila, porque cada fila es una entidad. La selección del editor puede venir con
+		// espacios o con mayúsculas, así que se normaliza.
 		function esDescSinArgumentos(hql) {
 		  const t = hql.trim().toLowerCase();
 		  return t === 'desc' || t === 'describe';
+		}
+
+		// "DESC <Entidad>": el detalle de una entidad. Ahí lo clickeable son los atributos que
+		// apuntan a otra entidad.
+		function esDescDeUnaEntidad(hql) {
+		  const t = hql.trim().toLowerCase();
+		  return t.indexOf('desc ') === 0 || t.indexOf('describe ') === 0;
 		}
 
 		// UPDATE y DELETE se confirman antes de commitear; el resto se ejecuta de una.
@@ -517,12 +528,16 @@ public final class HqlConsolePage
 		    if (esInsercion && (respuesta.datos.type === 'DML' || respuesta.datos.type === 'BATCH')) {
 		      alert(mensajeInsercion(respuesta.datos.affectedRows, respuesta.datos.statementCount));
 		    }
-		    // La lista de entidades de un "DESC" es clickeable: cada fila abre su detalle abajo.
-		    // Cualquier otro resultado cierra el detalle, para no dejar colgado el de antes.
+		    // Toda ejecución nueva arranca de cero: si había un detalle abajo, se cierra. Dejarlo
+		    // mostrando lo anterior confunde, y un DESC nuevo tiene que empezar limpio.
+		    cerrarDetalle();
+		    // El DESC sin argumentos es la lista de entidades: cada fila abre su detalle abajo.
+		    // El DESC de una entidad muestra sus atributos: los que son relaciones @ManyToOne abren
+		    // el detalle de la entidad relacionada, también abajo.
 		    if (esDescSinArgumentos(hql) && cabeceras) {
 		      hacerListaClickeable(cabeceras);
-		    } else {
-		      cerrarDetalle();
+		    } else if (esDescDeUnaEntidad(hql) && cabeceras) {
+		      hacerRelacionesClickeables(cabeceras, tabla);
 		    }
 		  } catch (e) {
 		    mostrarError({ error: 'No se pudo contactar la consola: ' + e });
@@ -626,28 +641,73 @@ public final class HqlConsolePage
 
 		// La grilla de "DESC" a secas es la lista de entidades. Se busca la columna ENTIDAD (no la
 		// tabla: "DESC" espera el nombre de la clase) y cada fila pasa a ser clickeable.
+		// De paso queda sabido qué nombres son entidades, que es lo que permite después reconocer
+		// las relaciones en el detalle sin pedirle nada nuevo al backend.
 		function hacerListaClickeable(cabeceras) {
 		  const columna = cabeceras.indexOf('ENTIDAD');
 		  if (columna < 0) { return; }
+		  const nombres = new Set();
 		  const filas = tabla.querySelectorAll('tbody tr');
 		  for (let i = 0; i < filas.length; i++) {
 		    const fila = filas[i];
 		    const celda = fila.cells[columna];
 		    if (!celda) { continue; }
 		    const entidad = celda.textContent;
-		    fila.className = 'fila-clickeable';
+		    nombres.add(entidad);
+		    fila.classList.add('fila-clickeable');
 		    fila.title = 'Ver el detalle de ' + entidad;
 		    fila.addEventListener('click', function() { mostrarDetalle(entidad, fila); });
 		  }
+		  entidadesConocidas = nombres;
+		}
+
+		// La lista de entidades, si no la tenemos ya de un DESC sin argumentos: se pide una sola vez.
+		// Si no se puede, la grilla simplemente queda sin clickear: no es un error para el usuario.
+		async function asegurarEntidades() {
+		  if (entidadesConocidas) { return entidadesConocidas; }
+		  entidadesConocidas = new Set();
+		  const respuesta = await pedir('DESC', false);
+		  if (!respuesta.ok || !respuesta.datos.rows) { return entidadesConocidas; }
+		  const columna = (respuesta.datos.headers || []).indexOf('ENTIDAD');
+		  if (columna < 0) { return entidadesConocidas; }
+		  respuesta.datos.rows.forEach(function(fila) {
+		    if (fila[columna] !== null && fila[columna] !== undefined) {
+		      entidadesConocidas.add(String(fila[columna]));
+		    }
+		  });
+		  return entidadesConocidas;
+		}
+
+		// En el detalle de una entidad, las filas cuyo "TIPO JAVA" es otra entidad son las relaciones
+		// @ManyToOne: clickearlas muestra el detalle de la relacionada en el panel de abajo.
+		async function hacerRelacionesClickeables(cabeceras, tabla) {
+		  const columnaTipo = cabeceras.indexOf('TIPO JAVA');
+		  if (columnaTipo < 0) { return; }
+		  const entidades = await asegurarEntidades();
+		  const filas = tabla.querySelectorAll('tbody tr');
+		  for (let i = 0; i < filas.length; i++) {
+		    const fila = filas[i];
+		    const celda = fila.cells[columnaTipo];
+		    if (!celda) { continue; }
+		    const destino = celda.textContent;
+		    if (!entidades.has(destino)) { continue; }
+		    fila.classList.add('fila-clickeable');
+		    fila.title = 'Ver el detalle de ' + destino;
+		    fila.addEventListener('click', function() { mostrarDetalle(destino, fila); });
+		  }
+		}
+
+		// Marca la fila clickeada (en cualquiera de las dos grillas) y desmarca el resto.
+		function marcarElegida(filaElegida) {
+		  const filas = document.querySelectorAll('#t tbody tr, #t-detalle tbody tr');
+		  filas.forEach(function(fila) { fila.classList.remove('fila-elegida'); });
+		  if (filaElegida) { filaElegida.classList.add('fila-elegida'); }
 		}
 
 		// El detalle es un "DESC <Entidad>" más, contra el mismo endpoint: una lectura, así que no
 		// depende de allow-writes ni puede cambiar nada. Los errores van abajo, sin tocar la lista.
 		async function mostrarDetalle(entidad, filaElegida) {
-		  const filas = tabla.querySelectorAll('tbody tr');
-		  for (let i = 0; i < filas.length; i++) { filas[i].className = 'fila-clickeable'; }
-		  if (filaElegida) { filaElegida.className = 'fila-clickeable fila-elegida'; }
-
+		  marcarElegida(filaElegida);
 		  detalleTitulo.textContent = 'Detalle de ' + entidad;
 		  detalleError.hidden = true;
 		  cajaDetalle.hidden = true;
@@ -659,7 +719,9 @@ public final class HqlConsolePage
 		    detalleError.hidden = false;
 		    return;
 		  }
-		  dibujarGrilla(cajaDetalle, tablaDetalle, respuesta.datos);
+		  const cabeceras = dibujarGrilla(cajaDetalle, tablaDetalle, respuesta.datos);
+		  // Encadenar: desde el detalle de abajo también se puede saltar a otra relación.
+		  hacerRelacionesClickeables(cabeceras, tablaDetalle);
 		}
 
 		function abrirDetalle() {

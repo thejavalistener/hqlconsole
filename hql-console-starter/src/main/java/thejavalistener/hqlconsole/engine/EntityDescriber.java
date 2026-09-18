@@ -77,7 +77,7 @@ public class EntityDescriber
 		{
 			rows.add(List.of(
 					entityType.getName(),
-					Mapping.tableName(entityType),
+					Mapping.physicalName(Mapping.tableName(entityType)),
 					String.valueOf(Mapping.columnsInDeclarationOrder(entityType).size())));
 		}
 		return HqlResult.query(LIST_HEADERS,rows,false,_millis(t0),
@@ -100,7 +100,9 @@ public class EntityDescriber
 			String derived=isColumn?Mapping.columnName(metamodel,attribute):"-";
 			SqlColumn real=isColumn?columns.get(derived.toLowerCase(Locale.ROOT)):null;
 
-			String campo=real!=null?real.name():derived;
+			// Convención de la consola: las tablas y las columnas (cosas de la base) se muestran en
+			// MAYÚSCULAS cuando vienen en un solo caso; los atributos y las clases, tal cual están.
+			String campo=Mapping.physicalName(real!=null?real.name():derived);
 			String sqlType=real!=null?real.typeName():(isColumn?_derivedSqlType(metamodel,attribute):"-");
 
 			rows.add(List.of(campo,sqlType,attribute.getName(),Mapping.javaTypeName(attribute)));
