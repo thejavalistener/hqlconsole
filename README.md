@@ -366,6 +366,34 @@ Lista todas las entidades del contexto, con su tabla y su cantidad de columnas:
 | Empleado | empleados | 5 |
 | Libro | libros | 9 |
 
+**Cada fila de esa lista es clickeable.** Al hacer clic, el panel de resultados se parte en dos y
+abajo aparece el detalle de esa entidad — el mismo `DESC <Entidad>` de arriba, pero sin tener que
+escribirlo:
+
+```
+┌─ resultado ───────────────────────────────────┐
+│ ENTIDAD      | TABLA         | CAMPOS         │   ← la lista
+│ Autor        | autores       | 2              │
+│ Libro        | libros        | 9              │   ← clic acá
+├───────────────────────────────────────────────┤   ← este divisor se arrastra
+│ Detalle de Libro                              │
+│ CAMPO | TIPO SQL | ATRIBUTO  | TIPO JAVA      │   ← el detalle
+│ ID    | BIGINT   | id        | Long           │
+└───────────────────────────────────────────────┘
+```
+
+- El divisor del medio se arrastra con el mouse; con el foco en él, las flechas lo mueven (2%, 10%
+  con `Shift`), `Inicio`/`Fin` van a los extremos y el doble clic vuelve a 45%. El alto se recuerda.
+- La fila elegida queda marcada, así se ve de dónde salió el detalle.
+- Es **sólo la lista de `DESC` sin argumentos** la que se puede clickear: la página sabe qué
+  ejecutaste, así que una grilla cualquiera con una columna llamada `ENTIDAD` no se vuelve clickeable
+  por accidente.
+- Se manda el nombre de la **entidad** (columna `ENTIDAD`), no el de la tabla: `DESC` espera `Libro`,
+  no `libros`.
+- Es una **lectura**: funciona aunque la consola esté en `allow-writes=false`, y no puede cambiar
+  nada. Si el detalle falla, el error aparece **abajo** y la lista de arriba queda intacta.
+- Cualquier otro resultado (un `SELECT`, un `INSERT`, un error) **cierra** el detalle.
+
 ### Literales y `NOW`
 
 | Literal | A qué se convierte |
@@ -481,8 +509,8 @@ Verificado end-to-end con `verify-demo.ps1`, que compila, levanta el fat jar del
 comprobaciones contra una H2 en memoria (Spring Boot 3.2.5, Hibernate 6.4.4, Java 21):
 
 ```
-.\verify-demo.ps1                                  # 125 PASS / 0 FAIL
-.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 129 PASS / 0 FAIL
+.\verify-demo.ps1                                  # 132 PASS / 0 FAIL
+.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 136 PASS / 0 FAIL
 ```
 
 Cubre: descubrimiento de la auto-configuración por el `.imports` del jar, la página servida desde
@@ -500,6 +528,12 @@ de un literal, atomicidad comprobada, y el rechazo de lo que no es INSERT), el *
 que después la consola sigue respondiendo), y `UPDATE` que sólo toca el SET, con `NOW`, con `WHERE`
 compuesto, sin alias, sin `WHERE` (y el aviso de truncado), más los errores de entidad, atributo y
 alias mal capitalizados, y el fallback de `INSERT ... SELECT` a HQL.
+
+Del **detalle de `DESC`** se comprueba que la página traiga el split horizontal, que el divisor del
+detalle tenga su persistencia, que la lista clickeable salga de la columna `ENTIDAD` y sólo de un
+`DESC` sin argumentos, que el clic pida el `DESC` de esa entidad, que el detalle maneje su propio
+error sin tocar la lista de arriba, y que otro resultado cierre el detalle. **El clic y el layout en
+sí no los ve ningún test**: eso hay que mirarlo en el navegador.
 
 Las funciones puras del ejecutar se verifican de verdad: el script extrae el bloque marcado en el
 HTML **que sirve el jar** y lo corre en Node, con los casos de la selección (sin selección, con

@@ -436,6 +436,14 @@ check('confirmar: un lote de insert no', pideConfirmacion('INSERT INTO Libro li 
 check('mensaje: modificar una fila', mensajeConfirmacion('UPDATE x', 1, false), 'Se van a modificar 1 fila.\n\n\u00bfConfirm\u00e1s?');
 check('mensaje: borrar varias', mensajeConfirmacion('DELETE FROM Libro l', 4, false), 'Se van a borrar 4 filas.\n\n\u00bfConfirm\u00e1s?');
 check('mensaje: avisa si el tope trunco', mensajeConfirmacion('UPDATE x', 3, true), 'Se van a modificar 3 filas.\n\n\u00bfConfirm\u00e1s?\n\n(se alcanz\u00f3 el tope de filas: el resto NO se toca)');
+
+// --- la lista de entidades clickeable (solo el DESC sin argumentos) ---
+check('desc sin args: desc', esDescSinArgumentos('DESC'), true);
+check('desc sin args: describe', esDescSinArgumentos('describe'), true);
+check('desc sin args: con espacios y mayusculas', esDescSinArgumentos('  DeSc  '), true);
+check('desc sin args: con entidad no', esDescSinArgumentos('DESC Libro'), false);
+check('desc sin args: un select no', esDescSinArgumentos('SELECT e.id FROM Empleado e'), false);
+check('desc sin args: un from no', esDescSinArgumentos('from Libro'), false);
 '@
             $archivo = Join-Path $env:TEMP 'hql-console-sel-test.js'
             Set-Content -Path $archivo -Value $js -Encoding UTF8
@@ -488,6 +496,15 @@ check('mensaje: avisa si el tope trunco', mensajeConfirmacion('UPDATE x', 3, tru
     Check 'la pagina manda dryRun al servidor' ($page.Content -match 'dryRun: dryRun') 'no manda dryRun'
     Check 'la pagina confirma con el conteo' ($page.Content -match 'confirm\(mensajeConfirmacion') 'no usa confirm con el conteo'
     Check 'la pagina avisa cuando se cancela' ($page.Content -match 'Cancelado: no se modific') 'no avisa la cancelacion'
+
+    # --- DESC: la lista de entidades es clickeable y el detalle va abajo, en un split horizontal ---
+    Check 'la pagina trae el split del detalle' ($page.Content -match 'id="divisor-h"' -and $page.Content -match 'id="panel-detalle"' -and $page.Content -match 'id="t-detalle"') 'falta el panel de detalle'
+    Check 'el detalle se redimensiona y se recuerda' ($page.Content -match 'cursor:row-resize' -and $page.Content -match '--alto-detalle' -and $page.Content -match 'CLAVE_ALTO') 'falta el divisor del detalle'
+    Check 'solo el DESC sin argumentos arma la lista clickeable' ($page.Content -match 'esDescSinArgumentos\(hql\)' -and $page.Content -match 'hacerListaClickeable\(cabeceras\)') 'no se arma la lista clickeable'
+    Check 'la lista clickeable sale de la columna ENTIDAD' ($page.Content -match "indexOf\('ENTIDAD'\)") 'no se busca la columna ENTIDAD'
+    Check 'el click pide el DESC de esa entidad' ($page.Content -match "pedir\('DESC ' \+ entidad") 'el click no pide el detalle'
+    Check 'el detalle tiene su propio error (no borra la lista)' ($page.Content -match 'detalleError.textContent' -and $page.Content -match 'abrirDetalle\(\)') 'el detalle no maneja su error'
+    Check 'otro resultado cierra el detalle' ($page.Content -match 'cerrarDetalle\(\)') 'no se cierra el detalle'
 
     # --- tope de filas ---
     if ($MaxRows -lt 6) {

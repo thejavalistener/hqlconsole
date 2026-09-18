@@ -88,6 +88,22 @@ public final class HqlConsolePage
 		  summary { cursor:pointer; opacity:.7; }
 		  details pre { background:#fff; border:1px solid var(--borde); border-radius:6px; padding:10px; overflow:auto; max-height:40vh; }
 
+		  /* --- el detalle de una entidad: el panel derecho se parte en dos --- */
+		  body.arrastrando-alto { user-select:none; cursor:row-resize; }
+		  #divisor-h { flex:0 0 10px; display:flex; align-items:center; justify-content:center;
+		               cursor:row-resize; touch-action:none; background:none; border:0; padding:0; }
+		  #divisor-h::before { content:''; height:3px; width:100%; border-radius:2px; background:var(--borde);
+		                       transition:background .12s ease; }
+		  #divisor-h:hover::before, #divisor-h:focus-visible::before, body.arrastrando-alto #divisor-h::before { background:var(--acento); }
+		  #divisor-h:focus-visible { outline:2px solid var(--acento); outline-offset:2px; border-radius:4px; }
+		  #panel-detalle { flex:0 0 var(--alto-detalle,45%); min-height:0; display:flex; flex-direction:column; gap:8px; }
+		  #detalle-error { flex:0 0 auto; padding:8px 10px; border:1px solid var(--error); border-left-width:4px;
+		                   border-radius:6px; background:#fff5f4; color:var(--error); font-size:12px; }
+		  /* Las filas de la lista de "DESC" se pueden clickear. El !important es por el rayado de las pares. */
+		  .fila-clickeable { cursor:pointer; }
+		  .fila-clickeable:hover td { background:#eef4ff !important; }
+		  .fila-elegida td { background:#dce8ff !important; font-weight:600; }
+
 		  /* En pantallas angostas el divisor no tiene sentido: se apilan. */
 		  @media (max-width: 720px) {
 		    body { height:auto; overflow:auto; }
@@ -97,6 +113,9 @@ public final class HqlConsolePage
 		    #divisor { display:none; }
 		    #panel-resultado { flex:1 1 auto; }
 		    .tabla { max-height:60vh; }
+		    /* El detalle se apila abajo, sin divisor: se ve entero o se scrollea. */
+		    #divisor-h { display:none; }
+		    #panel-detalle { flex:0 0 auto; }
 		  }
 		</style>
 		</head>
@@ -120,6 +139,14 @@ public final class HqlConsolePage
 		    <span class="estado" id="estado"></span>
 		    <div class="vacio" id="vacio">Los resultados aparecen acá.</div>
 		    <div class="tabla" id="tabla" hidden><table id="t"></table></div>
+		    <div id="divisor-h" role="separator" aria-orientation="horizontal" tabindex="0" hidden
+		         aria-label="Redimensionar el detalle"
+		         title="Arrastra para redimensionar el detalle. Flechas: de a 2%. Inicio/Fin: extremos. Doble clic: 45%."></div>
+		    <div id="panel-detalle" hidden>
+		      <span class="estado" id="detalle-titulo"></span>
+		      <div id="detalle-error" hidden></div>
+		      <div class="tabla" id="tabla-detalle" hidden><table id="t-detalle"></table></div>
+		    </div>
 		    <div class="pie" id="pie"></div>
 		    <details id="crudo" hidden><summary>JSON crudo</summary><pre id="crudo-pre"></pre></details>
 		  </div>
@@ -144,10 +171,18 @@ public final class HqlConsolePage
 		const crudoPre = document.getElementById('crudo-pre');
 		const split = document.getElementById('split');
 		const divisor = document.getElementById('divisor');
+		const panelResultado = document.getElementById('panel-resultado');
+		const divisorAlto = document.getElementById('divisor-h');
+		const panelDetalle = document.getElementById('panel-detalle');
+		const detalleTitulo = document.getElementById('detalle-titulo');
+		const detalleError = document.getElementById('detalle-error');
+		const cajaDetalle = document.getElementById('tabla-detalle');
+		const tablaDetalle = document.getElementById('t-detalle');
 
 		const EJEMPLO = 'SELECT e.id, e.nombre, e.salario FROM Empleado e';
 		const CLAVE_TEXTO = 'hql-console.consulta';
 		const CLAVE_ANCHO = 'hql-console.ancho';
+		const CLAVE_ALTO = 'hql-console.alto-detalle';
 
 		// localStorage puede tirar (modo privado, cookies de sitio bloqueadas). Si eso pasa, el
 		// script entero se caía y con él los listeners: la consola quedaba muerta sin decir por qué.
@@ -249,6 +284,14 @@ public final class HqlConsolePage
 		  const cuantas = (sentencias === undefined || sentencias === null) ? 1 : sentencias;
 		  const encabezado = (filas === 1 ? 'Se insertó 1 fila' : 'Se insertaron ' + filas + ' filas');
 		  return cuantas > 1 ? (encabezado + ' en ' + cuantas + ' sentencias') : encabezado;
+		}
+
+		// "DESC" a secas (o "describe") es la lista de entidades: esa grilla es la única clickeable,
+		// porque cada fila es una entidad. La selección del editor puede venir con espacios o con
+		// mayúsculas, así que se normaliza.
+		function esDescSinArgumentos(hql) {
+		  const t = hql.trim().toLowerCase();
+		  return t === 'desc' || t === 'describe';
 		}
 
 		// UPDATE y DELETE se confirman antes de commitear; el resto se ejecuta de una.
@@ -372,6 +415,70 @@ public final class HqlConsolePage
 		  ev.preventDefault();
 		});
 
+		// ==================== el divisor del detalle (horizontal) ====================
+		// Mismo comportamiento que el divisor vertical, pero moviendo el alto del detalle. Se
+		// mantiene separado del otro a propósito: el vertical ya está andando y probado a mano.
+		const ALTO_MIN = 15, ALTO_MAX = 85, ALTO_POR_DEFECTO = 45;
+
+		function limitarAlto(pct) { return Math.max(ALTO_MIN, Math.min(ALTO_MAX, pct)); }
+
+		function aplicarAlto(pct, persistir) {
+		  const valor = limitarAlto(pct);
+		  panelResultado.style.setProperty('--alto-detalle', valor + '%');
+		  divisorAlto.setAttribute('aria-valuenow', String(Math.round(valor)));
+		  divisorAlto.setAttribute('aria-valuemin', String(ALTO_MIN));
+		  divisorAlto.setAttribute('aria-valuemax', String(ALTO_MAX));
+		  if (persistir) { try { ALMACEN.setItem(CLAVE_ALTO, String(valor)); } catch (e) {} }
+		  return valor;
+		}
+
+		let altoActual = ALTO_POR_DEFECTO;
+		const altoGuardado = parseFloat(ALMACEN.getItem(CLAVE_ALTO));
+		altoActual = aplicarAlto(isNaN(altoGuardado) ? ALTO_POR_DEFECTO : altoGuardado, false);
+
+		let arrastrandoAlto = false;
+
+		function altoSegunPuntero(clientY) {
+		  const caja = panelResultado.getBoundingClientRect();
+		  if (caja.height <= 0) { return altoActual; }
+		  // Se mide desde el borde de abajo: agarrar el divisor y subir agranda el detalle.
+		  return ((caja.bottom - clientY) / caja.height) * 100;
+		}
+
+		divisorAlto.addEventListener('pointerdown', function(ev) {
+		  arrastrandoAlto = true;
+		  try { divisorAlto.setPointerCapture(ev.pointerId); } catch (e) {}
+		  document.body.classList.add('arrastrando-alto');
+		  altoActual = aplicarAlto(altoSegunPuntero(ev.clientY), false);
+		  ev.preventDefault();
+		});
+		divisorAlto.addEventListener('pointermove', function(ev) {
+		  if (!arrastrandoAlto) { return; }
+		  altoActual = aplicarAlto(altoSegunPuntero(ev.clientY), false);
+		});
+		function soltarAlto(ev) {
+		  if (!arrastrandoAlto) { return; }
+		  arrastrandoAlto = false;
+		  document.body.classList.remove('arrastrando-alto');
+		  try { divisorAlto.releasePointerCapture(ev.pointerId); } catch (e) {}
+		  altoActual = aplicarAlto(altoSegunPuntero(ev.clientY), true);
+		}
+		divisorAlto.addEventListener('pointerup', soltarAlto);
+		divisorAlto.addEventListener('pointercancel', function() {
+		  arrastrandoAlto = false;
+		  document.body.classList.remove('arrastrando-alto');
+		});
+		divisorAlto.addEventListener('dblclick', function() { altoActual = aplicarAlto(ALTO_POR_DEFECTO, true); });
+		divisorAlto.addEventListener('keydown', function(ev) {
+		  const paso = ev.shiftKey ? 10 : 2;
+		  if (ev.key === 'ArrowUp') { altoActual = aplicarAlto(altoActual + paso, true); }
+		  else if (ev.key === 'ArrowDown') { altoActual = aplicarAlto(altoActual - paso, true); }
+		  else if (ev.key === 'Home') { altoActual = aplicarAlto(ALTO_MIN, true); }
+		  else if (ev.key === 'End') { altoActual = aplicarAlto(ALTO_MAX, true); }
+		  else { return; }
+		  ev.preventDefault();
+		});
+
 		// ==================== ejecutar ====================
 		async function ejecutar() {
 		  // Se guarda el contenido del editor, no lo último ejecutado: es el estado del textarea.
@@ -405,10 +512,17 @@ public final class HqlConsolePage
 		    estado.textContent = 'Ejecutando ' + rango.etiqueta + '...';
 		    const respuesta = await pedir(hql, false);
 		    if (!respuesta.ok) { mostrarError(respuesta.datos); return; }
-		    mostrarResultado(respuesta.datos);
+		    const cabeceras = mostrarResultado(respuesta.datos);
 		    // DML es una escritura sola; BATCH, varias en una transacción. Las dos avisan si son INSERT.
 		    if (esInsercion && (respuesta.datos.type === 'DML' || respuesta.datos.type === 'BATCH')) {
 		      alert(mensajeInsercion(respuesta.datos.affectedRows, respuesta.datos.statementCount));
+		    }
+		    // La lista de entidades de un "DESC" es clickeable: cada fila abre su detalle abajo.
+		    // Cualquier otro resultado cierra el detalle, para no dejar colgado el de antes.
+		    if (esDescSinArgumentos(hql) && cabeceras) {
+		      hacerListaClickeable(cabeceras);
+		    } else {
+		      cerrarDetalle();
 		    }
 		  } catch (e) {
 		    mostrarError({ error: 'No se pudo contactar la consola: ' + e });
@@ -443,21 +557,12 @@ public final class HqlConsolePage
 		  crudo.hidden = true;
 		  estado.textContent = '';
 		  pie.textContent = '';
+		  cerrarDetalle();
 		}
 
-		function mostrarResultado(datos) {
-		  crudoPre.textContent = JSON.stringify(datos, null, 2);
-		  crudo.hidden = false;
-		  vacio.hidden = true;
-
-		  if (datos.type === 'DML' || datos.type === 'BATCH') {
-		    cajaTabla.hidden = true;
-		    pie.textContent = '';
-		    const detalle = datos.message ? datos.message : (datos.affectedRows + ' fila(s) afectada(s)');
-		    estado.textContent = detalle + ' en ' + datos.elapsedMs + ' ms';
-		    return;
-		  }
-
+		// Dibuja una grilla en la caja y la tabla que le pasen, y devuelve las cabeceras que usó.
+		// Lo usan la grilla de resultados y la del detalle: son la misma cosa.
+		function dibujarGrilla(caja, tabla, datos) {
 		  const cabeceras = (datos.headers && datos.headers.length) ? datos.headers : cabecerasDeFilas(datos.rows);
 		  tabla.textContent = '';
 
@@ -487,7 +592,25 @@ public final class HqlConsolePage
 		    tbody.appendChild(tr);
 		  });
 		  tabla.appendChild(tbody);
-		  cajaTabla.hidden = false;
+		  caja.hidden = false;
+		  return cabeceras;
+		}
+
+		// Devuelve las cabeceras dibujadas, o nada si el resultado no era una grilla.
+		function mostrarResultado(datos) {
+		  crudoPre.textContent = JSON.stringify(datos, null, 2);
+		  crudo.hidden = false;
+		  vacio.hidden = true;
+
+		  if (datos.type === 'DML' || datos.type === 'BATCH') {
+		    cajaTabla.hidden = true;
+		    pie.textContent = '';
+		    const detalle = datos.message ? datos.message : (datos.affectedRows + ' fila(s) afectada(s)');
+		    estado.textContent = detalle + ' en ' + datos.elapsedMs + ' ms';
+		    return null;
+		  }
+
+		  const cabeceras = dibujarGrilla(cajaTabla, tabla, datos);
 
 		  let resumen = datos.rowCount + ' fila' + (datos.rowCount === 1 ? '' : 's') + ' en ' + datos.elapsedMs + ' ms';
 		  if (datos.truncated) { resumen = resumen + ' - truncado a ' + MAX_ROWS + ' filas'; }
@@ -496,6 +619,58 @@ public final class HqlConsolePage
 		  pie.textContent = ALLOW_WRITES
 		    ? 'escrituras habilitadas (hql-console.allow-writes=true)'
 		    : 'solo lectura (hql-console.allow-writes=false)';
+		  return cabeceras;
+		}
+
+		// ==================== el detalle de una entidad ====================
+
+		// La grilla de "DESC" a secas es la lista de entidades. Se busca la columna ENTIDAD (no la
+		// tabla: "DESC" espera el nombre de la clase) y cada fila pasa a ser clickeable.
+		function hacerListaClickeable(cabeceras) {
+		  const columna = cabeceras.indexOf('ENTIDAD');
+		  if (columna < 0) { return; }
+		  const filas = tabla.querySelectorAll('tbody tr');
+		  for (let i = 0; i < filas.length; i++) {
+		    const fila = filas[i];
+		    const celda = fila.cells[columna];
+		    if (!celda) { continue; }
+		    const entidad = celda.textContent;
+		    fila.className = 'fila-clickeable';
+		    fila.title = 'Ver el detalle de ' + entidad;
+		    fila.addEventListener('click', function() { mostrarDetalle(entidad, fila); });
+		  }
+		}
+
+		// El detalle es un "DESC <Entidad>" más, contra el mismo endpoint: una lectura, así que no
+		// depende de allow-writes ni puede cambiar nada. Los errores van abajo, sin tocar la lista.
+		async function mostrarDetalle(entidad, filaElegida) {
+		  const filas = tabla.querySelectorAll('tbody tr');
+		  for (let i = 0; i < filas.length; i++) { filas[i].className = 'fila-clickeable'; }
+		  if (filaElegida) { filaElegida.className = 'fila-clickeable fila-elegida'; }
+
+		  detalleTitulo.textContent = 'Detalle de ' + entidad;
+		  detalleError.hidden = true;
+		  cajaDetalle.hidden = true;
+		  abrirDetalle();
+
+		  const respuesta = await pedir('DESC ' + entidad, false);
+		  if (!respuesta.ok) {
+		    detalleError.textContent = respuesta.datos.error || 'No se pudo traer el detalle.';
+		    detalleError.hidden = false;
+		    return;
+		  }
+		  dibujarGrilla(cajaDetalle, tablaDetalle, respuesta.datos);
+		}
+
+		function abrirDetalle() {
+		  divisorAlto.hidden = false;
+		  panelDetalle.hidden = false;
+		  aplicarAlto(altoActual, false);
+		}
+
+		function cerrarDetalle() {
+		  divisorAlto.hidden = true;
+		  panelDetalle.hidden = true;
 		}
 
 		function cabecerasDeFilas(filas) {
