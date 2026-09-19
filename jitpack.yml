@@ -1,0 +1,11 @@
+# Configuración para JitPack (https://jitpack.io), que compila el tag y sirve el artefacto a demanda.
+#
+# JitPack compila con Java 8 por defecto, por compatibilidad con proyectos viejos. Este build
+# necesita 17: Gradle 8, Spring Boot 3 y el propio starter (sourceCompatibility 17) no compilan con 8.
+#
+# No hace falta declarar el comando de build: el default de JitPack para Gradle es
+# 'gradlew build publishToMavenLocal', que es exactamente lo que queremos —'build' corre
+# checkBootSurface, la guarda de compatibilidad con Spring Boot 4— y publica el starter, que ya
+# tiene el plugin maven-publish y la publicación 'maven'.
+jdk:
+  - openjdk17

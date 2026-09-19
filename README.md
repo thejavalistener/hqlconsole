@@ -45,15 +45,20 @@ git tag -a v0.1.0 -m "0.1.0"
 git push origin v0.1.0
 ```
 
-> Para consumir el starter como dependencia (`implementation ...`) hace falta un repositorio Maven:
-> JitPack apuntando al tag, o GitHub Packages. Bajar el jar del release y meterlo a mano con
-> `files(...)` funciona, pero perdés las dependencias transitivas y las actualizaciones.
+> Para consumir el starter como dependencia (`implementation ...`) está **JitPack**: clona el tag,
+> lo compila y sirve el artefacto a demanda, sin subir nada a mano. Bajar el jar del release y
+> meterlo con `files(...)` funciona, pero perdés las dependencias transitivas y las actualizaciones.
 
 ## Uso
 
 ```gradle
+repositories {
+    mavenCentral()
+    maven { url 'https://jitpack.io' }
+}
+
 dependencies {
-    implementation 'com.github.thejavalistener:hql-console-starter:0.1.0'
+    implementation 'com.github.thejavalistener.hqlconsole:hql-console-starter:v0.1.0'
 }
 ```
 
@@ -61,6 +66,24 @@ Eso es todo. No hay `@Import`, ni `@ComponentScan`, ni `@EnableHqlConsole`, ni u
 configuración: el jar trae su auto-configuración declarada en
 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` y Spring Boot la
 descubre sola.
+
+La coordenada tiene dos particularidades que se pagan una vez y después se olvidan:
+
+- **El groupId incluye el repo**: `com.github.<usuario>.<repo>`, o sea
+  `com.github.thejavalistener.hqlconsole`. Es la convención de JitPack para builds multi-módulo,
+  donde cada módulo se publica por separado con el nombre del módulo como artifactId. La forma
+  corta de un solo módulo (`com.github.usuario:repo`) no aplica acá.
+- **La versión es el tag**, no el `version` de `build.gradle`: `v0.1.0`. Es el mismo tag que dispara
+  el release de GitHub, así que hay una sola cosa que recordar.
+
+La primera vez que alguien pide el artefacto, JitPack compila el tag (tarda unos minutos) y lo deja
+cacheado; de ahí en adelante la descarga es instantánea. El log de ese build está en
+`https://jitpack.io/com/github/thejavalistener/hqlconsole/v0.1.0/build.log`, y el estado se puede
+ver en `https://jitpack.io/#thejavalistener/hqlconsole`.
+
+El `jitpack.yml` de la raíz existe sólo para fijar el JDK: JitPack compila con Java 8 por defecto y
+este build necesita 17. El comando de build es el default de JitPack para Gradle
+(`gradlew build publishToMavenLocal`), que además de publicar el starter corre `checkBootSurface`.
 
 Al arrancar, el log avisa dónde quedó:
 
@@ -646,6 +669,7 @@ hql-console-demo/               aplicación de ejemplo: Empleado/Departamento/Li
                                 (Etiqueta -> EtiquetaRara está sólo para probar las mayúsculas)
 verify-demo.ps1                 la verificación end-to-end
 .github/workflows/release.yml   tag v* -> construye y publica el release con los jars
+jitpack.yml                     JitPack: fija el JDK 17 con el que se compila cada tag
 ```
 
 ## Roadmap
