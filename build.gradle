@@ -5,7 +5,7 @@ plugins {
 
 allprojects {
     group = 'com.github.thejavalistener'
-    version = '0.1.0'
+    version = gradle.startParameter.projectProperties['version'] ?: '0.1.1'
 
     repositories {
         mavenCentral()
@@ -18,8 +18,6 @@ subprojects {
     }
 }
 
-// La versión, dicha por el propio build. Así el workflow de release compara el tag contra esto y no
-// contra un grep del archivo: la fuente de verdad sigue siendo el 'version' de arriba.
 tasks.register('printVersion') {
     description = 'Imprime la version del proyecto (la usa .github/workflows/release.yml).'
     group = 'help'

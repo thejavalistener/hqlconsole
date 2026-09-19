@@ -58,7 +58,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.thejavalistener.hqlconsole:hql-console-starter:v0.1.0'
+    implementation 'com.github.thejavalistener.hqlconsole:hql-console-starter:v0.1.1'
 }
 ```
 
