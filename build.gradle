@@ -5,7 +5,7 @@ plugins {
 
 allprojects {
     group = 'com.github.thejavalistener'
-    version = gradle.startParameter.projectProperties['version'] ?: '0.1.1'
+    version = gradle.startParameter.projectProperties['version'] ?: '0.1.2'
 
     repositories {
         mavenCentral()

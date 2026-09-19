@@ -37,6 +37,11 @@ publishing {
     publications {
         maven(MavenPublication) {
             from components.java
+            // Coordenadas explicitas: en un build multi-modulo JitPack publica cada modulo con el
+            // nombre del modulo como artifactId, y necesita verlas para reconocerlo.
+            groupId project.group
+            artifactId project.name
+            version project.version
         }
     }
 }
