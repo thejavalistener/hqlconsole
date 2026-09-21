@@ -41,11 +41,13 @@ import jakarta.persistence.metamodel.Metamodel;
 /**
  * Arma las respuestas de {@code DESC}.
  *
- * <p>{@code DESC <Entidad>} devuelve {@code CAMPO | TIPO SQL | ATRIBUTO | TIPO JAVA}. Los dos
- * primeros salen de la <b>base</b>, preguntando por JDBC ({@code DatabaseMetaData}): el metamodelo
- * de JPA no expone nombres de columna ni tipos SQL, y los que se deducen del mapping pueden no
- * coincidir con lo que hay realmente en la tabla. Si no hay {@code DataSource} en el contexto o la
- * tabla no aparece, cae a lo derivado del mapping en vez de fallar.</p>
+ * <p>{@code DESC <Entidad>} devuelve {@code ATRIBUTO | TIPO JAVA | CAMPO | TIPO SQL}, en ese orden:
+ * primero lo que uno escribe en una sentencia (el atributo y su tipo Java) y después lo que existe
+ * en la base (la columna física y su tipo SQL). Las dos últimas salen de la <b>base</b>, preguntando
+ * por JDBC ({@code DatabaseMetaData}): el metamodelo de JPA no expone nombres de columna ni tipos
+ * SQL, y los que se deducen del mapping pueden no coincidir con lo que hay realmente en la tabla. Si
+ * no hay {@code DataSource} en el contexto o la tabla no aparece, cae a lo derivado del mapping en
+ * vez de fallar.</p>
  *
  * <p>{@code DESC} sin argumentos devuelve la lista de entidades.</p>
  *
@@ -56,7 +58,7 @@ public class EntityDescriber
 {
 	private static final Logger log=LoggerFactory.getLogger(EntityDescriber.class);
 
-	private static final List<String> HEADERS=List.of("CAMPO","TIPO SQL","ATRIBUTO","TIPO JAVA");
+	private static final List<String> HEADERS=List.of("ATRIBUTO","TIPO JAVA","CAMPO","TIPO SQL");
 	private static final List<String> LIST_HEADERS=List.of("ENTIDAD","TABLA","CAMPOS");
 
 	private final ObjectProvider<DataSource> dataSource;
@@ -105,7 +107,9 @@ public class EntityDescriber
 			String campo=Mapping.physicalName(real!=null?real.name():derived);
 			String sqlType=real!=null?real.typeName():(isColumn?_derivedSqlType(metamodel,attribute):"-");
 
-			rows.add(List.of(campo,sqlType,attribute.getName(),Mapping.javaTypeName(attribute)));
+			// El orden es el de la sentencia: ATRIBUTO y TIPO JAVA son lo que uno escribe, CAMPO y
+			// TIPO SQL son cómo se llama y qué es eso en la base.
+			rows.add(List.of(attribute.getName(),Mapping.javaTypeName(attribute),campo,sqlType));
 		}
 		return HqlResult.query(HEADERS,rows,false,_millis(t0));
 	}

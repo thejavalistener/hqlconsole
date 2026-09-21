@@ -31,7 +31,9 @@ import jakarta.persistence.metamodel.Metamodel;
  * <p>Hay dos familias de sentencias:</p>
  * <ul>
  *   <li><b>HQL</b> ({@code select}, {@code from}, y el bulk {@code delete} de HQL): se le pasan a
- *       Hibernate tal cual.</li>
+ *       Hibernate tal cual, salvo dos cosas que HQL no entiende y la consola sí: el
+ *       {@code SELECT * FROM X} (se traduce a {@code FROM X}) y un {@code LIMIT n} al final, que se
+ *       aplica con {@code setMaxResults}.</li>
  *   <li><b>Propias de la consola</b> ({@code INSERT ... VALUES}, {@code UPDATE ... SET},
  *       {@code DESC}): no son HQL, las interpreta
  *       {@link StatementParser} y las ejecuta esta clase.</li>
@@ -295,12 +297,34 @@ public class HqlQueryRunner
 
 	private HqlResult _runQuery(EntityManagerFactory emf,String statement,long t0)
 	{
+		// El LIMIT y el "*" son gramática de la consola, no de HQL: se sacan antes de mandar la
+		// sentencia a Hibernate, y lo que queda es HQL de verdad (o "from <Entidad> ...").
+		Consulta consulta=_parsearLimite(statement);
+		String texto=_sinSelectEstrella(consulta.texto());
+
+		// Cuántas filas se piden: gana el menor entre el LIMIT explícito y el tope global. Con un
+		// LIMIT que entra en el tope no hace falta pedir una fila de más: ese recorte es lo que el
+		// usuario pidió, no una truncación; el "de más" sólo sirve para avisar que hay más filas.
+		int pedido=consulta.limite()==null?0:consulta.limite();
+		int tope;
+		boolean pedirUnaMas;
+		if( pedido>0&&(maxRows<=0||maxRows>=pedido) )
+		{
+			tope=pedido;
+			pedirUnaMas=false;
+		}
+		else
+		{
+			tope=maxRows;
+			pedirUnaMas=maxRows>0;
+		}
+
 		EntityManager em=emf.createEntityManager();
 		try
 		{
 			// Se resuelve antes de ejecutar la consulta para que un nombre mal escrito dé el error
 			// con la sugerencia, y no el de Hibernate.
-			EntityType<?> flatEntity=_implicitEntitySelect(emf,statement);
+			EntityType<?> flatEntity=_implicitEntitySelect(emf,texto);
 
 			EntityTransaction tx=_begin(em);
 			try
@@ -318,10 +342,10 @@ public class HqlQueryRunner
 					// that specify other result types (e.g., Tuple.class) will not be portable").
 					// Hibernate lo acepta y es lo que usamos acá; el catch de abajo es el camino
 					// portable, así que un proveedor que lo rechace degrada en vez de romper.
-					TypedQuery<Tuple> typed=em.createQuery(statement,Tuple.class);
-					_limit(typed);
+					TypedQuery<Tuple> typed=em.createQuery(texto,Tuple.class);
+					_limite(typed,tope,pedirUnaMas);
 					List<Tuple> tuples=typed.getResultList();
-					headers=_headersOf(tuples,statement);
+					headers=_headersOf(tuples,texto);
 					raw=tuples;
 				}
 				catch(RuntimeException providerRejectsTuple)
@@ -330,14 +354,14 @@ public class HqlQueryRunner
 					// sin metadata de columnas, con headers derivados por posición.
 					log.debug("La consulta no se pudo leer como Tuple; se usa el camino JPA plano sin alias: {}",
 							providerRejectsTuple.getMessage());
-					Query plain=em.createQuery(statement);
-					_limit(plain);
+					Query plain=em.createQuery(texto);
+					_limite(plain,tope,pedirUnaMas);
 					raw=plain.getResultList();
 					headers=List.of();
 				}
 
-				boolean truncated=maxRows>0&&raw.size()>maxRows;
-				List<?> visible=truncated?raw.subList(0,maxRows):raw;
+				boolean truncated=tope>0&&raw.size()>tope;
+				List<?> visible=truncated?raw.subList(0,tope):raw;
 
 				// "from <Entidad>" sin SELECT explícito: en vez de una sola columna con "Libro#1",
 				// se muestran todas las columnas planas de la entidad, y las relaciones como su FK.
@@ -349,7 +373,7 @@ public class HqlQueryRunner
 					rows=_toRows(visible,emf);
 					if( headers.isEmpty() )
 					{
-						List<String> synthesized=_synthesizeHeaders(statement,rows.isEmpty()?-1:rows.get(0).size());
+						List<String> synthesized=_synthesizeHeaders(texto,rows.isEmpty()?-1:rows.get(0).size());
 						headers=synthesized==null?_defaultHeaders(rows):synthesized;
 					}
 				}
@@ -360,7 +384,7 @@ public class HqlQueryRunner
 				log.debug("Sentencia leída con {} fila(s) y headers {}",rows.size(),headers);
 
 				tx.rollback(); // es una lectura: no dejamos la transacción abierta
-				return HqlResult.query(headers,rows,truncated,_millis(t0));
+				return HqlResult.query(headers,rows,truncated,_millis(t0),_mensajeLimite(consulta,truncated));
 			}
 			catch(RuntimeException e)
 			{
@@ -372,6 +396,111 @@ public class HqlQueryRunner
 		{
 			em.close();
 		}
+	}
+
+	/** Lo que se muestra al pie cuando la sentencia llevaba un {@code LIMIT}. */
+	private String _mensajeLimite(Consulta consulta,boolean truncated)
+	{
+		if( consulta.limite()==null )
+		{
+			return null;
+		}
+		return truncated
+				?"LIMIT "+consulta.limite()+" recortado antes por el tope de "+maxRows+" filas"
+				:"LIMIT "+consulta.limite();
+	}
+
+	// ==================== gramática de la consola dentro de una consulta ====================
+
+	/** Una consulta ya sin la cláusula LIMIT, con el valor que pedía (o {@code null}). */
+	private record Consulta(String texto,Integer limite) {}
+
+	/**
+	 * Saca el {@code LIMIT n} del final de la consulta, si está.
+	 *
+	 * <p>Va al final y nada más que al final, que es lo que pidió el diseño: la sentencia puede ser
+	 * larga, tener WHERE y ORDER BY, y terminar en {@code LIMIT n}. El valor se aplica con
+	 * {@code setMaxResults} (el "maxRows" de JDBC), no con {@code fetchSize}: {@code fetchSize} sólo
+	 * insinúa de a cuántas filas traer por viaje y no cambia cuántas devuelve la consulta.</p>
+	 *
+	 * <p>El escaneo es de nivel 0, así que un {@code limit} dentro de un literal o de una subconsulta
+	 * no se toca: {@code WHERE e.nombre LIKE '%limit 5%'} y {@code (select ... limit 1)} siguen
+	 * viajando tal cual a Hibernate.</p>
+	 */
+	private Consulta _parsearLimite(String statement)
+	{
+		List<Integer> posiciones=new ArrayList<>();
+		for(int i=0;i<statement.length();)
+		{
+			int encontrado=Text.indexOfKeyword(statement,"limit",i);
+			if( encontrado<0 )
+			{
+				break;
+			}
+			posiciones.add(encontrado);
+			i=encontrado+5;
+		}
+		if( posiciones.isEmpty() )
+		{
+			return new Consulta(statement,null);
+		}
+		if( posiciones.size()>1 )
+		{
+			throw new IllegalArgumentException("Hay más de un LIMIT en la sentencia: el LIMIT va una sola vez, al final (LIMIT n)");
+		}
+
+		int at=posiciones.get(0);
+		String cola=statement.substring(at+5).trim();
+		if( !cola.matches("\\d+") )
+		{
+			throw new IllegalArgumentException("LIMIT espera un número entero al final de la sentencia: ... LIMIT n"
+					+(cola.isEmpty()?"":" (encontré '"+cola+"')"));
+		}
+		int filas;
+		try
+		{
+			filas=Integer.parseInt(cola);
+		}
+		catch(NumberFormatException demasiadoGrande)
+		{
+			throw new IllegalArgumentException("El LIMIT "+cola+" es demasiado grande");
+		}
+		if( filas<1 )
+		{
+			throw new IllegalArgumentException("El LIMIT tiene que ser mayor que cero (pediste "+filas+")");
+		}
+		return new Consulta(statement.substring(0,at).trim(),filas);
+	}
+
+	/**
+	 * {@code SELECT * FROM X ...} pasado a {@code FROM X ...}, que es la forma que la consola ya
+	 * aplana a columnas. Hibernate no acepta el {@code *} en HQL (tira {@code SyntaxException}), y
+	 * escribir {@code select *} es lo natural para cualquiera que venga de SQL, así que se traduce en
+	 * vez de rechazarlo. Si la sentencia no es exactamente esa forma se devuelve sin tocar.
+	 */
+	private String _sinSelectEstrella(String statement)
+	{
+		if( !Text.startsWithWord(statement,"select") )
+		{
+			return statement;
+		}
+		int i=6;
+		while( i<statement.length()&&Character.isWhitespace(statement.charAt(i)) )
+		{
+			i++;
+		}
+		if( i>=statement.length()||statement.charAt(i)!='*' )
+		{
+			return statement;
+		}
+		i++;
+		while( i<statement.length()&&Character.isWhitespace(statement.charAt(i)) )
+		{
+			i++;
+		}
+		// Sin el FROM detrás no es un "select * from ...": se deja como está para que Hibernate diga
+		// lo que corresponda.
+		return Text.wordAt(statement,i,"from")?statement.substring(i):statement;
 	}
 
 	// ==================== lote de sentencias ====================
@@ -923,12 +1052,23 @@ public class HqlQueryRunner
 		}
 	}
 
+	/** El consultorio de siempre del {@code UPDATE} de la consola: sólo el tope global. */
 	private void _limit(Query query)
 	{
-		if( maxRows>0 )
+		_limite(query,maxRows,maxRows>0);
+	}
+
+	/**
+	 * Aplica el tope de filas a la consulta. {@code tope<=0} es "sin tope".
+	 *
+	 * <p>{@code pedirUnaMas} pide una fila de más para poder distinguir "hay exactamente {@code tope}"
+	 * de "hay más": es lo que hace que el aviso de truncado sea real y no una sospecha.</p>
+	 */
+	private void _limite(Query query,int tope,boolean pedirUnaMas)
+	{
+		if( tope>0 )
 		{
-			// Pedimos uno de más para poder avisar que el resultado viene truncado.
-			query.setMaxResults(maxRows==Integer.MAX_VALUE?maxRows:maxRows+1);
+			query.setMaxResults(pedirUnaMas&&tope<Integer.MAX_VALUE?tope+1:tope);
 		}
 	}
 

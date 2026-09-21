@@ -65,13 +65,16 @@ if ($LASTEXITCODE -ne 0) { throw 'El build fallo.' }
 # El workflow de release (que no se puede correr desde acá) le pregunta la version al build con
 # printVersion y la compara con el tag. Si esa tarea dejara de imprimir la version, el release
 # saldria con los jars titulados con otro numero: se comprueba contra el nombre del jar real.
+#
+# Se busca el jar de ESA version, no el primero que aparezca en build/libs: despues de un par de
+# releases hay jars de versiones viejas y agarrar el primero daba un FAIL falso.
 $versionImpreso = (& (Join-Path $root 'gradlew.bat') -p $root --console=plain -q printVersion | Select-Object -Last 1)
 $versionImpreso = "$versionImpreso".Trim()
-$jarStarter = Get-ChildItem (Join-Path $root 'hql-console-starter\build\libs\hql-console-starter-*.jar') -ErrorAction SilentlyContinue |
-              Where-Object { $_.Name -notmatch 'sources' } | Select-Object -First 1
+$jarEsperado = Join-Path $root "hql-console-starter\build\libs\hql-console-starter-$versionImpreso.jar"
+$jarStarter = Get-Item $jarEsperado -ErrorAction SilentlyContinue
 Check 'printVersion coincide con el nombre del jar del starter' `
-      ($null -ne $jarStarter -and $versionImpreso -ne '' -and $jarStarter.Name -eq "hql-console-starter-$versionImpreso.jar") `
-      "printVersion=[$versionImpreso] jar=$($jarStarter.Name)"
+      ($null -ne $jarStarter -and $versionImpreso -ne '') `
+      "printVersion=[$versionImpreso] esperaba $jarEsperado"
 
 Write-Host "== Levantando el demo en el puerto $Port (context-path '$ContextPath', tope $MaxRows) ==" -ForegroundColor Cyan
 $javaArgs = @('-jar', "`"$jar`"", "--server.port=$Port", "--hql-console.max-rows=$MaxRows")
@@ -154,17 +157,20 @@ try {
     Check 'DELETE persistio (quedan 5)' ($r.json.rows[0][0] -eq 5) $r.json.rows[0][0]
 
     # --- sentencias propias de la consola: DESC ---
+    # Orden del contrato: primero lo que uno escribe (ATRIBUTO, TIPO JAVA) y después lo que hay en la
+    # base (CAMPO, TIPO SQL).
     $r = Exec 'DESC Libro'
-    Check 'DESC devuelve las 4 columnas del contrato' (($r.json.headers -join ',') -eq 'CAMPO,TIPO SQL,ATRIBUTO,TIPO JAVA') ($r.json.headers -join ',')
-    Check 'DESC respeta el orden de declaracion de la entidad' ($r.json.rows[0][0] -eq 'ID' -and $r.json.rows[1][0] -eq 'TITULO') "$($r.json.rows[0][0]),$($r.json.rows[1][0])"
-    $fk = $r.json.rows | Where-Object { $_[2] -eq 'autor' }
-    Check 'DESC muestra la FK como CAMPO y la relacion como ATRIBUTO' ($fk[0] -match 'ID_AUTOR' -and $fk[3] -eq 'Autor') ($fk -join ' | ')
-    $fecha = $r.json.rows | Where-Object { $_[2] -eq 'fechaPublicacion' }
-    Check 'DESC trae el TIPO SQL real de la base' ($fecha[1] -eq 'DATE' -and $fecha[3] -eq 'LocalDate') ($fecha -join ' | ')
-    $titulo = $r.json.rows | Where-Object { $_[2] -eq 'titulo' }
-    Check 'DESC trae el TIPO SQL de un texto' ($titulo[1] -match 'CHAR|VARCHAR|TEXT') $titulo[1]
+    Check 'DESC devuelve las 4 columnas del contrato' (($r.json.headers -join ',') -eq 'ATRIBUTO,TIPO JAVA,CAMPO,TIPO SQL') ($r.json.headers -join ',')
+    Check 'DESC muestra primero el ATRIBUTO y despues el CAMPO' ($r.json.rows[0][0] -eq 'id' -and $r.json.rows[0][2] -eq 'ID') "$($r.json.rows[0][0]),$($r.json.rows[0][2])"
+    Check 'DESC respeta el orden de declaracion de la entidad' ($r.json.rows[0][2] -eq 'ID' -and $r.json.rows[1][2] -eq 'TITULO') "$($r.json.rows[0][2]),$($r.json.rows[1][2])"
+    $fk = $r.json.rows | Where-Object { $_[0] -eq 'autor' }
+    Check 'DESC muestra la FK como CAMPO y la relacion como ATRIBUTO' ($fk[2] -match 'ID_AUTOR' -and $fk[1] -eq 'Autor') ($fk -join ' | ')
+    $fecha = $r.json.rows | Where-Object { $_[0] -eq 'fechaPublicacion' }
+    Check 'DESC trae el TIPO SQL real de la base' ($fecha[3] -eq 'DATE' -and $fecha[1] -eq 'LocalDate') ($fecha -join ' | ')
+    $titulo = $r.json.rows | Where-Object { $_[0] -eq 'titulo' }
+    Check 'DESC trae el TIPO SQL de un texto' ($titulo[3] -match 'CHAR|VARCHAR|TEXT') $titulo[3]
     # La columna ATRIBUTO de DESC es el contrato de titulos de "from <Entidad>".
-    $atributosDesc = ($r.json.rows | ForEach-Object { $_[2] }) -join ','
+    $atributosDesc = ($r.json.rows | ForEach-Object { $_[0] }) -join ','
 
     $r = Exec 'DESC'
     Check 'DESC sin argumentos lista las entidades' (($r.json.headers -join ',') -eq 'ENTIDAD,TABLA,CAMPOS' -and $r.json.rowCount -ge 4) $r.raw
@@ -234,6 +240,19 @@ try {
 
     $r = Exec "INSERT INTO Libro (titulo, precio) VALUES ('Dos valores', 1, 2)"
     Check 'INSERT posicional avisa si no coinciden columnas y valores' ($r.status -eq 400 -and $r.json.error -match '2 columna.*3 valor') $r.raw
+
+    # --- INSERT posicional con relaciones: el valor es el id de la entidad referenciada ---
+    $r = Exec "INSERT INTO Libro (titulo, autor) VALUES ('Posicional con autor', 1)"
+    Check 'INSERT posicional acepta el id de una relacion' ($r.json.type -eq 'DML' -and $r.json.affectedRows -eq 1) $r.raw
+    $r = Exec "SELECT l.titulo, l.autor FROM Libro l WHERE l.titulo = 'Posicional con autor'"
+    Check 'el id de la relacion quedo guardado como la entidad' `
+          ($r.json.rowCount -eq 1 -and $r.json.rows[0][1] -eq 'Autor#1') ($r.json.rows[0] -join '|')
+
+    $r = Exec "INSERT INTO Empleado (nombre, salario, departamento) VALUES ('Nuevo Empleado', 100, 1)"
+    Check 'INSERT posicional con dos columnas, una de ellas relacion, funciona' ($r.json.type -eq 'DML') $r.raw
+    $r = Exec "SELECT e.nombre, e.salario, e.departamento FROM Empleado e WHERE e.nombre = 'Nuevo Empleado'"
+    Check 'la relacion por id se resolvio tambien en Empleado' `
+          ($r.json.rowCount -eq 1 -and $r.json.rows[0][2] -eq 'Departamento#1') ($r.json.rows[0] -join '|')
 
     # El multi-fila y el alias con columnas NO son gramatica de la consola, pero Hibernate los
     # entiende como HQL y los ejecuta: por eso el parser devuelve null y sigue por ese camino.
@@ -362,6 +381,51 @@ try {
     $r = Exec 'from Libro l join l.autor a'
     Check 'un join explicito devuelve las dos raices' ($r.json.headers.Count -eq 2) ($r.json.headers -join ',')
 
+    # --- SELECT * FROM <Entidad>: lo mismo que FROM <Entidad> ---
+    $r = Exec 'SELECT * FROM Libro'
+    Check 'SELECT * FROM <Entidad> aplana igual que from <Entidad>' `
+          (($r.json.headers -join ',') -eq $atributosDesc -and $r.json.rowCount -eq $esperadas) "$($r.json.headers -join ',') ($($r.json.rowCount) filas)"
+    $r = Exec "SELECT * FROM Libro l WHERE l.genero = 'NOVELA' ORDER BY l.id LIMIT 100"
+    Check 'SELECT * con alias, WHERE, ORDER BY y LIMIT sigue andando' `
+          ($r.status -eq 200 -and ($r.json.headers -join ',') -eq $atributosDesc) $r.raw
+
+    $r = Exec 'SELECT * FROM Empleado e WHERE e.id = 1'
+    Check 'SELECT * FROM ... WHERE devuelve una fila aplanada' `
+          ($r.json.rowCount -eq 1 -and ($r.json.headers -join ',') -eq 'id,nombre,salario,ingreso,departamento') ($r.json.headers -join ',')
+
+    # Un select explicito que no es "*" no se toca: sigue siendo una sola columna con "Tipo#id".
+    $r = Exec 'select l from Libro l'
+    Check 'un SELECT que no es * no se aplana' ($r.json.headers.Count -eq 1) ($r.json.headers -join ',')
+
+    # --- LIMIT al final de la consulta ---
+    $r = Exec 'from Empleado limit 2'
+    Check 'from <Entidad> LIMIT n trae solo n filas' ($r.json.rowCount -eq [Math]::Min($MaxRows, 2) -and $r.json.truncated -eq $false) "rowCount=$($r.json.rowCount) truncated=$($r.json.truncated)"
+    Check 'el LIMIT aplicado se informa' ($r.json.message -match 'LIMIT 2') $r.json.message
+
+    $r = Exec 'SELECT e.id, e.nombre FROM Empleado e ORDER BY e.id LIMIT 3'
+    Check 'SELECT largo con ORDER BY y LIMIT al final trae 3 filas' ($r.json.rowCount -eq [Math]::Min($MaxRows, 3)) $r.json.rowCount
+
+    $r = Exec 'SELECT e.id FROM Empleado e ORDER BY e.id DESC LIMIT 1'
+    $idMayor = $r.json.rows[0][0]
+    $r = Exec 'SELECT * FROM Empleado e ORDER BY e.id DESC LIMIT 1'
+    Check 'SELECT * con ORDER BY DESC y LIMIT funciona' `
+          ($r.json.rowCount -eq 1 -and $r.json.rows[0][0] -eq $idMayor) ($r.json.rows[0] -join '|')
+
+    # El LIMIT es gramatica de la consola: Hibernate no lo entiende, asi que se saca antes.
+    $r = Exec 'from Empleado limit 1'
+    Check 'el LIMIT no llega a Hibernate (no hay error de sintaxis)' ($r.status -eq 200) $r.raw
+
+    # Un "limit" que no es la clausula del final no se toca: adentro de un literal es texto.
+    $r = Exec "SELECT e.nombre FROM Empleado e WHERE e.nombre LIKE '%limit 5%'"
+    Check 'un limit dentro de un literal no se confunde con la clausula' ($r.status -eq 200 -and $r.json.rowCount -eq 0) $r.raw
+
+    $r = Exec 'from Empleado limit'
+    Check 'LIMIT sin numero avisa' ($r.status -eq 400 -and $r.json.error -match 'LIMIT espera un') $r.raw
+    $r = Exec 'from Empleado limit abc'
+    Check 'LIMIT con texto avisa' ($r.status -eq 400 -and $r.json.error -match 'LIMIT espera un') $r.raw
+    $r = Exec 'from Empleado limit 0'
+    Check 'LIMIT 0 avisa' ($r.status -eq 400 -and $r.json.error -match 'mayor que cero') $r.raw
+
     # --- entidades y atributos son case sensitive ---
     $r = Exec 'DESC libro'
     Check 'DESC con la entidad en minuscula falla y sugiere' ($r.status -eq 400 -and $r.json.error -match "Quisiste decir 'Libro'") $r.raw
@@ -457,6 +521,16 @@ check('desc de entidad: describe Libro', esDescDeUnaEntidad('  describe  Libro '
 check('desc de entidad: desc a secas no', esDescDeUnaEntidad('DESC'), false);
 check('desc de entidad: un select no', esDescDeUnaEntidad('SELECT e.id FROM Empleado e'), false);
 check('desc de entidad: una palabra que empieza igual no', esDescDeUnaEntidad('descripcion'), false);
+check('desc de entidad: dos palabras no', esDescDeUnaEntidad('DESC Libro li'), false);
+
+// --- el nombre de la entidad, que es lo que usa el panel lateral ---
+check('entidad de desc: devuelve el nombre', entidadDeDesc('DESC Libro'), 'Libro');
+check('entidad de desc: describe tambien', entidadDeDesc('  Describe  Empleado '), 'Empleado');
+check('entidad de desc: mayusculas mezcladas', entidadDeDesc('deSc Autor'), 'Autor');
+check('entidad de desc: desc a secas no tiene entidad', entidadDeDesc('DESC'), null);
+check('entidad de desc: un select no', entidadDeDesc('SELECT e.id FROM Empleado e'), null);
+check('entidad de desc: dos palabras no', entidadDeDesc('DESC Libro li'), null);
+check('entidad de desc: una palabra que empieza igual no', entidadDeDesc('descripcion'), null);
 '@
             $archivo = Join-Path $env:TEMP 'hql-console-sel-test.js'
             Set-Content -Path $archivo -Value $js -Encoding UTF8
@@ -494,6 +568,18 @@ check('desc de entidad: una palabra que empieza igual no', esDescDeUnaEntidad('d
     Check 'la separacion es vertical y movible' ($page.Content -match 'id="divisor"' -and $page.Content -match 'cursor:col-resize' -and $page.Content -match 'pointerdown') 'falta el divisor arrastrable'
     Check 'el ancho del editor es configurable por CSS' ($page.Content -match '--ancho-editor' -and $page.Content -match 'flex:0 0 var\(--ancho-editor\)') 'no esta el ancho variable'
     Check 'los resultados viven en el panel derecho' (([regex]::Match($page.Content, '(?s)id="panel-resultado".*?id="crudo"')).Success -and $page.Content -match 'id="vacio"') 'los resultados no estan en el panel derecho'
+
+    # --- el panel lateral de entidades ---
+    Check 'la pagina trae el panel de entidades' ($page.Content -match 'id="panel-entidades"' -and $page.Content -match 'id="lista-entidades"') 'falta el panel de entidades'
+    Check 'el panel tiene el control de contraer y expandir' ($page.Content -match 'id="toggle-entidades"' -and $page.Content -match 'function aplicarEntidades') 'falta el control del panel'
+    Check 'el panel se contrae y se recuerda' ($page.Content -match "classList\.toggle\('contraido'" -and $page.Content -match 'CLAVE_ENTIDADES') 'no se contrae o no se recuerda'
+    Check 'el panel es angosto, solo para los nombres' ($page.Content -match '#panel-entidades \{ flex:0 0 auto; width:150px' -and $page.Content -match '\.entidad-item') 'no esta el ancho del panel'
+    Check 'la lista de entidades sale del DESC sin argumentos' ($page.Content -match 'function pintarEntidades' -and $page.Content -match "pedir\('DESC', false\)") 'la lista no sale del DESC'
+    Check 'el click de una entidad ejecuta su DESC' ($page.Content -match "ejecutarTexto\('DESC ' \+ nombre") 'el click no ejecuta el DESC'
+    Check 'el click no pisa el editor' ($page.Content -notmatch "ta\.value = 'DESC '") 'el panel de entidades pisa el textarea'
+    Check 'la entidad elegida se marca en el panel' ($page.Content -match 'function marcarEntidadElegida' -and $page.Content -match "classList\.toggle\('elegida'") 'no se marca la entidad elegida'
+    Check 'la lista se pide sola al abrir la pagina' ($page.Content -match '(?s)function cabecerasDeFilas.*?asegurarEntidades\(\);') 'no se pide la lista al abrir'
+    Check 'el arrastre del divisor descuenta el panel de entidades' ($page.Content -match 'panelEditor\.getBoundingClientRect') 'el divisor se mide desde el borde del split'
 
     # --- persistencia del texto ---
     Check 'el texto del editor se persiste en el navegador' ($page.Content -match "CLAVE_TEXTO = 'hql-console\.consulta'" -and $page.Content -match 'ALMACEN\.setItem\(CLAVE_TEXTO') 'no se guarda el texto'
@@ -536,6 +622,16 @@ check('desc de entidad: una palabra que empieza igual no', esDescDeUnaEntidad('d
     if ($MaxRows -lt 6) {
         $r = Exec 'SELECT e.id FROM Empleado e'
         Check 'el tope de filas trunca el resultado' ($r.json.truncated -eq $true -and $r.json.rowCount -eq $MaxRows) "truncated=$($r.json.truncated) rowCount=$($r.json.rowCount)"
+
+        # Un LIMIT mas grande que el tope lo recorta el tope, y eso si es una truncacion: se avisa.
+        $r = Exec 'from Empleado limit 100'
+        Check 'un LIMIT mayor que el tope queda recortado por el tope' `
+              ($r.json.truncated -eq $true -and $r.json.rowCount -eq $MaxRows) "truncated=$($r.json.truncated) rowCount=$($r.json.rowCount)"
+        Check 'y el aviso dice que el tope lo recorto' ($r.json.message -match 'recortado') $r.json.message
+
+        # Un LIMIT que entra en el tope no es una truncacion: no se avisa.
+        $r = Exec 'from Empleado limit 2'
+        Check 'un LIMIT que entra en el tope no se marca como truncado' ($r.json.truncated -eq $false) "truncated=$($r.json.truncated)"
 
         # El dry-run de un UPDATE sin WHERE tambien avisa del tope: es justo el caso donde el numero
         # evita que alguien toque toda la tabla creyendo que toca una fila.

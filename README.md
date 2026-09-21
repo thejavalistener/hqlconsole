@@ -58,7 +58,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.thejavalistener.hqlconsole:hql-console-starter:v0.1.1'
+    implementation 'com.github.thejavalistener.hqlconsole:hql-console-starter:v0.1.3'
 }
 ```
 
@@ -190,13 +190,19 @@ Detalles del párrafo, que están cubiertos por los tests:
 
 ### La página
 
-- **Dos paneles con divisor movible.** El editor queda a la izquierda y los resultados (la grilla,
-  el resumen y el JSON crudo) a la derecha. El botón **Ejecutar** vive dentro del panel izquierdo,
-  debajo del textarea y alineado a la derecha; al lado está el aviso de qué se va a ejecutar. El
-  divisor del medio se arrastra con el mouse; con el foco puesto en él, las flechas lo mueven de a
-  2% (con `Shift`, de a 10%), `Inicio`/`Fin` van a los extremos y el doble clic vuelve a 50/50. El
-  ancho elegido se recuerda. Por debajo de 720 px de ancho los paneles se apilan y el divisor
-  desaparece.
+- **Tres paneles.** A la izquierda del todo está la **lista de entidades** (angosta: sólo los
+  nombres), después el **editor** y después los **resultados** (la grilla, el resumen y el JSON
+  crudo). El botón **Ejecutar** vive dentro del panel del editor, debajo del textarea y alineado a la
+  derecha; al lado está el aviso de qué se va a ejecutar. El divisor del medio se arrastra con el
+  mouse; con el foco puesto en él, las flechas lo mueven de a 2% (con `Shift`, de a 10%),
+  `Inicio`/`Fin` van a los extremos y el doble clic vuelve a 50/50. El ancho elegido se recuerda. Por
+  debajo de 720 px de ancho los paneles se apilan, el divisor desaparece y la lista de entidades se
+  esconde.
+- **La lista de entidades es un atajo.** Se pide sola al abrir la página (es el mismo `DESC` sin
+  argumentos) y **cada nombre es clickeable**: equivale a escribir `DESC <Entidad>` y ejecutar, sin
+  pisar lo que tengas en el editor. La entidad que estás mirando queda marcada, y la lista se
+  **contrae y se expande** con el botoncito de su cabecera; el estado se recuerda en el navegador
+  igual que el ancho del editor.
 - **El texto del editor es persistente.** Lo que escribís queda en el `localStorage` del navegador y
   reaparece la próxima vez que abrís la página: sobrevive a recargar, a cerrar el navegador y a
   bajar y volver a levantar la aplicación. Se guarda mientras tipeás (con un retardo de 400 ms) y
@@ -228,8 +234,22 @@ de la entidad, en vez de una sola columna con `Libro#1`:
 ```sql
 from Libro                           -- id | titulo | fechaPublicacion | ... | autor | ...
 from Libro l where l.precio > 10000  -- idem, filtrado
+SELECT * FROM Libro                  -- exactamente lo mismo que "from Libro"
+SELECT * FROM Libro l WHERE l.precio > 10000 ORDER BY l.id LIMIT 10
 ```
 
+- **`SELECT * FROM <Entidad>` es equivalente a `FROM <Entidad>`.** HQL no acepta el `*` (Hibernate
+  tira `SyntaxException`), pero es lo que todos escriben: la consola lo traduce a la forma aplanada
+  en vez de rechazarlo. Aplica la misma regla que el `from` pelado, así que con `WHERE`, `ORDER BY`,
+  `LIMIT` y alias se comporta igual. Un `SELECT` explícito que **no** sea `*` no se aplana: ahí se
+  devuelve exactamente lo que pediste.
+- **`LIMIT n` al final.** Cualquier consulta puede terminar en `LIMIT n` (`from`, `SELECT`, con
+  `ORDER BY`, lo que sea) y se devuelven **n filas como mucho**. La sentencia puede ser larga: el
+  `LIMIT` va al final y nada más que al final. Se aplica con `setMaxResults` (el *maxRows* de JDBC),
+  que es lo que corta la cantidad de filas; `fetchSize` no sirve para esto (sólo insinúa de a cuántas
+  traer por viaje). Si el tope global `max-rows` es **menor** que el `LIMIT`, gana el tope y el
+  resultado se marca como truncado. Un `limit` que no es la cláusula del final no se toca: adentro de
+  un literal (`LIKE '%limit 5%'`) o de una subconsulta es parte de la expresión.
 - Las columnas salen en el orden de declaración de la entidad y **tituladas con el nombre del
   atributo de la clase** (`fechaPublicacion`, `autor`), no con el nombre físico de la tabla. Son los
   nombres que escribiste en la entidad y los que podés volver a escribir en un HQL.
@@ -275,7 +295,8 @@ INSERT INTO Libro (titulo, fechaPublicacion, fechaAlta)
 - Los **campos que no nombrás quedan en NULL**, o falla la sentencia con el error de la base si la
   columna no los acepta. No se inventan valores.
 - Una **relación se asigna por el id**: `li.autor=5` y `li.autor.id=5` son equivalentes y resuelven
-  la FK sin que tengas el objeto.
+  la FK sin que tengas el objeto. En el formato (3) vale igual, porque la columna dice el tipo:
+  `INSERT INTO Libro (titulo, autor) VALUES ('Uno', 1)` guarda la FK al autor 1.
 - Al terminar avisa con un **alert**: *"Se insertó 1 fila"*.
 
 ### Varias filas de una vez
@@ -360,20 +381,22 @@ lo dice.
 DESC Libro
 ```
 
-| CAMPO | TIPO SQL | ATRIBUTO | TIPO JAVA |
+| ATRIBUTO | TIPO JAVA | CAMPO | TIPO SQL |
 |---|---|---|---|
-| ID | BIGINT | id | Long |
-| TITULO | CHARACTER VARYING | titulo | String |
-| FECHA_PUBLICACION | DATE | fechaPublicacion | LocalDate |
-| ID_AUTOR | BIGINT | autor | Autor |
+| id | Long | ID | BIGINT |
+| titulo | String | TITULO | CHARACTER VARYING |
+| fechaPublicacion | LocalDate | FECHA_PUBLICACION | DATE |
+| autor | Autor | ID_AUTOR | BIGINT |
 
+- Primero lo que escribís en una sentencia —`ATRIBUTO` y su `TIPO JAVA`— y después lo que existe en
+  la base: la columna física (`CAMPO`) y su tipo SQL (`TIPO SQL`).
 - `CAMPO` y `TIPO SQL` son los **reales de la base**, leídos por JDBC (`DatabaseMetaData`). Sin
   `DataSource` en el contexto se derivan del mapping en vez de fallar.
 - En una relación `to-one`, `CAMPO` es la columna de la FK y `ATRIBUTO`/`TIPO JAVA` son la relación y
-  su entidad: `ID_AUTOR | BIGINT | autor | Autor`.
+  su entidad: `autor | Autor | ID_AUTOR | BIGINT`.
 - El orden es el **de declaración de los campos en la entidad**. Una colección (`@OneToMany`) no
   tiene columna en esta tabla y sale con `-`.
-- **Las filas de una relación son clickeables**: `ID_AUTOR | BIGINT | autor | Autor` abre el detalle
+- **Las filas de una relación son clickeables**: `autor | Autor | ID_AUTOR | BIGINT` abre el detalle
   de `Autor` en el panel de abajo. Y desde ahí se puede seguir encadenando (`Autor` → su relación →
   …), porque la detección es la misma columna `TIPO JAVA`.
 
@@ -420,8 +443,8 @@ escribirlo:
 │ Libro        | libros        | 9              │   ← clic acá
 ├───────────────────────────────────────────────┤   ← este divisor se arrastra
 │ Detalle de Libro                              │
-│ CAMPO | TIPO SQL | ATRIBUTO  | TIPO JAVA      │   ← el detalle
-│ ID    | BIGINT   | id        | Long           │
+│ ATRIBUTO | TIPO JAVA | CAMPO | TIPO SQL       │   ← el detalle
+│ id       | Long      | ID    | BIGINT         │
 └───────────────────────────────────────────────┘
 ```
 
@@ -433,6 +456,9 @@ escribirlo:
   por accidente.
 - Se manda el nombre de la **entidad** (columna `ENTIDAD`), no el de la tabla: `DESC` espera `Libro`,
   no `libros`.
+- **La misma lista está siempre a mano en el panel lateral izquierdo**, sin tener que ejecutar `DESC`:
+  cada nombre de ahí hace el `DESC` de esa entidad y marca la entidad elegida. El panel se contrae a
+  una franja con el botón para volver a abrirlo.
 - Es una **lectura**: funciona aunque la consola esté en `allow-writes=false`, y no puede cambiar
   nada. Si el detalle falla, el error aparece **abajo** y la lista de arriba queda intacta.
 - **Cada sentencia nueva resetea todo el panel derecho**: si estaba partido, se cierra el detalle, y
@@ -574,18 +600,24 @@ Verificado end-to-end con `verify-demo.ps1`, que compila, levanta el fat jar del
 comprobaciones contra una H2 en memoria (Spring Boot 3.2.5, Hibernate 6.4.4, Java 21):
 
 ```
-.\verify-demo.ps1                                  # 144 PASS / 0 FAIL
-.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 148 PASS / 0 FAIL
+.\verify-demo.ps1                                  # 172 PASS / 0 FAIL
+.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 179 PASS / 0 FAIL
 ```
 
 Cubre: descubrimiento de la auto-configuración por el `.imports` del jar, la página servida desde
 el jar, que el encabezado sólo diga `HQL Console`, headers deducidos y con `AS`, `from Entidad`
 aplanado y titulado con los atributos de la clase (y que con `SELECT` o con un join explícito
-**no** se aplane), asociaciones perezosas, `NULL`, agregados, resultados vacíos, HQL
-inválido, el tope de filas y el `context-path` (incluido que la ruta sin context-path dé 404). De
-las sentencias propias: las 4 columnas de `DESC` con el tipo SQL real y el orden de declaración,
+**no** se aplane), `SELECT * FROM Entidad` (equivalente al `from`, con alias, `WHERE` y `ORDER BY`),
+`LIMIT n` al final (que corte de verdad, que no llegue a Hibernate, que un `limit` dentro de un
+literal no se confunda con la cláusula, y los errores de `limit` sin número, con texto y con 0),
+asociaciones perezosas, `NULL`, agregados, resultados vacíos, HQL
+inválido, el tope de filas (y que un `LIMIT` mayor que el tope quede recortado por el tope) y el
+`context-path` (incluido que la ruta sin context-path dé 404). De
+las sentencias propias: las 4 columnas de `DESC` en su orden (atributo y tipo Java primero, campo y
+tipo SQL después) con el tipo SQL real y el orden de declaración,
 `DESC` sin argumentos, los **tres formatos de `INSERT`** (con alias, sin alias y posicional) con la
-conversión de fecha, `NOW` a `DATE` y a `TIMESTAMP`, enum, relación por id, campos omitidos en NULL,
+conversión de fecha, `NOW` a `DATE` y a `TIMESTAMP`, enum, relación por id **también en el formato
+posicional**, campos omitidos en NULL,
 fallo por `NOT NULL`, columna inexistente, columnas y valores que no coinciden, paréntesis sin
 cerrar, los **lotes** con `;` (filas y sentencias, formatos mezclados, `;` final y `;;`, `;` dentro
 de un literal, atomicidad comprobada, y el rechazo de lo que no es INSERT), el **dry-run** de
@@ -618,12 +650,19 @@ para cualquier panel de la página.
 
 Las funciones puras del ejecutar se verifican de verdad: el script extrae el bloque marcado en el
 HTML **que sirve el jar** y lo corre en Node, con los casos de la selección (sin selección, con
-selección y selección invertida) y doce casos del párrafo (cursor en cada párrafo, al final de una
+selección y selección invertida), doce casos del párrafo (cursor en cada párrafo, al final de una
 línea, en una línea en blanco, en los bordes, sin líneas en blanco, con CRLF y con el textarea
-vacío). Requiere `node` en el PATH; si no está, ese chequeo se saltea. Ojo si editás
-`HqlConsolePage.java`: el JS vive en un text block de Java, así que una barra invertida va doble.
+vacío), el alert del INSERT, el texto de la confirmación, el reconocimiento del `DESC` y el nombre
+de entidad que usa el panel lateral (`entidadDeDesc`). Requiere `node` en el PATH; si no está, ese
+chequeo se saltea. Ojo si editás `HqlConsolePage.java`: el JS vive en un text block de Java, así que
+una barra invertida va doble.
 
-Del layout partido se comprueba que la página traiga los dos paneles, el divisor arrastrable, el
+Del **panel lateral de entidades** se comprueba que la página traiga el panel, su control de
+contraer/expandir con la persistencia, que sea angosto y sólo muestre los nombres, que la lista salga
+del `DESC` sin argumentos, que el clic ejecute el `DESC` de esa entidad **sin pisar el editor**, que
+la entidad elegida se marque y que la lista se pida sola al abrir la página.
+
+Del layout partido se comprueba que la página traiga los paneles, el divisor arrastrable, el
 ancho variable por CSS, que los resultados vivan en el panel derecho y que el botón quede dentro
 del panel izquierdo y después del textarea; de la persistencia, que el texto se guarde, se restituya
 y se guarde al tipear, que el ancho también se persista, y que la respuesta venga con

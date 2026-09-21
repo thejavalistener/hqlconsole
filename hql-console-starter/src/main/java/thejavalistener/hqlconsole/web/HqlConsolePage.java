@@ -108,6 +108,31 @@ public final class HqlConsolePage
 		  .fila-clickeable:hover td { background:#eef4ff !important; }
 		  .fila-elegida td { background:#dce8ff !important; font-weight:600; }
 
+		  /* --- el panel lateral: la lista de entidades, para no tener que escribir DESC a mano --- */
+		  /* Angosto a proposito: solo tiene que entrar el nombre de la entidad. Cerrado queda una
+		     franja con el boton, que es el control para volver a abrirlo. */
+		  #panel-entidades { flex:0 0 auto; width:150px; margin-right:8px; min-width:0;
+		                     display:flex; flex-direction:column; overflow:hidden;
+		                     background:#fff; border:1px solid var(--borde); border-radius:6px; }
+		  #panel-entidades.contraido { width:30px; }
+		  #entidades-cabecera { flex:0 0 auto; display:flex; align-items:center; gap:4px;
+		                        padding:4px 4px 4px 8px; border-bottom:1px solid var(--borde); }
+		  #panel-entidades.contraido #entidades-cabecera { padding:4px; border-bottom:0; }
+		  .entidades-titulo { flex:1 1 auto; min-width:0; font-size:12px; font-weight:600;
+		                      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+		  #panel-entidades.contraido .entidades-titulo { display:none; }
+		  #toggle-entidades { flex:0 0 auto; padding:0 4px; font-size:14px; line-height:1.2; font-weight:700;
+		                      color:var(--acento); background:none; border:0; border-radius:4px; cursor:pointer; }
+		  #toggle-entidades:hover { background:#eef4ff; }
+		  #lista-entidades { flex:1 1 auto; min-height:0; overflow:auto; padding:4px;
+		                     display:flex; flex-direction:column; gap:2px; }
+		  #panel-entidades.contraido #lista-entidades { display:none; }
+		  .entidad-item { text-align:left; padding:4px 6px; font-size:12px; font-weight:400; color:inherit;
+		                  font-family: ui-monospace, Consolas, monospace; background:none; border:0;
+		                  border-radius:4px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+		  .entidad-item:hover { background:#eef4ff; }
+		  .entidad-item.elegida { background:#dce8ff; font-weight:600; }
+
 		  /* En pantallas angostas el divisor no tiene sentido: se apilan. */
 		  @media (max-width: 720px) {
 		    body { height:auto; overflow:auto; }
@@ -120,6 +145,8 @@ public final class HqlConsolePage
 		    /* El detalle se apila abajo, sin divisor: se ve entero o se scrollea. */
 		    #divisor-h { display:none; }
 		    #panel-detalle { flex:0 0 auto; }
+		    /* El panel de entidades no entra en una pantalla angosta: se esconde entero. */
+		    #panel-entidades { display:none; }
 		  }
 		</style>
 		</head>
@@ -129,6 +156,14 @@ public final class HqlConsolePage
 		</div>
 		<div id="error"><div id="error-msg"></div><pre id="error-sql"></pre></div>
 		<div id="split">
+		  <aside id="panel-entidades">
+		    <div id="entidades-cabecera">
+		      <span class="entidades-titulo">Entidades</span>
+		      <button type="button" id="toggle-entidades" aria-expanded="true"
+		              title="Contraer el panel de entidades">&#171;</button>
+		    </div>
+		    <div id="lista-entidades"></div>
+		  </aside>
 		  <div id="panel-editor">
 		    <textarea id="hql" spellcheck="false" placeholder="SELECT e.id, e.nombre FROM Empleado e"></textarea>
 		    <div class="pie-editor">
@@ -175,6 +210,7 @@ public final class HqlConsolePage
 		const crudoPre = document.getElementById('crudo-pre');
 		const split = document.getElementById('split');
 		const divisor = document.getElementById('divisor');
+		const panelEditor = document.getElementById('panel-editor');
 		const panelResultado = document.getElementById('panel-resultado');
 		const divisorAlto = document.getElementById('divisor-h');
 		const panelDetalle = document.getElementById('panel-detalle');
@@ -182,15 +218,24 @@ public final class HqlConsolePage
 		const detalleError = document.getElementById('detalle-error');
 		const cajaDetalle = document.getElementById('tabla-detalle');
 		const tablaDetalle = document.getElementById('t-detalle');
+		const panelEntidades = document.getElementById('panel-entidades');
+		const toggleEntidades = document.getElementById('toggle-entidades');
+		const listaEntidades = document.getElementById('lista-entidades');
 
 		const EJEMPLO = 'SELECT e.id, e.nombre, e.salario FROM Empleado e';
 		const CLAVE_TEXTO = 'hql-console.consulta';
 		const CLAVE_ANCHO = 'hql-console.ancho';
 		const CLAVE_ALTO = 'hql-console.alto-detalle';
+		const CLAVE_ENTIDADES = 'hql-console.entidades-abierto';
 
 		// Los nombres de entidad que ya vimos (salen del DESC sin argumentos). Sirven para saber si el
-		// "TIPO JAVA" de un atributo es una entidad relacionada o un tipo común como String o Long.
+		// "TIPO JAVA" de un atributo es una entidad relacionada o un tipo común como String o Long, y
+		// para armar el panel lateral.
 		let entidadesConocidas = null;
+
+		// La entidad que el panel lateral muestra como elegida. Se guarda el nombre aunque la lista
+		// todavía no esté dibujada: así, cuando llegue, la fila ya sale marcada.
+		let entidadElegida = null;
 
 		// localStorage puede tirar (modo privado, cookies de sitio bloqueadas). Si eso pasa, el
 		// script entero se caía y con él los listeners: la consola quedaba muerta sin decir por qué.
@@ -303,10 +348,17 @@ public final class HqlConsolePage
 		}
 
 		// "DESC <Entidad>": el detalle de una entidad. Ahí lo clickeable son los atributos que
-		// apuntan a otra entidad.
+		// apuntan a otra entidad. El nombre sale de la misma función que usa el panel lateral.
 		function esDescDeUnaEntidad(hql) {
-		  const t = hql.trim().toLowerCase();
-		  return t.indexOf('desc ') === 0 || t.indexOf('describe ') === 0;
+		  return entidadDeDesc(hql) !== null;
+		}
+
+		// El nombre de la entidad de un "DESC <Entidad>" (o "describe"), o null si la sentencia es
+		// otra cosa. Es una sola entidad y nada más: "DESC Libro li" no es un DESC válido.
+		// (Las barras invertidas van dobles por el text block de Java.)
+		function entidadDeDesc(hql) {
+		  const encontrado = /^(?:desc|describe)\\s+(\\S+)$/i.exec(hql.trim());
+		  return encontrado ? encontrado[1] : null;
 		}
 
 		// UPDATE y DELETE se confirman antes de commitear; el resto se ejecuta de una.
@@ -393,7 +445,12 @@ public final class HqlConsolePage
 		function anchoSegunPuntero(clientX) {
 		  const caja = split.getBoundingClientRect();
 		  if (caja.width <= 0) { return anchoActual; }
-		  return ((clientX - caja.left) / caja.width) * 100;
+		  // El editor arranca después del panel de entidades: midiendo desde el borde del split, el
+		  // divisor quedaría corrido todo el ancho del panel. El porcentaje sí es sobre el split
+		  // entero, porque el --ancho-editor es un % del split (el flex-basis del panel del editor).
+		  const editor = panelEditor.getBoundingClientRect();
+		  const inicio = editor.width > 0 ? editor.left : caja.left;
+		  return ((clientX - inicio) / caja.width) * 100;
 		}
 
 		divisor.addEventListener('pointerdown', function(ev) {
@@ -494,14 +551,73 @@ public final class HqlConsolePage
 		  ev.preventDefault();
 		});
 
+		// ==================== el panel de entidades ====================
+		// La lista de entidades como atajo: clickear una equivale a ejecutar "DESC <Entidad>". El
+		// panel se contrae y se expande con el botoncito de la cabecera, y el estado se recuerda.
+		function aplicarEntidades(abierto, persistir) {
+		  panelEntidades.classList.toggle('contraido', !abierto);
+		  // Las flechitas van escapadas: el JS vive en un text block de Java.
+		  toggleEntidades.textContent = abierto ? '\u00ab' : '\u00bb';
+		  toggleEntidades.setAttribute('aria-expanded', abierto ? 'true' : 'false');
+		  toggleEntidades.title = abierto ? 'Contraer el panel de entidades' : 'Expandir el panel de entidades';
+		  if (persistir) { try { ALMACEN.setItem(CLAVE_ENTIDADES, abierto ? '1' : '0'); } catch (e) {} }
+		}
+
+		aplicarEntidades(ALMACEN.getItem(CLAVE_ENTIDADES) !== '0', false);
+		toggleEntidades.addEventListener('click', function() {
+		  // Si estaba contraido, esto lo abre; si estaba abierto, lo contrae.
+		  aplicarEntidades(panelEntidades.classList.contains('contraido'), true);
+		});
+
+		// Dibuja (o redibuja) la lista con los nombres que ya conocemos. Se puede llamar varias veces.
+		function pintarEntidades() {
+		  const nombres = entidadesConocidas ? Array.from(entidadesConocidas).sort() : [];
+		  listaEntidades.textContent = '';
+		  nombres.forEach(function(nombre) {
+		    const boton = document.createElement('button');
+		    boton.type = 'button';
+		    boton.className = 'entidad-item';
+		    boton.textContent = nombre;
+		    boton.title = 'DESC ' + nombre;
+		    boton.addEventListener('click', function() { abrirEntidad(nombre); });
+		    listaEntidades.appendChild(boton);
+		  });
+		  marcarEntidadElegida(entidadElegida);
+		}
+
+		// Click en una entidad: equivale a escribir "DESC <Entidad>" y ejecutar. No se toca el editor
+		// a propósito: el panel es un atajo para mirar, no para pisar lo que estabas escribiendo.
+		function abrirEntidad(nombre) {
+		  marcarEntidadElegida(nombre);
+		  ejecutarTexto('DESC ' + nombre, 'el panel de entidades');
+		}
+
+		function marcarEntidadElegida(nombre) {
+		  entidadElegida = nombre;
+		  const items = listaEntidades.querySelectorAll('.entidad-item');
+		  items.forEach(function(item) {
+		    item.classList.toggle('elegida', item.textContent === nombre);
+		  });
+		}
+
+		// Lo que se acaba de ejecutar: si es un "DESC <Entidad>", el panel marca esa entidad.
+		function sincronizarEntidad(hql) {
+		  marcarEntidadElegida(entidadDeDesc(hql));
+		}
+
 		// ==================== ejecutar ====================
-		async function ejecutar() {
+		function ejecutar() {
 		  // Se guarda el contenido del editor, no lo último ejecutado: es el estado del textarea.
 		  guardarTexto();
 		  const rango = rangoAEjecutar();
 		  // Un pegado desde Windows puede traer CRLF: el retorno de carro sobra y Hibernate no lo
 		  // necesita. (Barra invertida doble por el text block de Java.)
-		  const hql = rango.hql.split('\\r').join('').trim();
+		  ejecutarTexto(rango.hql.split('\\r').join('').trim(), rango.etiqueta);
+		}
+
+		// El trabajo de ejecutar, separado de "de dónde salió el texto". El panel lateral ejecuta un
+		// DESC sin pasar por el textarea; de ahí la separación.
+		async function ejecutarTexto(hql, etiqueta) {
 		  if (!hql) {
 		    mostrarError({ error: 'No hay nada que ejecutar: ni la selección ni el párrafo del cursor tienen texto.' });
 		    return;
@@ -516,7 +632,7 @@ public final class HqlConsolePage
 		    // En UPDATE y DELETE, primero un dry-run: el servidor ejecuta, cuenta y tira atrás. Con
 		    // ese número se pregunta; recién si se confirma se manda la sentencia de verdad.
 		    if (confirmar) {
-		      estado.textContent = 'Contando ' + rango.etiqueta + ' (todavía sin tocar nada)...';
+		      estado.textContent = 'Contando ' + etiqueta + ' (todavía sin tocar nada)...';
 		      const prueba = await pedir(hql, true);
 		      if (!prueba.ok) { mostrarError(prueba.datos); return; }
 		      if (!confirm(mensajeConfirmacion(hql, prueba.datos.affectedRows, prueba.datos.truncated))) {
@@ -524,7 +640,7 @@ public final class HqlConsolePage
 		        return;
 		      }
 		    }
-		    estado.textContent = 'Ejecutando ' + rango.etiqueta + '...';
+		    estado.textContent = 'Ejecutando ' + etiqueta + '...';
 		    const respuesta = await pedir(hql, false);
 		    if (!respuesta.ok) { mostrarError(respuesta.datos); return; }
 		    // Toda sentencia nueva arranca con el panel derecho limpio: si estaba partido, se cierra
@@ -545,6 +661,9 @@ public final class HqlConsolePage
 		    } else if (esDescDeUnaEntidad(hql) && cabeceras) {
 		      hacerRelacionesClickeables(cabeceras, tabla);
 		    }
+		    // El panel lateral marca la entidad que se está mirando (y la desmarca si la sentencia
+		    // no era un DESC de una entidad).
+		    sincronizarEntidad(hql);
 		  } catch (e) {
 		    mostrarError({ error: 'No se pudo contactar la consola: ' + e });
 		  } finally {
@@ -662,6 +781,7 @@ public final class HqlConsolePage
 		    fila.addEventListener('click', function() { mostrarDetalle(entidad, fila); });
 		  }
 		  entidadesConocidas = nombres;
+		  pintarEntidades();
 		}
 
 		// La lista de entidades, si no la tenemos ya de un DESC sin argumentos: se pide una sola vez.
@@ -670,14 +790,15 @@ public final class HqlConsolePage
 		  if (entidadesConocidas) { return entidadesConocidas; }
 		  entidadesConocidas = new Set();
 		  const respuesta = await pedir('DESC', false);
-		  if (!respuesta.ok || !respuesta.datos.rows) { return entidadesConocidas; }
+		  if (!respuesta.ok || !respuesta.datos.rows) { pintarEntidades(); return entidadesConocidas; }
 		  const columna = (respuesta.datos.headers || []).indexOf('ENTIDAD');
-		  if (columna < 0) { return entidadesConocidas; }
+		  if (columna < 0) { pintarEntidades(); return entidadesConocidas; }
 		  respuesta.datos.rows.forEach(function(fila) {
 		    if (fila[columna] !== null && fila[columna] !== undefined) {
 		      entidadesConocidas.add(String(fila[columna]));
 		    }
 		  });
+		  pintarEntidades();
 		  return entidadesConocidas;
 		}
 
@@ -763,6 +884,10 @@ public final class HqlConsolePage
 		  for (let i = 0; i < filas[0].length; i++) { salida.push('col' + (i + 1)); }
 		  return salida;
 		}
+
+		// La lista de entidades se pide sola al abrir la página: es lo que llena el panel lateral.
+		// Si el pedido falla, el panel queda vacío y no pasa nada más: no es un error para el usuario.
+		asegurarEntidades();
 		</script>
 		</body>
 		</html>

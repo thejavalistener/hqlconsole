@@ -1,183 +1,105 @@
-# Features acordadas (pendientes de implementar)
+# Features acordadas: registro de decisiones
 
-Este archivo es la especificación de las features que quedaron acordadas para la consola. Está
-escrito para que **cualquiera que retome el trabajo** (una sesión nueva, otro modelo) no tenga que
-adivinar las decisiones: cada punto dice qué se hace y, cuando importa, qué **no** se hace.
-
-Cuando todo esté implementado y verificado, este archivo se borra o se funde en el `README.md`.
+Este archivo es el registro de las features que se acordaron para la consola, con el **por qué** de
+cada decisión y las **trampas** que aparecieron. Está escrito para que cualquiera que retome el
+trabajo (una sesión nueva, otro modelo) no tenga que adivinar: la documentación de usuario está en el
+`README.md` y la verificación en `verify-demo.ps1`.
 
 ## Estado
 
 | Feature | Estado |
 |---|---|
-| #2 alert de INSERT con el conteo | **hecho** |
-| #4.2 INSERT sin alias (`VALUES campo=valor`) | **hecho** (ya funcionaba; ahora tiene tests) |
-| #4.3 INSERT posicional (`(columnas) VALUES (valores)`) | **hecho** |
-| #5 lotes de INSERT separados por `;` | **hecho** |
-| #1 dry-run + confirmación en UPDATE/DELETE | **hecho** |
+| #1 `DESC` con `ATRIBUTO` y `TIPO JAVA` primero | **hecho** |
+| #2 `INSERT INTO Entidad (campoRel1, campoRel2) VALUES (1, 1)` | **ya funcionaba**; ahora tiene test |
+| #3 `SELECT * FROM Entidad` equivalente a `FROM Entidad` | **hecho** |
+| #4 `LIMIT n` al final de las consultas | **hecho** |
+| #5 panel lateral de entidades, colapsable | **hecho** |
 
-`verify-demo.ps1`: **125 PASS / 0 FAIL** (129 con `-ContextPath /demo -MaxRows 3`); venía de 86.
+Verificación: `verify-demo.ps1` → **172 PASS / 0 FAIL**; con `-ContextPath /demo -MaxRows 3` →
+**179 PASS / 0 FAIL** (venía de 144/148). Las cuatro features están cubiertas end-to-end; el clic y
+el layout del panel en sí no los ve ningún test automático, eso se mira en el navegador.
 
-La documentación de usuario de todo esto ya está en el `README.md` (los tres formatos de INSERT, los
-lotes, el alert y la confirmación). **Este archivo ya cumplió su función**: se puede borrar, o dejar
-como registro de las decisiones y de las trampas de abajo.
+## #1 — Orden de `DESC`
 
+`DESC <Entidad>` pasó de `CAMPO | TIPO SQL | ATRIBUTO | TIPO JAVA` a
+**`ATRIBUTO | TIPO JAVA | CAMPO | TIPO SQL`**: primero lo que uno escribe en una sentencia, después
+lo que existe en la base. Sólo cambia el orden de las filas que arma `EntityDescriber.describe(...)`
+(ahora `List.of(attribute.getName(), Mapping.javaTypeName(attribute), campo, sqlType)`). Los nombres
+de las columnas no cambiaron, así que el resto de la página (que busca `TIPO JAVA` por nombre) sigue
+igual. `DESC` sin argumentos no se tocó.
 
-## Orden de implementación
+**Cuidado con los tests:** los índices de las columnas de `DESC` estaban hardcodeados en
+`verify-demo.ps1` (`$_[2]`, `$fk[3]`, etc.) y hubo que reindexarlos.
 
-1. **#2** alert de INSERT + **#4.2** test del INSERT sin alias
-2. **#4.3** `INSERT INTO X (atributos) VALUES (valores)`
-3. **#5** lotes de INSERT separados por `;`
-4. **#1** dry-run con confirmación en UPDATE y DELETE
+## #2 — `INSERT` posicional con relaciones
 
-El #1 va último a propósito: es el único que toca el manejo transaccional, así que si algo se rompe
-se sabe que fue eso.
+**Ya funcionaba y no se tocó el motor.** La duda tenía sentido porque el formato (3) no tenía test
+con relaciones, pero el camino ya estaba: `AttributeBinder.resolve(...)` detecta que el destino es una
+relación y devuelve el id como tipo destino, y `value(...)` lo convierte y arma el
+`em.getReference(...)`. O sea que `INSERT INTO Libro (titulo, autor) VALUES ('...', 1)` asigna la FK
+al autor 1 igual que `li.autor=1`. Lo único que se agregó son los chequeos en `verify-demo.ps1`
+(`Libro (titulo, autor)` y `Empleado (nombre, salario, departamento)`).
 
-## #1 — Confirmación antes de commitear (UPDATE y DELETE)
+## #3 — `SELECT * FROM Entidad`
 
-**Implementado.** Lo único que cambió en el motor fue sacar la decisión de cerrar la transacción a
-un método aparte (`_cerrar(tx, dryRun)`): con dry-run hace `rollback` donde haría `commit`. El trabajo
-es el mismo, así que el número que se muestra es el real. La página manda dos requests
-(`dryRun: true` y después `dryRun: false`) y el flag lo lee el controller.
+HQL no acepta el `*` (Hibernate tira `SyntaxException`), así que se **traduce**: `HqlQueryRunner` le
+saca el `select *` y deja `from Entidad ...`, que ya entra por el camino aplanado. Es a propósito que
+sea una traducción y no un caso especial del aplanado: así el `WHERE`, el `ORDER BY`, el `LIMIT` y los
+alias funcionan sin escribir una línea más.
 
-**Bug que apareció al implementarlo:** el `UPDATE` truncado avisaba del tope sólo en el `message`,
-pero el campo `truncated` del JSON venía **siempre `false`** (estaba fijo en la fábrica `dml(...)`).
-Como el aviso de la página lee ese campo, el "se alcanzó el tope, el resto NO se toca" nunca se
-habría mostrado. Se arregló con una sobrecarga de `dml(...)` que acepta `truncated`, y ahora hay dos
-chequeos que lo fijan.
+- Sólo se toca la forma exacta `select * from ...`. Un `SELECT` explícito que no sea `*` **no** se
+  aplana: se sigue devolviendo `Tipo#id`, como antes.
+- Sin el `FROM` detrás, la sentencia se deja como está para que el error lo dé Hibernate.
+- El método es `_sinSelectEstrella(String)` y el reconocimiento es puramente textual (`Text`), no
+  toca paréntesis ni literales.
 
-**Motivación:** evitar romper todo cuando se quiere modificar o borrar **una sola fila**. El conteo
-es la alarma: si esperás 1 fila y el alert dice 4, cancelás.
+## #4 — `LIMIT n` al final
 
-**Diseño elegido: dry-run (opción c).** Dos requests, sin transacciones abiertas entre medio:
+`LIMIT n` va **al final y nada más que al final**: la sentencia puede ser larga, con `WHERE` y
+`ORDER BY`, y terminar en `LIMIT n`. Se aplica con **`setMaxResults`** (el *maxRows* de JDBC), que es
+lo que corta la cantidad de filas devueltas. `fetchSize` **no** sirve para esto: sólo insinúa de a
+cuántas filas traer por viaje.
 
-```
-request 1: { hql, dryRun: true }   → ejecuta, cuenta, hace ROLLBACK y cierra
-                                     devuelve { affectedRows: N, dryRun: true }
-   la página muestra: "Se van a borrar 4 fila(s). ¿Confirmás?"  [Aceptar] [Cancelar]
-request 2: { hql, dryRun: false }  → ejecuta y COMMITEA
-```
+- Sólo aplica a las **consultas** (`select` / `from`), que es lo que se acordó. Un `DELETE` o un
+  `UPDATE` con `LIMIT` no se toca: sigue siendo un error de Hibernate.
+- El escaneo es de nivel 0: un `limit` dentro de un literal (`LIKE '%limit 5%'`) o de una subconsulta
+  no se confunde con la cláusula.
+- Interacción con el tope global `max-rows`: **gana el menor**. Si `max-rows` es menor que el `LIMIT`,
+  el resultado se marca como truncado y el mensaje lo dice (`LIMIT 10 recortado antes por el tope de
+  3 filas`). Si el `LIMIT` entra en el tope, **no** es una truncación y no se avisa: es lo que el
+  usuario pidió. Por eso, cuando el `LIMIT` manda, se piden las filas justas y no una de más.
+- Errores con mensaje propio (400): `LIMIT` sin número, con texto, `0`, o más de uno en la sentencia.
 
-- **Automático, no opcional:** la página hace el dry-run sola para todo UPDATE y DELETE. El usuario
-  no tiene que activar nada.
-- El alert muestra el número, y si el tope de filas (`maxRows`) truncó, lo dice.
-- Después de confirmar, el resultado muestra el número **real**.
-- **NO** se muestran los ids de las filas afectadas: el DELETE es un `executeUpdate` en bloque que no
-  las conoce, y cargarlas cambiaría ese camino. El conteo cubre el caso.
-- **Se descartó** la variante con la transacción abierta entre los dos requests: contradice el diseño
-  documentado en `HqlQueryRunner` ("un EntityManager nuevo por sentencia, cada sentencia aislada"),
-  exige guardar EntityManagers pendientes con vencimiento, y mantiene filas bloqueadas mientras el
-  alert está en pantalla.
-- **Costo aceptado:** la sentencia se ejecuta dos veces. Los listeners `@PreUpdate`/`@PreRemove` con
-  efectos por fuera de la transacción (mails, auditoría) se disparan dos veces.
+## #5 — Panel lateral de entidades
 
-## #2 — Alert al insertar
+Tercer panel, a la **izquierda del editor**, angosto (150 px) y sólo con los nombres:
 
-- Texto: **"Se insertó 1 fila"** (singular) / **"Se insertaron N filas"** (plural).
-- Con lote, se agrega en cuántas sentencias: **"Se insertaron 5 filas en 4 sentencias"**.
-- La detección de "esto fue un INSERT" es del lado de la página (el texto ejecutado empieza con
-  `insert`), no del backend: así no hay que tocar el contrato JSON.
-
-## #3 — DESC sin argumentos
-
-**No se toca.** Ya devuelve una grilla con `ENTIDAD | TABLA | CAMPOS`.
-
-## #4 — Los tres formatos de INSERT
-
-Los tres tienen que funcionar y convivir:
-
-```sql
--- 4.1 con alias (ya funciona)
-INSERT INTO Libro li VALUES li.titulo='Uno', li.precio=100
-
--- 4.2 sin alias (debería andar; falta el test)
-INSERT INTO Libro VALUES titulo='Dos', precio=200
-
--- 4.3 clásico posicional (nuevo)
-INSERT INTO Libro (titulo, precio) VALUES ('Tres', 300)
-```
-
-- En **4.3** los nombres entre paréntesis son **atributos de la clase** (`fechaPublicacion`), no
-  columnas físicas (`FECHA_PUBLICACION`). Coherente con 4.1/4.2 y con la columna `ATRIBUTO` de `DESC`.
-- **Cuidado:** `INSERT INTO Libro (titulo) SELECT ...` es HQL de verdad y tiene un test que lo cubre.
-  Después del `)` hay que distinguir `VALUES` (gramática de la consola) de `SELECT` (seguir por
-  Hibernate).
-- Si la cantidad de columnas y de valores no coincide → error claro.
-- **NO** se implementa el multi-fila clásico (`VALUES (...), (...), (...)`): descartado a propósito.
-
-### Hallazgo: el camino de HQL se come lo que la consola rechaza
-
-Cuando el parser de la consola **falla**, el runner igual prueba la sentencia como HQL, y sólo si
-Hibernate también falla reporta el error de la consola. Consecuencia: hay sentencias que la consola
-no entiende pero **Hibernate sí**, y entonces funcionan sin pasar por la gramática de la consola:
-
-| Sentencia | Qué pasa |
-|---|---|
-| `INSERT INTO Libro (titulo, precio) VALUES ('a',1), ('b',2)` | la ejecuta Hibernate (multi-fila) |
-| `INSERT INTO Libro li (titulo) VALUES ('x')` | la ejecuta Hibernate (alias + columnas) |
-
-Por eso el parser **devuelve `null`** en esos dos casos (en vez de tirar un error): así termina de
-resolverlo Hibernate, que es lo que ya hacía antes de la feature 4.3.
-
-**Los dos caminos no son equivalentes**, y esto hay que saberlo:
-
-- El camino de la consola hace `em.persist(...)`: dispara `@PrePersist`, `@Version` y la validación,
-  y entiende `NOW`, los enums y las relaciones por id.
-- El camino de HQL es un **bulk**: no pasa por el contexto de persistencia, así que **no dispara
-  `@PrePersist` ni valida**, y **no conoce `NOW`** (HQL usa `current_timestamp`).
-
-O sea: `VALUES ('a', NOW)` de una fila funciona, y el mismo `NOW` en un multi-fila **no**. Para
-cargar datos de prueba, el camino recomendado es el lote con `;` (feature #5), porque cada sentencia
-entra por la consola y conserva las conversiones.
-
-## #5 — Varias sentencias con `;`
-
-**Sólo INSERT.** Es para dar de alta datos de prueba.
-
-**El corte va ANTES del parseo**, en una capa superior (no dentro del parser de INSERT). Por eso los
-tres formatos funcionan en un lote sin trabajo extra: cada trozo entra por el mismo camino que una
-sentencia sola.
-
-Reglas:
-
-- **Una sola sentencia** (con o sin `;` al final) → se comporta como hoy: `SELECT`, `INSERT`,
-  `UPDATE`, `DELETE`, `DESC`, todo permitido. Esto es importante: si la política "sólo INSERT"
-  aplicara a lotes de tamaño 1, un `SELECT ...;` quedaría rechazado.
-- **Más de una** → es un lote, y sólo INSERT. Si no lo es, error que diga **en qué posición**:
-  *"La sentencia 2 de 4 no es un INSERT: un lote sólo sirve para dar de alta datos."*
-- **Una sola transacción para todo el lote**: si la tercera falla, no se insertó nada.
-- Se tolera un `;` final y se saltean las sentencias vacías (`;;`).
-- Un `;` dentro de un texto (`li.titulo='a;b'`) **no** corta: el escáner ya entiende comillas.
-- El chequeo de `allow-writes` mira **todas** las sentencias, no la primera.
-- Alert único al final: **"Se insertaron 5 filas en 4 sentencias"**.
-- La respuesta de una sentencia sola **no cambia**: los 86 chequeos de `verify-demo.ps1` dependen de
-  esa forma. El lote usa un tipo nuevo (por ejemplo `BATCH`).
-
-### Bug que esto arregla de paso
-
-Hoy, un `;` final en una sentencia de la consola rompe de dos maneras distintas:
-
-```sql
-INSERT INTO Libro li VALUES li.titulo='Un titulo';
-```
-
-Al conversor le llega el literal `'Un titulo';`, y como `Text.isQuoted` exige que el **último**
-carácter sea `'`, no lo reconoce como texto citado; para un campo `String` devuelve el valor tal
-cual, así que **guarda la cadena `'Un titulo';`** con comillas y punto y coma incluidos
-(**silencioso**). Con un número (`li.precio=100;`) falla, porque `Integer.valueOf("100;")` explota.
-
-Con el corte antes del parseo, el `;` final desaparece y queda arreglado. Agregar un chequeo.
-
-## #6 — `dist/` y `publish.ps1`
-
-**Sin efecto.** Queda como está: `dist/hql-console-starter.jar` se versiona y el workflow de release
-sigue igual.
+- Se llena con el mismo `DESC` sin argumentos, pedido **una sola vez** al abrir la página
+  (`asegurarEntidades()`). Si el pedido falla, el panel queda vacío y no pasa nada más.
+- Clickear un nombre **equivale a ejecutar `DESC <Entidad>`**: reemplaza la grilla principal y marca
+  esa entidad como elegida. **No pisa el editor**: el panel es un atajo para mirar, no para borrar lo
+  que estabas escribiendo. Por eso el cuerpo de `ejecutar()` se separó en `ejecutarTexto(hql, etiqueta)`,
+  que es lo que también usa el panel.
+- Se contrae y se expande con el botón de su cabecera; contraído queda una franja de 30 px con el
+  botón (el control para volver a abrirlo). El estado se persiste en `localStorage`
+  (`hql-console.entidades-abierto`), como el ancho del editor.
+- Por debajo de 720 px de ancho se esconde entero, como los divisores.
+- La entidad elegida también se marca cuando el `DESC` se ejecuta a mano desde el editor, y se
+  desmarca si la sentencia que corre no es un `DESC` de una entidad.
+- **Efecto colateral que hubo que arreglar**: el arrastre del divisor medía el ancho del editor desde
+  el borde del split, así que con el panel adelante el divisor quedaba corrido todo el ancho del
+  panel. Ahora mide desde el borde del propio panel del editor (`anchoSegunPuntero` usa
+  `panelEditor.getBoundingClientRect()`), pero el porcentaje sigue siendo sobre el split entero,
+  porque el `--ancho-editor` es un `%` del split.
 
 ## Trampas del código que hay que respetar
 
-- **El JS de la página vive en un text block de Java.** Una barra invertida va **doble** (`\\n`), o
-  Java la convierte en un salto de línea real y **rompe el JavaScript sin que falle la compilación**.
-  Pasó dos veces durante el desarrollo de las features anteriores.
+- **El JS de la página vive en un text block de Java.** Una barra invertida va **doble** (`\\n`,
+  `\\s`, `\\S`), o Java la convierte en otra cosa y **rompe el JavaScript sin que falle la
+  compilación**. Pasó varias veces durante el desarrollo. `verify-demo.ps1` lo caza con
+  `node --check` sobre el script que sirve el jar.
+- **Ojo con `\uXXXX` en el text block**: Java procesa los escapes Unicode *antes* de lexear, así que
+  `'\u00ab'` termina siendo el carácter literal en el JS. Funciona, pero conviene saberlo.
 - **Las funciones puras** (sin DOM) van entre los marcadores `// INICIO funciones puras` y
   `// FIN funciones puras`: `verify-demo.ps1` extrae ese bloque del HTML **que sirve el jar** y lo
   corre en Node. Si agregás una función pura, ponela ahí y agregale casos.
@@ -185,11 +107,15 @@ sigue igual.
   5.1 lee el archivo como ANSI si no tiene BOM, así que se comparan mal. Para texto con tilde en los
   tests de Node, usá escapes (`'Se insert\u00f3 1 fila'`).
 - **Los comentarios y la documentación van en español**, igual que el resto del proyecto.
+- **`verify-demo.ps1` no corre en el sandbox confinado**: Gradle forkea su daemon capturando la
+  salida por pipe, y eso el sandbox lo deniega. Hay que correrlo con acceso completo.
 
 ## Lo que se decidió NO hacer
 
-- Multi-fila clásico (`VALUES (...), (...)`).
+- Multi-fila clásico (`VALUES (...), (...)`): lo resuelve Hibernate como bulk, sin `@PrePersist` ni
+  `NOW`. Para datos de prueba está el lote con `;`.
 - Mostrar los ids de las filas afectadas en el dry-run.
-- Confirmación para INSERT (sólo avisa).
+- Confirmación para `INSERT` (sólo avisa).
+- `LIMIT` en `UPDATE`/`DELETE`.
 - Tocar `DESC` sin argumentos.
-- Comandos `;` para sentencias que no sean INSERT (por ahora).
+- Que el panel lateral pise el editor con el `DESC` clickeado.
