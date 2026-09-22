@@ -634,6 +634,14 @@ check('tipo numerico: LocalDate no', esTipoNumerico('LocalDate'), false);
 check('select: arma el SELECT * con LIMIT', selectDeEntidad('Libro'), 'SELECT * FROM Libro LIMIT 100');
 check('select: el limite sale de la constante', selectDeEntidad('X').indexOf('LIMIT 100') > 0, true);
 
+// --- los rotulos del menu: cada item muestra la sentencia que genera ---
+check('rotulo desc: DESC Entidad', rotuloDesc('Libro'), 'DESC Libro');
+check('rotulo select: SELECT * FROM Entidad', rotuloSelect('Libro'), 'SELECT * FROM Libro');
+check('rotulo insert: INSERT INTO Entidad', rotuloInsert('Libro'), 'INSERT INTO Libro');
+check('rotulo desc: lleva el nombre de la entidad clickeada', rotuloDesc('Empleado'), 'DESC Empleado');
+check('rotulo select: no lleva el LIMIT (es un rotulo)', rotuloSelect('Empleado').indexOf('LIMIT') < 0, true);
+check('la espera del menu es de un segundo', ESPERA_MENU, 1000);
+
 // --- el INSERT generado se mete en el parrafo del cursor, sin pisar lo que habia ---
 var doc = 'SELECT 1\n\nSELECT 2';
 var puesto = insertarEnParrafo(doc, doc.indexOf('SELECT 1') + 2, 'INSERT INTO X (a) VALUES (1);');
@@ -812,17 +820,44 @@ check('insertar: en un editor vacio no agrega lineas de mas al principio', vacio
     Check 'pintarRango no pisa una seleccion del usuario' ($page.Content -match 'pintar: false' -and $page.Content -match 'pintar: true') 'no se distingue seleccion de parrafo'
     Check 'el rango del parrafo viaja con el texto a ejecutar' ($page.Content -match 'inicio: parrafo\.inicio, fin: parrafo\.fin') 'el rango no se propaga'
 
-    # --- el menu contextual de una entidad ---
-    Check 'la pagina trae el menu contextual' ($page.Content -match 'id="menu"' -and $page.Content -match 'id="menu-insert"' -and $page.Content -match 'id="menu-select"') 'falta el menu'
-    Check 'el boton derecho abre el menu' ($page.Content -match "addEventListener\('contextmenu'" -and $page.Content -match 'abrirMenu\(ev\.clientX') 'no se abre con el boton derecho'
-    Check 'el menu se cierra con click afuera, Escape y scroll' ($page.Content -match 'function cerrarMenu' -and $page.Content -match "ev\.key === 'Escape'" -and $page.Content -match "addEventListener\('scroll', cerrarMenu, true\)") 'el menu no se cierra'
+    # --- el menu de la entidad, que sale solo al pasar el mouse ---
+    Check 'la pagina trae el menu' ($page.Content -match 'id="menu"' -and $page.Content -match 'id="menu-desc"' -and $page.Content -match 'id="menu-insert"' -and $page.Content -match 'id="menu-select"') 'falta el menu'
+    Check 'el menu sale al pasar el mouse, no con el boton derecho' `
+          ($page.Content -match "addEventListener\('mouseenter'" -and $page.Content -match 'function programarMenu') 'no se abre por hover'
+    Check 'el menu ya no se abre con el boton derecho' ($page.Content -notmatch "addEventListener\('contextmenu'") 'quedo el contextmenu'
+    Check 'la espera del menu es de un segundo' ($page.Content -match 'ESPERA_MENU = 1000' -and $page.Content -match 'setTimeout\(function\(\)') 'no hay espera'
+    Check 'el menu se cancela si el mouse se va antes' ($page.Content -match 'function cancelarMenuProgramado' -and $page.Content -match 'clearTimeout\(temporizadorMenu\)') 'no se cancela el temporizador'
+    Check 'el menu se sostiene mientras el mouse esta adentro' ($page.Content -match "menu\.addEventListener\('mouseleave', cerrarMenu\)") 'el menu se cierra solo'
+    # El menu aparece AL LADO del item, asi que al salir no hay mouseleave que valga: se mira la
+    # posicion del mouse y se cierra si se alejo.
+    Check 'el menu se cierra si el mouse se aleja sin entrar' `
+          ($page.Content -match 'function cerrarSiSeAlejo' -and $page.Content -match "document\.addEventListener\('mousemove', cerrarSiSeAlejo\)") 'el menu queda colgado al alejarse'
+    Check 'el menu tambien se cierra si el mouse sale de la ventana' ($page.Content -match "document\.addEventListener\('mouseleave', function\(\) \{ cerrarMenu\(\); \}\)") 'no se cierra al salir de la ventana'
+    # El clic cierra el menu y no lo deja volver hasta el proximo mouseenter.
+    Check 'el clic cierra el menu y no deja que vuelva' `
+          ($page.Content -match 'entidadSinMenu' -and $page.Content -match 'if \(entidad === entidadSinMenu\) \{ return; \}') 'el menu reaparece despues del clic'
+    Check 'el clic en la entidad cancela el menu' ($page.Content -match '(?s)function abrirEntidad\(nombre\) \{\s*cancelarMenuProgramado\(\);\s*cerrarMenu\(\);') 'el clic no cierra el menu'
+    # El tooltip del item se saco: el menu ya muestra las acciones y el tooltip lo tapaba.
+    Check 'el item de entidad no tiene tooltip' ($page.Content -notmatch "boton\.title = ") 'quedo el title del item'
+    Check 'el menu se cierra con Escape y con scroll' ($page.Content -match "ev\.key === 'Escape'" -and $page.Content -match "addEventListener\('scroll', cerrarMenu, true\)") 'el menu no se cierra'
     Check 'el menu no se sale de la pantalla' ($page.Content -match 'window\.innerWidth - ancho' -and $page.Content -match 'window\.innerHeight - alto') 'no se reposiciona'
+    Check 'los tres items muestran la sentencia que generan' `
+          ($page.Content -match 'function rotuloDesc' -and $page.Content -match 'function rotuloSelect' -and $page.Content -match 'function rotuloInsert') 'los rotulos no se arman'
+    Check 'el click en la entidad sigue haciendo el DESC' ($page.Content -match "boton\.addEventListener\('click', function\(\) \{ abrirEntidad\(nombre\)") 'el click dejo de hacer el DESC'
+    Check 'la opcion DESC del menu hace el mismo atajo' ($page.Content -match "menuDesc\.addEventListener\('click'" -and $page.Content -match 'abrirEntidad\(entidad\)') 'el item DESC no esta cableado'
     Check 'Generar INSERT escribe en el editor y NO ejecuta' `
           ($page.Content -match 'function insertarEnEditor' -and $page.Content -match "menuInsert\.addEventListener\('click'") 'el INSERT del menu no escribe'
     Check 'el INSERT se inserta sin borrar lo escrito' `
           ($page.Content -match 'function insertarEnParrafo' -and $page.Content -notmatch 'ta\.value = sentencia') 'el INSERT pisa el editor'
     Check 'el cursor queda en el parentesis de columnas' ($page.Content -match 'puesto\.cursor, puesto\.cursor') 'el cursor no se posiciona'
     Check 'SELECT * del menu usa LIMIT' ($page.Content -match 'function selectDeEntidad' -and $page.Content -match 'LIMITE_MENU = 100' -and $page.Content -match "ejecutarTexto\(selectDeEntidad") 'el SELECT del menu no limita'
+    # El header no puede cambiar de tamano al pasar el mouse: el indicador de orden se reserva siempre.
+    # Se comparan strings literales (IndexOf) y no un regex, porque el patron lleva barras invertidas
+    # y en PowerShell escaparlas bien es un dolor.
+    $reserva = $page.Content.IndexOf("th.ordenable::after { content:'\21C5'")
+    $hoverConGlyph = $page.Content.IndexOf("th.ordenable:hover::after { content:")
+    Check 'el indicador de orden no cambia el tamano del header' `
+          ($reserva -ge 0 -and $hoverConGlyph -lt 0) "reserva=$reserva hoverConGlyph=$hoverConGlyph"
 
     # --- tope de filas ---
     if ($MaxRows -lt 6) {

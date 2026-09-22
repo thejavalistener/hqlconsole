@@ -203,19 +203,25 @@ Detalles del párrafo, que están cubiertos por los tests:
   pisar lo que tengas en el editor. La entidad que estás mirando queda marcada, y la lista se
   **contrae y se expande** con el botoncito de su cabecera; el estado se recuerda en el navegador
   igual que el ancho del editor.
-- **Botón derecho sobre una entidad: menú contextual** con dos acciones que no te obligan a escribir
-  nada. Se cierra con un clic afuera, con `Escape`, con la rueda del mouse o al elegir una opción, y
-  si no entra en la pantalla se corre hacia adentro en vez de aparecer cortado.
-  - **[Generar INSERT]**: arma un `INSERT` de ejemplo y lo **escribe en el editor** (no lo ejecuta),
-    **abajo del párrafo donde está el cursor**, sin pisar lo que tenías escrito. El bloque queda
-    seleccionado para que se vea qué se agregó, y el cursor termina **adentro del paréntesis de las
-    columnas**, listo para completar los valores. Excluye el `id` —lo genera la base— y pone un valor
-    acorde al tipo de cada columna: `999` para los números, `'999'` para los textos, `'2024-01-01'`
-    para las fechas, `NOW` para los timestamps y `false` para los booleanos. Las relaciones van por su
-    id.
-  - **[SELECT *]**: corre `SELECT * FROM Entidad LIMIT 100` sin pasar por el editor. El `100` es
-    porque un clic no debería traerte una tabla entera; si el tope global `max-rows` es menor, gana
-    ese y el resultado se marca como truncado.
+- **Dejá el mouse sobre una entidad y sale el menú solo** (al segundo), con las tres acciones y cada
+  rótulo mostrando la sentencia que genera:
+  - **`DESC Entidad`**: el mismo atajo que el clic.
+  - **`SELECT * FROM Entidad`**: corre `SELECT * FROM Entidad LIMIT 100` sin pasar por el editor. El
+    `100` es porque un clic no debería traerte una tabla entera; si el tope global `max-rows` es
+    menor, gana ese y el resultado se marca como truncado.
+  - **`INSERT INTO Entidad`**: arma un `INSERT` de ejemplo y lo **escribe en el editor** (no lo
+    ejecuta), **abajo del párrafo donde está el cursor**, sin pisar lo que tenías escrito. El bloque
+    queda seleccionado para que se vea qué se agregó, y el cursor termina **adentro del paréntesis de
+    las columnas**, listo para completar los valores. Excluye el `id` —lo genera la base— y pone un
+    valor acorde al tipo de cada columna: `999` para los números, `'999'` para los textos,
+    `'2024-01-01'` para las fechas, `NOW` para los timestamps y `false` para los booleanos. Las
+    relaciones van **por el id, sin comillas** cuando ese id es numérico (lo dice la columna
+    `RELACION` del `DESC`).
+  - El **clic sigue haciendo el `DESC`**, que es el atajo rápido: el menú es para lo demás. Al hacer
+    clic el menú se **cierra y no vuelve** hasta que saques el mouse y vuelvas a entrar.
+  - El menú se **cancela** si sacás el mouse antes del segundo, se **sostiene** mientras el mouse está
+    adentro (para que llegues a elegir) y **se cierra si alejás el mouse** sin haber entrado. También
+    con `Escape`, con la rueda, al salir de la ventana o si cambiás el tamaño.
 - **El editor no envuelve las líneas.** Una línea larga **scrollea en horizontal** en vez de partirse,
   que es lo que se espera de un editor de código: la sentencia se lee como la escribiste.
 - **El párrafo que ejecutaste queda pintado.** Al correr sin selección, la consola selecciona el
@@ -246,6 +252,14 @@ from Libro l where l.autor is not null
 INSERT INTO Libro (titulo) SELECT e.nombre FROM Empleado e WHERE e.id = 1
 DELETE FROM Empleado e WHERE e.nombre = 'Fabio Luna'
 ```
+
+> **El case de los atributos lo resuelve Hibernate, y es tolerante.** `SELECT l.id`, `SELECT l.ID`,
+> `SELECT l.Id` y `WHERE l.ID = 1` **funcionan los cuatro**: el motor resuelve los nombres de atributo
+> sin distinguir mayúsculas (un atributo inexistente sí falla, con `UnknownPathException`). Es una
+> diferencia real con las sentencias propias de la consola, donde el `INSERT` y el `UPDATE` sí exigen
+> el case exacto (`li.TITULO` da error y sugiere `titulo`). Volver estricto también el `SELECT` sería
+> posible, pero requiere escanear el HQL y resolver cada `alias.atributo` contra el metamodelo, y se
+> decidió no hacerlo: se documenta el comportamiento en vez de agregar un análisis sintáctico nuevo.
 
 Y si omitís el `SELECT` y escribís sólo el `from`, las filas salen con **todas las columnas planas**
 de la entidad, en vez de una sola columna con `Libro#1`:
@@ -663,8 +677,8 @@ Verificado end-to-end con `verify-demo.ps1`, que compila, levanta el fat jar del
 comprobaciones contra una H2 en memoria (Spring Boot 3.2.5, Hibernate 6.4.4, Java 21):
 
 ```
-.\verify-demo.ps1                                  # 209 PASS / 0 FAIL
-.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 216 PASS / 0 FAIL
+.\verify-demo.ps1                                  # 223 PASS / 0 FAIL
+.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 230 PASS / 0 FAIL
 ```
 
 Cubre: descubrimiento de la auto-configuración por el `.imports` del jar, la página servida desde

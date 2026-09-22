@@ -93,11 +93,16 @@ public final class HqlConsolePage
 		  td.nulo { color:#8b949e; font-style:italic; }
 
 		  /* Los headers se pueden clickear para ordenar. La flechita va como contenido del ::after
-		     para no ensuciar el textContent del th, que es el nombre de la columna. */
+		     para no ensuciar el textContent del th, que es el nombre de la columna.
+		     OJO: el indicador tiene que existir SIEMPRE y con el mismo ancho. Si el contenido del
+		     ::after aparece recién en el :hover, el header se agranda al pasar el mouse (el carácter
+		     nuevo ocupa ancho, y con white-space:pre eso ensancha la columna y sube el alto). Por eso
+		     los cuatro estados usan el mismo glyph y lo que cambia es sólo el color: el ancho se
+		     reserva desde el principio y nada se mueve. */
 		  th.ordenable { cursor:pointer; user-select:none; }
 		  th.ordenable:hover { background:#e2e7ee; }
-		  th.ordenable::after { content:''; opacity:.35; margin-left:6px; }
-		  th.ordenable:hover::after { content:'\\21C5'; opacity:.6; }
+		  th.ordenable::after { content:'\\21C5'; margin-left:6px; opacity:.25; }
+		  th.ordenable:hover::after { opacity:.55; }
 		  th.orden-asc::after { content:'\\2191'; opacity:1; }
 		  th.orden-desc::after { content:'\\2193'; opacity:1; }
 		  .pie { flex:0 0 auto; font-size:12px; opacity:.7; }
@@ -146,8 +151,8 @@ public final class HqlConsolePage
 		  .entidad-item:hover { background:#eef4ff; }
 		  .entidad-item.elegida { background:#dce8ff; font-weight:600; }
 
-		  /* --- el menú contextual (botón derecho sobre una entidad) --- */
-		  #menu { position:fixed; z-index:50; min-width:190px; padding:4px;
+		  /* --- el menú de la entidad: sale solo al pasar el mouse un segundo --- */
+		  #menu { position:fixed; z-index:50; min-width:230px; padding:4px;
 		          background:#fff; border:1px solid var(--borde); border-radius:6px;
 		          box-shadow:0 6px 20px rgba(0,0,0,.18); }
 		  .menu-item { display:block; width:100%; text-align:left; padding:6px 10px;
@@ -216,9 +221,9 @@ public final class HqlConsolePage
 		  </div>
 		</div>
 		<div id="menu" hidden>
-		  <div class="menu-titulo" id="menu-titulo"></div>
-		  <button type="button" class="menu-item" id="menu-insert">Generar INSERT</button>
-		  <button type="button" class="menu-item" id="menu-select">SELECT *</button>
+		  <button type="button" class="menu-item" id="menu-desc"></button>
+		  <button type="button" class="menu-item" id="menu-select"></button>
+		  <button type="button" class="menu-item" id="menu-insert"></button>
 		</div>
 		<script>
 		const BASE = '__BASE__';
@@ -252,7 +257,7 @@ public final class HqlConsolePage
 		const toggleEntidades = document.getElementById('toggle-entidades');
 		const listaEntidades = document.getElementById('lista-entidades');
 		const menu = document.getElementById('menu');
-		const menuTitulo = document.getElementById('menu-titulo');
+		const menuDesc = document.getElementById('menu-desc');
 		const menuInsert = document.getElementById('menu-insert');
 		const menuSelect = document.getElementById('menu-select');
 
@@ -563,6 +568,24 @@ public final class HqlConsolePage
 		  return 'SELECT * FROM ' + entidad + ' LIMIT ' + LIMITE_MENU;
 		}
 
+		// Los rótulos del menú: cada uno muestra la sentencia que va a generar, con el nombre de la
+		// entidad adentro. Es lo que hace que no haga falta adivinar qué hace cada opción.
+		function rotuloDesc(entidad) {
+		  return 'DESC ' + entidad;
+		}
+
+		function rotuloSelect(entidad) {
+		  return 'SELECT * FROM ' + entidad;
+		}
+
+		function rotuloInsert(entidad) {
+		  return 'INSERT INTO ' + entidad;
+		}
+
+		// Cuánto hay que esperar con el mouse encima antes de que salga el menú. Un segundo: si fuera
+		// instantáneo, pasar el mouse por la lista sería una ametralladora de menús.
+		const ESPERA_MENU = 1000;
+
 		/**
 		 * Dónde meter el INSERT generado: en el párrafo donde está el cursor, no encima de todo lo
 		 * que había escrito.
@@ -834,26 +857,52 @@ public final class HqlConsolePage
 		    boton.type = 'button';
 		    boton.className = 'entidad-item';
 		    boton.textContent = nombre;
-		    boton.title = 'DESC ' + nombre + '  (botón derecho: más acciones)';
+		    // Sin title: el menú que sale solo ya muestra las tres acciones, y un tooltip encima
+		    // tapa justo el menú y confunde.
 		    boton.addEventListener('click', function() { abrirEntidad(nombre); });
-		    boton.addEventListener('contextmenu', function(ev) {
-		      ev.preventDefault();
-		      abrirMenu(ev.clientX, ev.clientY, nombre);
+		    // El menú sale solo: no hay botón derecho. Se programa al entrar y se cancela al salir.
+		    boton.addEventListener('mouseenter', function() {
+		      programarMenu(boton, nombre);
 		    });
+		    boton.addEventListener('mouseleave', cancelarMenuProgramado);
 		    listaEntidades.appendChild(boton);
 		  });
 		  marcarEntidadElegida(entidadElegida);
 		}
 
-		// ==================== el menú contextual ====================
-		// Acciones sobre una entidad sin escribir nada: generar el INSERT de ejemplo o correr un
-		// SELECT * acotado. El menú se cierra con click en cualquier lado, con Escape, con scroll o
-		// al elegir una opción. Vive en el body y se posiciona con coordenadas de pantalla.
+		// ==================== el menú de la entidad (hover) ====================
+		// Sale solo después de dejar el mouse quieto sobre una entidad. Tiene las tres acciones y cada
+		// rótulo muestra la sentencia que genera, así no hay que adivinar qué hace cada opción.
+		// El clic sigue haciendo el DESC, que es el atajo rápido.
 		let entidadDelMenu = null;
+		let temporizadorMenu = null;
+		// La entidad cuyo menú ya se usó (o se descartó): no vuelve a salir hasta que el mouse salga y
+		// entre de nuevo. Sin esto, después de un clic el menú reaparecía solo y molestaba.
+		let entidadSinMenu = null;
+
+		function programarMenu(boton, entidad) {
+		  cancelarMenuProgramado();
+		  if (entidad === entidadSinMenu) { return; } // ya se usó: espera a un mouseenter nuevo
+		  temporizadorMenu = setTimeout(function() {
+		    temporizadorMenu = null;
+		    const caja = boton.getBoundingClientRect();
+		    // El menú nace pegado al borde derecho de la entidad, a la altura del renglón.
+		    abrirMenu(caja.right + 4, caja.top, entidad);
+		  }, ESPERA_MENU);
+		}
+
+		function cancelarMenuProgramado() {
+		  if (temporizadorMenu) { clearTimeout(temporizadorMenu); temporizadorMenu = null; }
+		  // Al salir del ítem se rearma la posibilidad de que el menú vuelva: es lo que hace que
+		  // "salir y volver a entrar" lo muestre de nuevo.
+		  entidadSinMenu = null;
+		}
 
 		function abrirMenu(x, y, entidad) {
 		  entidadDelMenu = entidad;
-		  menuTitulo.textContent = entidad;
+		  menuDesc.textContent = rotuloDesc(entidad);
+		  menuSelect.textContent = rotuloSelect(entidad);
+		  menuInsert.textContent = rotuloInsert(entidad);
 		  menu.hidden = false;
 
 		  // Si el menú no entra en la pantalla, se corre hacia adentro: si no, aparece cortado.
@@ -865,14 +914,48 @@ public final class HqlConsolePage
 		  menu.style.top = y2 + 'px';
 		}
 
+		// Cerrar el menú también cancela el temporizador: si no, un menú programado podría aparecer
+		// después de que el mouse ya se fue. Y marca la entidad para que el menú no vuelva a salir
+		// hasta el próximo mouseenter (si no, después de un clic reaparecía solo).
 		function cerrarMenu() {
+		  cancelarMenuProgramado();
+		  if (entidadDelMenu !== null) { entidadSinMenu = entidadDelMenu; }
 		  menu.hidden = true;
 		  entidadDelMenu = null;
 		}
 
-		document.addEventListener('click', function(ev) {
-		  if (!menu.hidden && !menu.contains(ev.target)) { cerrarMenu(); }
-		});
+		// El menú se mantiene mientras el mouse esté adentro: da tiempo a llegar y elegir.
+		menu.addEventListener('mouseleave', cerrarMenu);
+
+		/**
+		 * Cierra el menú si el mouse se alejó de la entidad.
+		 *
+		 * <p>Hace falta porque el menú aparece <b>al lado</b> del ítem: en cuanto sale, el mouse ya no
+		 * está ni sobre el ítem ni sobre el menú, así que ningún {@code mouseleave} se dispara y el
+		 * menú quedaba colgado para siempre. Acá se mira si el mouse sigue cerca del ítem dueño o
+		 * adentro del menú, y si no, se cierra.</p>
+		 */
+		function cerrarSiSeAlejo(ev) {
+		  if (menu.hidden) { return; }
+		  const dentroDelMenu = menu.contains(ev.target);
+		  const duenio = _botonDeEntidad(entidadDelMenu);
+		  const sobreElDuenio = duenio !== null && duenio.contains(ev.target);
+		  if (!dentroDelMenu && !sobreElDuenio) { cerrarMenu(); }
+		}
+
+		function _botonDeEntidad(nombre) {
+		  if (nombre === null) { return null; }
+		  const items = listaEntidades.querySelectorAll('.entidad-item');
+		  for (let i = 0; i < items.length; i++) {
+		    if (items[i].textContent === nombre) { return items[i]; }
+		  }
+		  return null;
+		}
+
+		document.addEventListener('mousemove', cerrarSiSeAlejo);
+		// Si el mouse se va de la ventana, tampoco hay mousemove que valga: se cierra igual.
+		document.addEventListener('mouseleave', function() { cerrarMenu(); });
+
 		document.addEventListener('keydown', function(ev) {
 		  if (ev.key === 'Escape') { cerrarMenu(); }
 		});
@@ -880,8 +963,25 @@ public final class HqlConsolePage
 		window.addEventListener('scroll', cerrarMenu, true);
 		window.addEventListener('resize', cerrarMenu);
 
-		// [Generar INSERT]: NO ejecuta. Escribe la sentencia en el editor para que la completes y la
-		// corras vos. Necesita el DESC de la entidad para saber sus columnas y sus tipos, así que se
+		// [DESC Entidad]: el mismo atajo que el clic. abrirEntidad ya cierra el menú y lo deja marcado
+		// para que no vuelva a salir hasta el próximo mouseenter, así que no hay que cerrarlo antes.
+		menuDesc.addEventListener('click', function() {
+		  const entidad = entidadDelMenu;
+		  if (entidad) { abrirEntidad(entidad); } else { cerrarMenu(); }
+		});
+
+		// [SELECT * FROM Entidad]: se ejecuta sin pasar por el editor. El LIMIT va en la sentencia,
+		// así que el número que se ve en el pie es el que se usó de verdad.
+		menuSelect.addEventListener('click', function() {
+		  const entidad = entidadDelMenu;
+		  cerrarMenu();
+		  if (!entidad) { return; }
+		  marcarEntidadElegida(entidad);
+		  ejecutarTexto(selectDeEntidad(entidad), 'el menú de ' + entidad);
+		});
+
+		// [INSERT INTO Entidad]: NO ejecuta. Escribe la sentencia en el editor para que la completes y
+		// la corras vos. Necesita el DESC de la entidad para saber sus columnas y sus tipos, así que se
 		// pide al backend (es la misma lectura que hace el panel de detalle).
 		menuInsert.addEventListener('click', async function() {
 		  const entidad = entidadDelMenu;
@@ -895,16 +995,6 @@ public final class HqlConsolePage
 		  }
 		  insertarEnEditor(insertDeEntidad(entidad, respuesta.datos.rows));
 		  estado.textContent = 'INSERT de ' + entidad + ' escrito abajo del párrafo del cursor: completá los valores y ejecutá.';
-		});
-
-		// [SELECT *]: se ejecuta sin pasar por el editor. El LIMIT va en la sentencia, así que el
-		// número que se ve en el pie es el que se usó de verdad.
-		menuSelect.addEventListener('click', function() {
-		  const entidad = entidadDelMenu;
-		  cerrarMenu();
-		  if (!entidad) { return; }
-		  marcarEntidadElegida(entidad);
-		  ejecutarTexto(selectDeEntidad(entidad), 'el menú de ' + entidad);
 		});
 
 		// Poner el INSERT generado en el editor, en el párrafo del cursor: lo que había escrito no se
@@ -922,7 +1012,12 @@ public final class HqlConsolePage
 
 		// Click en una entidad: equivale a escribir "DESC <Entidad>" y ejecutar. No se toca el editor
 		// a propósito: el panel es un atajo para mirar, no para pisar lo que estabas escribiendo.
+		// El menú se cierra y no vuelve hasta que el mouse salga y entre de nuevo: si no, después del
+		// clic quedaba tapando la grilla que se acababa de abrir.
 		function abrirEntidad(nombre) {
+		  cancelarMenuProgramado();
+		  cerrarMenu();
+		  entidadSinMenu = nombre;
 		  marcarEntidadElegida(nombre);
 		  ejecutarTexto('DESC ' + nombre, 'el panel de entidades');
 		}

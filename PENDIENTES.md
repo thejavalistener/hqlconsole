@@ -45,8 +45,70 @@ trabajo (una sesión nueva, otro modelo) no tenga que adivinar: la documentació
 | #9 `*` en el atributo `@Id` de `DESC` | **hecho** |
 | #10 menú contextual de una entidad (INSERT / SELECT *) | **hecho** |
 | #11 comentarios `//`, `#`, `--` sin color | **hecho** |
+| #12 menú de la entidad por hover (1s) con DESC / SELECT / INSERT | **hecho** |
+| #13 el header no cambia de tamaño al pasar el mouse | **hecho** |
+| #14 case estricto de atributos en los SELECT | **descartado a propósito**; documentado |
 
-### Pendientes, acordados y NO hechos todavía
+## #12 — El menú por hover, y el bug del header
+
+- **El menú ya no es por botón derecho**: sale solo al dejar el mouse **un segundo** sobre una
+  entidad (`ESPERA_MENU = 1000`). El botón derecho se sacó por completo, así que volvió a ser el del
+  navegador.
+- **El clic sigue haciendo el `DESC`**, y el menú agrega las tres opciones con el nombre de la
+  entidad adentro del rótulo (`DESC Libro`, `SELECT * FROM Libro`, `INSERT INTO Libro`), que es lo
+  que hace que no haya que adivinar qué hace cada una.
+- **Tres detalles del comportamiento que importan**: el menú se programa con `setTimeout` y se
+  **cancela** si el mouse se va antes (`cancelarMenuProgramado`), se **sostiene** mientras el mouse
+  está adentro del menú (`mouseleave` en el propio menú) para que llegues a elegir, y `cerrarMenu`
+  cancela el temporizador — si no, un menú programado podía aparecer **después** de que el mouse ya
+  se había ido.
+
+### Los tres ajustes que salieron de usarlo
+
+1. **Se sacó el `title` del ítem.** El tooltip nativo aparecía encima del menú y tapaba justo las
+   opciones, además de repetir lo que el menú ya dice. El menú es la única ayuda ahora.
+2. **El clic cierra el menú y no lo deja volver.** Antes, después de clickear una entidad el menú
+   reaparecía solo y tapaba la grilla que se acababa de abrir. Se resolvió con `entidadSinMenu`: el
+   clic marca esa entidad y `programarMenu` no la vuelve a mostrar hasta que el mouse **salga y
+   entre** de nuevo (`cancelarMenuProgramado` limpia la marca al salir del ítem).
+3. **El menú se cierra si alejás el mouse sin entrar.** Este era el peor y no era obvio: el menú
+   aparece **al lado** del ítem, así que en cuanto sale el mouse ya no está ni sobre el ítem ni sobre
+   el menú, y **ningún `mouseleave` se dispara**: el menú quedaba colgado para siempre. Se arregló con
+   un `mousemove` a nivel documento (`cerrarSiSeAlejo`) que mira si el mouse sigue sobre el ítem dueño
+   o adentro del menú, más un `mouseleave` del documento para cuando el mouse se va de la ventana.
+
+   **Ojo con el orden en `menuDesc`**: ese ítem llama a `abrirEntidad`, que ya hace `cerrarMenu`, así
+   que no hay que cerrarlo antes — si se cierra dos veces, la segunda llamada encuentra
+   `entidadDelMenu` en null y se pierde la marca de `entidadSinMenu`, con lo que el menú volvía a
+   aparecer. Es exactamente el bug que se estaba arreglando.
+
+### #13 — El header se agrandaba al pasar el mouse
+
+Era el `::after` del indicador de orden: la regla base era `content:''` y el glyph (`⇅`) aparecía
+**recién en el `:hover`**. Ese carácter nuevo ocupa ancho, y como los `th` tienen `white-space:pre`,
+al aparecer ensanchaba la columna y subía el alto.
+
+**El arreglo:** el indicador existe siempre, con el mismo glyph y el mismo `margin-left`, y lo único
+que cambia en el hover es la **opacidad**. Así el ancho se reserva desde el arranque y nada se mueve.
+
+## #14 — Case de atributos: lo resuelve Hibernate (y es tolerante)
+
+El pedido era que `SELECT l.ID FROM Libro l` fallara, como falla `INSERT INTO Libro li VALUES
+li.TITULO='x'`. Se investigó y **la insensibilidad no es nuestra: es de Hibernate**, que resuelve los
+nombres de atributo sin distinguir mayúsculas. Comprobado contra el demo: `l.ID`, `l.Id` y
+`WHERE l.ID` funcionan los tres, y un atributo inventado (`l.noExiste`) sí falla con
+`UnknownPathException`.
+
+O sea que hay una **inconsistencia real**: los `SELECT` (que van tal cual a Hibernate) toleran
+cualquier case, y el `INSERT`/`UPDATE` de la consola exigen el exacto porque el parser resuelve los
+nombres contra el metamodelo (`AttributeBinder._attributeOf`).
+
+**Se decidió no arreglarlo** (a pedido del dueño del repo): hacerlo estricto requiere escanear el HQL
+y resolver cada `alias.atributo` contra el metamodelo —distinguiendo alias, atributos, funciones,
+constructores `new X(...)`, literales y subconsultas—, que es un análisis sintáctico nuevo y el más
+riesgoso de la lista. Queda **documentado en el `README`** como comportamiento conocido.
+
+## Pendientes, acordados y NO hechos todavía
 
 Se dejaron para más adelante por ser los que más riesgo tienen (los tres tocan parseo o arquitectura de
 la página, no cosmética):
