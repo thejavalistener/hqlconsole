@@ -206,11 +206,13 @@ Detalles del párrafo, que están cubiertos por los tests:
 - **Botón derecho sobre una entidad: menú contextual** con dos acciones que no te obligan a escribir
   nada. Se cierra con un clic afuera, con `Escape`, con la rueda del mouse o al elegir una opción, y
   si no entra en la pantalla se corre hacia adentro en vez de aparecer cortado.
-  - **[Generar INSERT]**: arma un `INSERT` de ejemplo y lo **escribe en el editor** (no lo ejecuta).
-    Excluye el `id` —lo genera la base— y pone un valor acorde al tipo de cada columna: `999` para
-    los números, `'999'` para los textos, `'2024-01-01'` para las fechas, `NOW` para los timestamps y
-    `false` para los booleanos. Las relaciones van por su id. Te queda completar los valores y correr
-    la sentencia.
+  - **[Generar INSERT]**: arma un `INSERT` de ejemplo y lo **escribe en el editor** (no lo ejecuta),
+    **abajo del párrafo donde está el cursor**, sin pisar lo que tenías escrito. El bloque queda
+    seleccionado para que se vea qué se agregó, y el cursor termina **adentro del paréntesis de las
+    columnas**, listo para completar los valores. Excluye el `id` —lo genera la base— y pone un valor
+    acorde al tipo de cada columna: `999` para los números, `'999'` para los textos, `'2024-01-01'`
+    para las fechas, `NOW` para los timestamps y `false` para los booleanos. Las relaciones van por su
+    id.
   - **[SELECT *]**: corre `SELECT * FROM Entidad LIMIT 100` sin pasar por el editor. El `100` es
     porque un clic no debería traerte una tabla entera; si el tope global `max-rows` es menor, gana
     ese y el resultado se marca como truncado.
@@ -403,6 +405,36 @@ lo dice.
   Los `@PreUpdate` / `@PreRemove` que hagan algo **por fuera** de la transacción —mandar un mail,
   escribir una auditoría en otra conexión— lo hacen dos veces.
 - Con `allow-writes=false` no hay dry-run que valga: la sentencia se rechaza antes de ejecutarse.
+
+### Comentarios
+
+Las líneas que empiezan con `//`, `#` o `--` son comentarios, y **se excluyen antes de ejecutar**:
+
+```sql
+// datos de prueba
+INSERT INTO Libro (titulo, precio) VALUES ('Uno', 100);   -- y este también
+
+SELECT e.id,   # el id
+       e.nombre
+  FROM Empleado e
+```
+
+- **No se le mandan a Hibernate**: se sacan antes de partir por `;` y de parsear. Es lo que hace que
+  un `;` adentro de un comentario **no parta la sentencia**, y que un `where` comentado no se
+  confunda con el `WHERE` de verdad.
+- Cada comentario se reemplaza por **un espacio**, no se borra: si se borrara, dos tokens separados
+  por un comentario quedarían pegados y la sentencia cambiaría de significado.
+- Un `--` o un `#` **adentro de un literal es texto**, no un comentario: `'a--b'` se guarda tal cual.
+- Tres estilos, y los tres terminan en el fin de línea. **No hay comentarios de bloque**.
+- Los comentarios **cuentan como parte del párrafo**: si escribís un comentario en su propia línea
+  arriba de la sentencia (sin línea en blanco en el medio), `Ctrl+Enter` ejecuta las dos cosas y la
+  sentencia corre igual, porque el comentario se descarta al ejecutar.
+- Si lo único que hay es un comentario, la consola avisa: *"La sentencia quedó vacía: sólo tenía
+  comentarios."*
+
+> **Todavía no tienen color.** Un `<textarea>` no puede pintar parte del texto: para eso hace falta el
+> truco del overlay (un `<pre>` pintado detrás y el textarea transparente encima), que se lleva mal
+> con el scroll horizontal. Queda para más adelante.
 
 ### `DESC <Entidad>`
 
@@ -631,8 +663,8 @@ Verificado end-to-end con `verify-demo.ps1`, que compila, levanta el fat jar del
 comprobaciones contra una H2 en memoria (Spring Boot 3.2.5, Hibernate 6.4.4, Java 21):
 
 ```
-.\verify-demo.ps1                                  # 196 PASS / 0 FAIL
-.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 203 PASS / 0 FAIL
+.\verify-demo.ps1                                  # 209 PASS / 0 FAIL
+.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 216 PASS / 0 FAIL
 ```
 
 Cubre: descubrimiento de la auto-configuración por el `.imports` del jar, la página servida desde

@@ -617,6 +617,26 @@ check('valor: una relacion va por id (numerico)', valorDeEjemplo('Autor'), "'999
 
 check('select: arma el SELECT * con LIMIT', selectDeEntidad('Libro'), 'SELECT * FROM Libro LIMIT 100');
 check('select: el limite sale de la constante', selectDeEntidad('X').indexOf('LIMIT 100') > 0, true);
+
+// --- el INSERT generado se mete en el parrafo del cursor, sin pisar lo que habia ---
+var doc = 'SELECT 1\n\nSELECT 2';
+var puesto = insertarEnParrafo(doc, doc.indexOf('SELECT 1') + 2, 'INSERT INTO X (a) VALUES (1);');
+check('insertar: no borra lo que habia', puesto.texto.indexOf('SELECT 1') === 0, true);
+check('insertar: agrega despues del parrafo del cursor', puesto.texto.indexOf('SELECT 1\n\nINSERT INTO X') === 0, true);
+check('insertar: el parrafo de abajo queda intacto', puesto.texto.indexOf('SELECT 2') > 0, true);
+check('insertar: deja una linea en blanco antes', puesto.texto.indexOf('\n\nINSERT') > 0, true);
+check('insertar: deja una linea en blanco despues', puesto.texto.indexOf(');\n\nSELECT 2') > 0, true);
+check('insertar: no duplica los saltos que ya habia', puesto.texto.indexOf(');\n\n\n') < 0, true);
+// El cursor queda adentro del primer parentesis: el de las COLUMNAS (no el de VALUES).
+var esperadoCursor = puesto.texto.indexOf('INSERT INTO X (') + 'INSERT INTO X ('.length;
+check('insertar: el cursor queda despues del parentesis de columnas', puesto.cursor, esperadoCursor);
+check('insertar: lo insertado queda seleccionado', puesto.texto.substring(puesto.seleccion.inicio, puesto.seleccion.fin), 'INSERT INTO X (a) VALUES (1);');
+// Con el cursor al final del documento, el insert va al final y no al principio.
+var alFinal = insertarEnParrafo('SELECT 1\n\n', 10, 'INSERT INTO Y (b) VALUES (2);');
+check('insertar: con el cursor al final agrega al final', alFinal.texto.indexOf('INSERT INTO Y') > alFinal.texto.indexOf('SELECT 1'), true);
+// En un editor vacio, el insert queda solo.
+var vacio = insertarEnParrafo('', 0, 'INSERT INTO Z (c) VALUES (3);');
+check('insertar: en un editor vacio no agrega lineas de mas al principio', vacio.texto.indexOf('INSERT INTO Z') === 0, true);
 '@
             $archivo = Join-Path $env:TEMP 'hql-console-sel-test.js'
             Set-Content -Path $archivo -Value $js -Encoding UTF8
@@ -720,6 +740,45 @@ check('select: el limite sale de la constante', selectDeEntidad('X').indexOf('LI
     $r = Exec 'DESC'
     Check 'la lista de entidades tipa CAMPOS como NUMERO' (($r.json.types -join ',') -eq 'TEXTO,TEXTO,NUMERO') ($r.json.types -join ',')
 
+    # --- comentarios ---
+    # El conteo de empleados no se asume: a esta altura del script ya se insertaron filas, asi que se
+    # lee el valor real y se compara contra el mismo SELECT con y sin comentarios.
+    $r = Exec "SELECT count(e) FROM Empleado e"
+    $empleados = $r.json.rows[0][0]
+    Check 'el conteo de empleados para los tests de comentarios' ($empleados -ge 1) $empleados
+
+    $r = Exec "// un comentario`nSELECT count(e) FROM Empleado e"
+    Check 'un comentario // arriba no rompe la sentencia' ($r.status -eq 200 -and $r.json.rows[0][0] -eq $empleados) $r.raw
+
+    $r = Exec "# otro comentario`nSELECT count(e) FROM Empleado e"
+    Check 'un comentario # arriba no rompe la sentencia' ($r.status -eq 200 -and $r.json.rows[0][0] -eq $empleados) $r.raw
+
+    $r = Exec "-- comentario SQL`nSELECT count(e) FROM Empleado e"
+    Check 'un comentario -- arriba no rompe la sentencia' ($r.status -eq 200 -and $r.json.rows[0][0] -eq $empleados) $r.raw
+
+    $r = Exec "SELECT e.id, // el id`n e.nombre FROM Empleado e WHERE e.id = 1"
+    Check 'un comentario en el medio de la sentencia se ignora' ($r.status -eq 200 -and $r.json.rowCount -eq 1) $r.raw
+
+    # El caso que rompia: un ';' adentro de un comentario partia la sentencia.
+    $r = Exec "SELECT e.nombre FROM Empleado e -- ojo; esto no corta`nWHERE e.id = 1"
+    Check 'un ; adentro de un comentario no parte la sentencia' ($r.status -eq 200 -and $r.json.rowCount -eq 1) $r.raw
+
+    # Una palabra clave adentro de un comentario no es la clausula.
+    $r = Exec "INSERT INTO Libro li VALUES li.titulo='Con comentario' -- where no es where`n, li.precio=1"
+    Check 'un where adentro de un comentario no es la clausula del UPDATE' ($r.status -eq 200 -and $r.json.affectedRows -eq 1) $r.raw
+
+    # Un comentario adentro de un literal es texto, no comentario.
+    $r = Exec "INSERT INTO Libro li VALUES li.titulo='texto -- no es comentario', li.precio=1"
+    Check 'un -- adentro de un literal es texto' ($r.status -eq 200) $r.raw
+    $r = Exec "SELECT l.titulo FROM Libro l WHERE l.titulo = 'texto -- no es comentario'"
+    Check 'el texto con -- adentro se guardo entero' ($r.json.rowCount -eq 1 -and $r.json.rows[0][0] -eq 'texto -- no es comentario') ($r.json.rows[0] -join '|')
+
+    $r = Exec "// solo un comentario"
+    Check 'una sentencia que es solo un comentario avisa' ($r.status -eq 400 -and $r.json.error -match 'comentarios') $r.raw
+
+    $r = Exec "SELECT count(e) FROM Empleado e // cierre"
+    Check 'un comentario al final tampoco molesta' ($r.status -eq 200 -and $r.json.rows[0][0] -eq $empleados) $r.raw
+
     # --- el orden por click en el header ---
     Check 'la pagina trae el orden por click en el header' `
           ($page.Content -match 'function ordenarPor' -and $page.Content -match 'function compararCeldas' -and $page.Content -match "addEventListener\('click', function\(\) \{\s*ordenarPor") 'falta el orden por header'
@@ -743,7 +802,10 @@ check('select: el limite sale de la constante', selectDeEntidad('X').indexOf('LI
     Check 'el menu se cierra con click afuera, Escape y scroll' ($page.Content -match 'function cerrarMenu' -and $page.Content -match "ev\.key === 'Escape'" -and $page.Content -match "addEventListener\('scroll', cerrarMenu, true\)") 'el menu no se cierra'
     Check 'el menu no se sale de la pantalla' ($page.Content -match 'window\.innerWidth - ancho' -and $page.Content -match 'window\.innerHeight - alto') 'no se reposiciona'
     Check 'Generar INSERT escribe en el editor y NO ejecuta' `
-          ($page.Content -match 'function textoDelEditor' -and $page.Content -match "menuInsert\.addEventListener\('click'") 'el INSERT del menu no escribe'
+          ($page.Content -match 'function insertarEnEditor' -and $page.Content -match "menuInsert\.addEventListener\('click'") 'el INSERT del menu no escribe'
+    Check 'el INSERT se inserta sin borrar lo escrito' `
+          ($page.Content -match 'function insertarEnParrafo' -and $page.Content -notmatch 'ta\.value = sentencia') 'el INSERT pisa el editor'
+    Check 'el cursor queda en el parentesis de columnas' ($page.Content -match 'puesto\.cursor, puesto\.cursor') 'el cursor no se posiciona'
     Check 'SELECT * del menu usa LIMIT' ($page.Content -match 'function selectDeEntidad' -and $page.Content -match 'LIMITE_MENU = 100' -and $page.Content -match "ejecutarTexto\(selectDeEntidad") 'el SELECT del menu no limita'
 
     # --- tope de filas ---

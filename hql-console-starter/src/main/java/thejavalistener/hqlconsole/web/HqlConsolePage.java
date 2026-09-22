@@ -545,6 +545,55 @@ public final class HqlConsolePage
 		  return 'SELECT * FROM ' + entidad + ' LIMIT ' + LIMITE_MENU;
 		}
 
+		/**
+		 * Dónde meter el INSERT generado: en el párrafo donde está el cursor, no encima de todo lo
+		 * que había escrito.
+		 *
+		 * <p>Se deja una línea en blanco antes y después, así el bloque nuevo queda separado de lo que
+		 * había (y sigue siendo su propio párrafo para el Ctrl+Enter). Y el cursor queda adentro del
+		 * <b>primer paréntesis</b> de la sentencia, que en un INSERT es el de las columnas: ahí es
+		 * donde se completan los valores.</p>
+		 *
+		 * <p>Devuelve el texto nuevo, la posición del cursor y el rango del bloque insertado (que es
+		 * lo que se selecciona después, para que se vea qué se agregó).</p>
+		 */
+		function insertarEnParrafo(texto, cursor, sentencia) {
+		  const parrafo = rangoParrafo(texto, cursor);
+		  const antes = texto.substring(0, parrafo.fin);
+		  const despues = texto.substring(parrafo.fin);
+
+		  // Los separadores se calculan mirando los saltos que YA hay, no agregando a ciegas: entre
+		  // dos párrafos el hueco ya aporta sus saltos, y sumarle "\\n\\n" dejaba cuatro líneas en
+		  // blanco en vez de una. Se completa lo que falta hasta tener una línea en blanco.
+		  const sepAntes = antes.trim().length > 0 ? _saltosQueFaltan(antes, 'antes') : '';
+		  const sepDespues = despues.trim().length > 0 ? _saltosQueFaltan(despues, 'despues') : '';
+
+		  // Con el separador ya calculado, la sentencia arranca después de los espacios que se
+		  // descartan: si no, el rango seleccionado incluiría saltos de línea de más.
+		  const inicio = parrafo.fin + sepAntes.length - _espaciosAlFinal(antes);
+		  const nuevo = antes + sepAntes + sentencia + sepDespues + despues;
+		  // El cursor va justo después del primer paréntesis de la sentencia, que en un INSERT es el
+		  // de las columnas: ahí es donde se completan los valores.
+		  const abre = sentencia.indexOf('(');
+		  const posicion = inicio + (abre < 0 ? sentencia.length : abre + 1);
+
+		  return { texto: nuevo, cursor: posicion, seleccion: { inicio: inicio, fin: inicio + sentencia.length } };
+		}
+
+		// Cuántos saltos hay que agregar para dejar UNA línea en blanco de ese lado. Si ya hay dos o
+		// más, no se agrega ninguno (el hueco que había se usa tal cual).
+		function _saltosQueFaltan(fragmento, lado) {
+		  const cola = lado === 'antes' ? /(\\n[ \\t]*)*$/.exec(fragmento)[0] : /^[ \\t]*(\\n[ \\t]*)*/.exec(fragmento)[0];
+		  const saltos = (cola.match(/\\n/g) || []).length;
+		  return saltos >= 2 ? '' : '\\n'.repeat(2 - saltos);
+		}
+
+		// Los espacios (no los saltos) que quedan al final del texto de arriba: el separador se pega
+		// después de ellos, así que el inicio real de la sentencia los saltea.
+		function _espaciosAlFinal(fragmento) {
+		  return /[ \\t]*$/.exec(fragmento)[0].length;
+		}
+
 		// El texto del confirm(). El número es la alarma: si esperabas 1 fila y dice 4, cancelás.
 		// (Las barras invertidas van dobles por el text block de Java.)
 		function mensajeConfirmacion(hql, filas, truncado) {
@@ -826,8 +875,8 @@ public final class HqlConsolePage
 		    mostrarError(respuesta.datos || { error: 'No se pudo leer el DESC de ' + entidad });
 		    return;
 		  }
-		  textoDelEditor(insertDeEntidad(entidad, respuesta.datos.rows));
-		  estado.textContent = 'INSERT de ' + entidad + ' escrito en el editor: completá los valores y ejecutá.';
+		  insertarEnEditor(insertDeEntidad(entidad, respuesta.datos.rows));
+		  estado.textContent = 'INSERT de ' + entidad + ' escrito abajo del párrafo del cursor: completá los valores y ejecutá.';
 		});
 
 		// [SELECT *]: se ejecuta sin pasar por el editor. El LIMIT va en la sentencia, así que el
@@ -840,12 +889,15 @@ public final class HqlConsolePage
 		  ejecutarTexto(selectDeEntidad(entidad), 'el menú de ' + entidad);
 		});
 
-		// Poner texto en el editor reemplazando todo. Se guarda y se refresca el aviso de alcance,
-		// igual que si lo hubieras tipeado.
-		function textoDelEditor(texto) {
-		  ta.value = texto;
+		// Poner el INSERT generado en el editor, en el párrafo del cursor: lo que había escrito no se
+		// pierde. Después queda seleccionado el bloque insertado, para ver de un vistazo qué se agregó.
+		function insertarEnEditor(sentencia) {
+		  const puesto = insertarEnParrafo(ta.value, ta.selectionStart, sentencia);
+		  ta.value = puesto.texto;
 		  ta.focus();
-		  ta.setSelectionRange(texto.length, texto.length);
+		  ta.setSelectionRange(puesto.seleccion.inicio, puesto.seleccion.fin);
+		  // El cursor, en cambio, queda listo para escribir: adentro del primer paréntesis.
+		  ta.setSelectionRange(puesto.cursor, puesto.cursor);
 		  guardarTexto();
 		  refrescarSeleccion();
 		}

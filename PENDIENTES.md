@@ -44,6 +44,7 @@ trabajo (una sesión nueva, otro modelo) no tenga que adivinar: la documentació
 | #8 el párrafo ejecutado queda seleccionado | **hecho** |
 | #9 `*` en el atributo `@Id` de `DESC` | **hecho** |
 | #10 menú contextual de una entidad (INSERT / SELECT *) | **hecho** |
+| #11 comentarios `//`, `#`, `--` sin color | **hecho** |
 
 ### Pendientes, acordados y NO hechos todavía
 
@@ -53,8 +54,7 @@ la página, no cosmética):
 | Feature | Por qué quedó pendiente |
 |---|---|
 | **Solapas con X** para cada `SELECT`/`DESC` | Es el más caro: reescribe la arquitectura del panel derecho (cada solapa con su caja/tabla/estado) y hay que decidir antes qué pasa con los `DESC` sin argumentos, con el panel de detalle de abajo y con dónde caen los INSERT y los errores. |
-| **Comentarios `//`, `#`, `--`** (excluirlos al ejecutar) | Toca `Text`, que es la base de todo el parseo: `splitStatements` corta por `;` y un `;` dentro de un comentario hoy parte la sentencia; `indexOfKeyword` podría encontrar un `values`/`where` dentro de un comentario. Además hay que decidir si un comentario es frontera de párrafo, y reemplazar por espacio (no borrar) para no pegar dos tokens. |
-| **Color de los comentarios** | No se puede con un `<textarea>`: hace falta el truco del overlay (`<pre>` pintado detrás + textarea transparente encima), y eso se lleva mal con el scroll horizontal recién agregado. Conviene hacerlo después de que el parseo de comentarios esté estable. |
+| **Color de los comentarios** | No se puede con un `<textarea>`: hace falta el truco del overlay (`<pre>` pintado detrás + textarea transparente encima), y eso se lleva mal con el scroll horizontal. El parseo de comentarios ya está hecho (#11), así que falta sólo lo visual. |
 
 Verificación: `verify-demo.ps1` → **196 PASS / 0 FAIL**; con `-ContextPath /demo -MaxRows 3` →
 **203 PASS / 0 FAIL** (venía de 144/148). Las features están cubiertas end-to-end; el clic en sí (el
@@ -89,6 +89,46 @@ puras: el comparador del orden, el armado del INSERT y del SELECT del menú.
   - **Ojo con la ubicación de `LIMITE_MENU`**: va **dentro** del bloque `// INICIO funciones puras`,
     porque `selectDeEntidad` la usa y `verify-demo.ps1` extrae sólo ese bloque para correrlo en Node.
     Si se mueve afuera, el test falla con `ReferenceError: LIMITE_MENU is not defined`.
+
+## #11 — Comentarios `//`, `#` y `--` (sin color)
+
+**El pedido era cosmético, pero el trabajo real fue de parseo.** Se implementó lo funcional: los
+comentarios no rompen nada y se excluyen antes de ejecutar. El color quedó pendiente (ver arriba).
+
+- **Dónde se excluyen**: en `HqlConsoleController.execute` (antes de partir por `;` y de mirar
+  `allow-writes`) **y también en `HqlQueryRunner.execute`**, porque el runner es API pública y tiene
+  que funcionar igual si alguien lo usa embebido. En el runner la exclusión va **antes** de
+  `firstWord`: si no, un `// nota` arriba haría que la sentencia no se reconociera como INSERT/SELECT.
+- **`Text.withoutComments` reemplaza cada comentario por un ESPACIO**, no lo borra: si se borrara,
+  `titulo-- comentario\n, precio` quedaría `titulo, precio`... y en otros casos dos tokens separados
+  por un comentario terminarían pegados (`campo` + `--x` + `valor` → `campovalor`), cambiando el
+  significado de la sentencia.
+- **Los cinco escáneres de `Text` ahora saltean comentarios**: `indexOfKeyword` (un `where` comentado
+  no es el `WHERE`), `indexOfTopLevel`, `matchParenthesis`, `unclosedParenthesis`, `splitTopLevel` y
+  `splitStatements`. El caso que más dolía era `splitStatements`: un `;` adentro de un comentario
+  **partía la sentencia al medio**.
+- **Un comentario adentro de un literal es texto**: `'a--b'` se respeta tal cual, porque el escaneo
+  primero mira si está dentro de comillas.
+- **Un comentario cuenta como parte del párrafo.** Se evaluó hacerlo frontera de párrafo y se
+  descartó: si el comentario separara, un `// Completa y ejecuta` arriba del INSERT generado haría que
+  el `Ctrl+Enter` ejecutara **el comentario** en vez de la sentencia. Como parte del párrafo, el
+  comentario se descarta al ejecutar y la sentencia corre igual.
+- **Ojo con el Javadoc de `Text`**: la primera versión documentaba los comentarios de bloque como
+  `{@code /* */}` adentro de un Javadoc, y eso **cierra el comentario** y no compila. Se escribe con
+  palabras.
+
+### Bug: el INSERT generado borraba todo el editor
+
+`[Generar INSERT]` hacía `ta.value = sentencia`, o sea que pisaba lo que estuvieras escribiendo. Ahora
+usa `insertarEnParrafo`, que inserta **abajo del párrafo del cursor** dejando una línea en blanco de
+cada lado, y deja el cursor adentro del paréntesis de las columnas.
+
+**El detalle que costó dos vueltas:** los separadores no se pueden agregar a ciegas. Entre dos
+párrafos el hueco **ya aporta sus saltos**, así que sumarle `\n\n` dejaba cuatro líneas en blanco en
+vez de una. Y contra los bordes del texto (editor vacío, o cursor en el último párrafo) no hay que
+agregar nada. La cuenta la hace `_saltosQueFaltan`, que mira los saltos que ya hay y agrega sólo los
+que faltan para llegar a una línea en blanco. Los tests cubren los tres casos: hueco existente,
+borde de abajo y editor vacío.
 
 ## #6 — Ordenar la grilla clickeando el header
 

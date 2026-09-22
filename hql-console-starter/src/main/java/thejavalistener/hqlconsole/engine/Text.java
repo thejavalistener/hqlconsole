@@ -6,13 +6,42 @@ import java.util.List;
 /**
  * Escaneo de texto de las sentencias.
  *
- * <p>Todo lo de acá entiende de paréntesis y de literales entre comillas simples, que es lo mínimo
- * indispensable para no confundir la coma de una función con la coma que separa dos asignaciones,
- * ni un {@code from} de una subconsulta con el {@code from} de la consulta de afuera.</p>
+ * <p>Todo lo de acá entiende de paréntesis, de literales entre comillas simples y de <b>comentarios</b>,
+ * que es lo mínimo indispensable para no confundir la coma de una función con la coma que separa dos
+ * asignaciones, ni un {@code from} de una subconsulta con el {@code from} de la consulta de afuera, ni
+ * un {@code where} que está adentro de un comentario con el {@code WHERE} de la sentencia.</p>
+ *
+ * <p>Los comentarios son los de siempre: {@code //} hasta el fin de línea, {@code #} hasta el fin de
+ * línea, y {@code --} hasta el fin de línea. No hay comentarios de bloque (los de {@code barra
+ * asterisco}) y no hace falta: con los de línea alcanza y son los que la consola documenta.</p>
  */
 public final class Text
 {
 	private Text() {}
+
+	/**
+	 * El largo de un comentario que arranca en {@code i}, o 0 si ahí no empieza ninguno.
+	 *
+	 * <p>Los tres terminan en el fin de línea, así que el comentario se come también el salto (que es
+	 * lo que hace {@link #withoutComments} al reemplazarlo por un espacio).</p>
+	 */
+	private static int _commentLength(String text,int i)
+	{
+		char c=text.charAt(i);
+		char next=i+1<text.length()?text.charAt(i+1):'\0';
+
+		boolean arranca=(c=='/'&&next=='/')||(c=='-'&&next=='-')||c=='#';
+		if( !arranca )
+		{
+			return 0;
+		}
+		int j=i;
+		while( j<text.length()&&text.charAt(j)!='\n' )
+		{
+			j++;
+		}
+		return j-i;
+	}
 
 	/** Primera palabra de la sentencia, sin espacios adelante. */
 	public static String firstWord(String text)
@@ -81,6 +110,12 @@ public final class Text
 				inString=true;
 				continue;
 			}
+			int comentario=_commentLength(text,i);
+			if( comentario>0 )
+			{
+				i+=comentario-1; // el "where" que está adentro de un comentario no es el WHERE
+				continue;
+			}
 			if( c=='(' )
 			{
 				depth++;
@@ -122,6 +157,12 @@ public final class Text
 			if( c=='\'' )
 			{
 				inString=true;
+				continue;
+			}
+			int comentario=_commentLength(text,i);
+			if( comentario>0 )
+			{
+				i+=comentario-1;
 				continue;
 			}
 			if( c=='(' )
@@ -178,6 +219,10 @@ public final class Text
 			{
 				inString=true;
 			}
+			else if( _commentLength(text,i)>0 )
+			{
+				i+=_commentLength(text,i)-1; // un paréntesis adentro de un comentario no cuenta
+			}
 			else if( c=='(' )
 			{
 				depth++;
@@ -219,6 +264,10 @@ public final class Text
 			{
 				inString=true;
 			}
+			else if( _commentLength(text,i)>0 )
+			{
+				i+=_commentLength(text,i)-1;
+			}
 			else if( c=='(' )
 			{
 				depth++;
@@ -258,6 +307,10 @@ public final class Text
 			if( c=='\'' )
 			{
 				inString=true;
+			}
+			else if( _commentLength(text,i)>0 )
+			{
+				i+=_commentLength(text,i)-1; // una coma adentro de un comentario no separa nada
 			}
 			else if( c=='(' )
 			{
@@ -306,6 +359,12 @@ public final class Text
 			{
 				inString=true;
 			}
+			else if( _commentLength(text,i)>0 )
+			{
+				// Un punto y coma adentro de un comentario NO parte la sentencia: es el bug que este
+				// salto arregla (antes, "-- hacé esto; y aquello" cortaba la sentencia al medio).
+				i+=_commentLength(text,i)-1;
+			}
 			else if( c=='(' )
 			{
 				depth++;
@@ -332,6 +391,52 @@ public final class Text
 			}
 		}
 		return sentencias;
+	}
+
+	/**
+	 * La sentencia sin los comentarios, que es lo que se le manda a Hibernate.
+	 *
+	 * <p>Cada comentario se reemplaza por <b>un espacio</b>, no se borra. Es la diferencia entre
+	 * {@code titulo-- el titulo\n, precio} (que sin el espacio quedaría {@code titulo, precio}... o
+	 * peor, {@code titulo, precio} pegado a otra cosa) y lo que corresponde: al sacar caracteres, dos
+	 * tokens que estaban separados por un comentario terminarían pegados y la sentencia cambiaría de
+	 * significado. Con un espacio, el peor caso es un espacio de más.</p>
+	 *
+	 * <p>Un comentario adentro de un literal no es un comentario: {@code 'a--b'} es un texto y se
+	 * respeta tal cual.</p>
+	 */
+	public static String withoutComments(String text)
+	{
+		StringBuilder salida=new StringBuilder(text.length());
+		boolean inString=false;
+		for(int i=0;i<text.length();i++)
+		{
+			char c=text.charAt(i);
+			if( inString )
+			{
+				salida.append(c);
+				if( c=='\'' )
+				{
+					inString=false;
+				}
+				continue;
+			}
+			if( c=='\'' )
+			{
+				inString=true;
+				salida.append(c);
+				continue;
+			}
+			int comentario=_commentLength(text,i);
+			if( comentario>0 )
+			{
+				salida.append(' ');
+				i+=comentario-1; // el salto de línea final entra en el comentario y se descarta
+				continue;
+			}
+			salida.append(c);
+		}
+		return salida.toString();
 	}
 
 	/** Identificador a partir de {@code at}, admitiendo puntos (nombres de clase y de atributo). */

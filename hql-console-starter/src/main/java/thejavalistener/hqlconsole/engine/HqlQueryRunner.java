@@ -94,7 +94,11 @@ public class HqlQueryRunner
 	public HqlResult execute(String hql,boolean dryRun)
 	{
 		EntityManagerFactory emf=_entityManagerFactory();
-		String statement=hql.trim();
+		// Los comentarios se excluyen acá también (y no sólo en el controller) porque el runner es una
+		// API pública: si alguien lo usa embebido, la sentencia con comentarios tiene que funcionar
+		// igual. La primera palabra se busca DESPUÉS de sacarlos: si no, un "// nota" arriba haría que
+		// la sentencia no se reconociera.
+		String statement=Text.withoutComments(hql).trim();
 		String first=Text.firstWord(statement);
 		long t0=System.nanoTime();
 

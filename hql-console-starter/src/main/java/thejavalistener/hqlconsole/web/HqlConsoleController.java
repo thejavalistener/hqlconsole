@@ -79,7 +79,16 @@ public class HqlConsoleController
 			return ResponseEntity.badRequest().body(Map.of("error","Falta el campo 'hql'."));
 		}
 
-		List<String> statements=Text.splitStatements(hql);
+		// Los comentarios se sacan ANTES de partir por ';' y de parsear: así un ';' adentro de un
+		// comentario no parte la sentencia, y lo que llega al motor (y al control de escrituras) es
+		// sólo la sentencia. El texto original se conserva aparte para el mensaje de error.
+		String texto=Text.withoutComments(hql);
+		if( texto.isBlank() )
+		{
+			return ResponseEntity.badRequest().body(Map.of("error","La sentencia quedó vacía: sólo tenía comentarios."));
+		}
+
+		List<String> statements=Text.splitStatements(texto);
 		if( statements.isEmpty() )
 		{
 			return ResponseEntity.badRequest().body(Map.of("error","No hay ninguna sentencia para ejecutar."));
@@ -87,7 +96,7 @@ public class HqlConsoleController
 
 		// allow-writes se mira ANTES de cualquier cosa: con la consola en solo-lectura, un dry-run
 		// tampoco ejecuta (no tiene sentido correr y tirar atrás una escritura prohibida).
-		if( _isWrite(hql)&&!properties.isAllowWrites() )
+		if( _isWrite(texto)&&!properties.isAllowWrites() )
 		{
 			return ResponseEntity.status(HttpStatus.FORBIDDEN)
 					.body(Map.of("error","Las sentencias de escritura están bloqueadas (hql-console.allow-writes=false).",
