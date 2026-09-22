@@ -255,6 +255,18 @@ SELECT * FROM Libro l WHERE l.precio > 10000 ORDER BY l.id LIMIT 10
   nombres que escribiste en la entidad y los que podés volver a escribir en un HQL.
 - El nombre físico sigue estando en `DESC`, en la columna `CAMPO`: `DESC Libro` es el mapa de lo que
   te devuelve `from Libro`, y sus títulos son exactamente su columna `ATRIBUTO`.
+- **Click en el header de una columna para ordenar.** El primer click ordena ascendente por esa
+  columna, el segundo descendente, y así alterna (`▲` / `▼` marcan cuál está activa). Es del lado del
+  cliente y **sólo sobre las filas que se ven**: no vuelve a consultar la base. El orden que pidió tu
+  sentencia es el punto de partida y no se pierde: cada click vuelve a ordenar desde las filas
+  originales, así que cambiar de columna no va acumulando recortes.
+  - El criterio de comparación sale del **tipo de cada columna**, que ahora viaja en el JSON
+    (`types`): `NUMERO` ordena numéricamente (9 antes que 10), `FECHA` cronológicamente, `TEXTO`
+    alfabéticamente (10 antes que 9, que es lo que significa ordenar texto) y `BOOLEANO` false antes
+    que true.
+  - Los **NULL van siempre al final**, también en descendente: si no, ordenar al revés arrancaría con
+    una pantalla llena de NULL.
+  - Funciona también en el panel de detalle, y cada grilla ordena por su cuenta.
 - Una relación `to-one` se muestra como **el id de la FK** (`autor` → `1`), sin inicializar el
   proxy ni traer la entidad relacionada.
 - Las colecciones (`@OneToMany`) no se muestran: no son campos planos.
@@ -600,8 +612,8 @@ Verificado end-to-end con `verify-demo.ps1`, que compila, levanta el fat jar del
 comprobaciones contra una H2 en memoria (Spring Boot 3.2.5, Hibernate 6.4.4, Java 21):
 
 ```
-.\verify-demo.ps1                                  # 172 PASS / 0 FAIL
-.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 179 PASS / 0 FAIL
+.\verify-demo.ps1                                  # 183 PASS / 0 FAIL
+.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 190 PASS / 0 FAIL
 ```
 
 Cubre: descubrimiento de la auto-configuración por el `.imports` del jar, la página servida desde

@@ -531,6 +531,58 @@ check('entidad de desc: desc a secas no tiene entidad', entidadDeDesc('DESC'), n
 check('entidad de desc: un select no', entidadDeDesc('SELECT e.id FROM Empleado e'), null);
 check('entidad de desc: dos palabras no', entidadDeDesc('DESC Libro li'), null);
 check('entidad de desc: una palabra que empieza igual no', entidadDeDesc('descripcion'), null);
+
+// --- el orden de la grilla (click en un header) ---
+check('tipo: usa el tipo que manda el backend', tipoDeColumna(['NUMERO','TEXTO'], 0), 'NUMERO');
+check('tipo: la segunda columna', tipoDeColumna(['NUMERO','TEXTO'], 1), 'TEXTO');
+check('tipo: sin tipos cae en TEXTO', tipoDeColumna([], 0), 'TEXTO');
+check('tipo: indice fuera de rango cae en TEXTO', tipoDeColumna(['NUMERO'], 3), 'TEXTO');
+check('tipo: sin lista de tipos cae en TEXTO', tipoDeColumna(null, 0), 'TEXTO');
+
+// numeros: orden numerico y no alfabetico (9 antes que 10)
+check('comparar numeros: 9 < 10', compararCeldas(9, 10, 'NUMERO') < 0, true);
+check('comparar numeros: 10 > 9', compararCeldas(10, 9, 'NUMERO') > 0, true);
+check('comparar numeros: iguales', compararCeldas(5, 5, 'NUMERO'), 0);
+// ...y como texto daria al reves: ese es el bug que evita el tipo que manda el backend
+check('comparar texto: "10" < "9"', compararCeldas('10', '9', 'TEXTO') < 0, true);
+check('comparar numeros de texto', compararCeldas('777', '88', 'NUMERO') > 0, true);
+
+// texto: alfabetico puro (lo que significa ordenar texto), sin que las mayusculas partan la lista
+check('comparar texto: Ana < Beto', compararCeldas('Ana', 'Beto', 'TEXTO') < 0, true);
+check('comparar texto: "10" < "9" (alfabetico, no numerico)', compararCeldas('10', '9', 'TEXTO') < 0, true);
+check('comparar texto: "2" < "10" (alfabetico, no natural)', compararCeldas('2', '10', 'TEXTO') > 0, true);
+check('comparar texto: ignora mayusculas', compararCeldas('ana', 'Ana', 'TEXTO'), 0);
+
+// fechas: cronologico
+check('comparar fechas: 1994 < 2024', compararCeldas('1994-11-23', '2024-01-01', 'FECHA') < 0, true);
+check('comparar fechas: mismo dia', compararCeldas('1994-11-23', '1994-11-23', 'FECHA'), 0);
+check('comparar fechas: con hora', compararCeldas('2024-01-01T10:00', '2024-01-01T09:00', 'FECHA') > 0, true);
+
+// booleanos
+check('comparar booleanos: false < true', compararCeldas(false, true, 'BOOLEANO') < 0, true);
+check('comparar booleanos: true > false', compararCeldas(true, false, 'BOOLEANO') > 0, true);
+
+// los NULL van al final SIEMPRE, en las dos direcciones. Ojo: multiplicar el resultado por -1 no
+// sirve para probarlo (compararCeldas(null,x) devuelve 1 en las dos direcciones a proposito): hay
+// que mirar el resultado de ordenar de verdad.
+check('ordenar: null al final en ascendente', ordenarFilas([[5],[null],[3]], 0, 'NUMERO', 'asc').map(function(f){return f[0];}).join(','), '3,5,');
+check('ordenar: null al final tambien en descendente', ordenarFilas([[5],[null],[3]], 0, 'NUMERO', 'desc').map(function(f){return f[0];}).join(','), '5,3,');
+check('comparar: dos null son iguales', compararCeldas(null, undefined, 'TEXTO'), 0);
+
+// la direccion
+check('direccion: ascendente no invierte', factorDeDireccion('asc'), 1);
+check('direccion: descendente invierte', factorDeDireccion('desc'), -1);
+check('direccion siguiente: de asc a desc', direccionSiguiente('asc'), 'desc');
+check('direccion siguiente: de desc a asc', direccionSiguiente('desc'), 'asc');
+
+// ordenarFilas: ordena, devuelve una copia y no toca el original
+var filas = [[3,'c'],[1,'a'],[2,'b']];
+check('ordenar: ascendente', ordenarFilas(filas, 0, 'NUMERO', 'asc').map(function(f){return f[0];}).join(','), '1,2,3');
+check('ordenar: descendente', ordenarFilas(filas, 0, 'NUMERO', 'desc').map(function(f){return f[0];}).join(','), '3,2,1');
+check('ordenar: no toca las filas originales', filas.map(function(f){return f[0];}).join(','), '3,1,2');
+check('ordenar: por texto', ordenarFilas(filas, 1, 'TEXTO', 'asc').map(function(f){return f[1];}).join(','), 'a,b,c');
+check('ordenar: sin filas no explota', ordenarFilas(null, 0, 'TEXTO', 'asc').length, 0);
+check('ordenar: tolera filas de distinto largo', ordenarFilas([[1],[2,'x']], 1, 'TEXTO', 'asc').length, 2);
 '@
             $archivo = Join-Path $env:TEMP 'hql-console-sel-test.js'
             Set-Content -Path $archivo -Value $js -Encoding UTF8
@@ -617,6 +669,30 @@ check('entidad de desc: una palabra que empieza igual no', entidadDeDesc('descri
     Check 'la lista de entidades se pide sola si no se tiene' ($page.Content -match 'asegurarEntidades' -and $page.Content -match "pedir\('DESC', false\)") 'no se asegura la lista de entidades'
     Check 'desde el panel de abajo tambien se encadena' ($page.Content -match 'hacerRelacionesClickeables\(cabeceras, tablaDetalle\)') 'el detalle de abajo no encadena'
     Check 'la fila elegida se marca y se desmarca' ($page.Content -match 'marcarElegida' -and $page.Content -match "classList.remove\('fila-elegida'\)") 'no se marca la fila elegida'
+
+    $r = Exec 'SELECT e.id, e.nombre, e.salario, e.ingreso FROM Empleado e'
+    Check 'el resultado trae un tipo por columna' (($r.json.types -join ',') -eq 'NUMERO,TEXTO,NUMERO,FECHA') ($r.json.types -join ',')
+    Check 'la cantidad de tipos coincide con la de headers' ($r.json.types.Count -eq $r.json.headers.Count) "$($r.json.types.Count) vs $($r.json.headers.Count)"
+
+    $r = Exec 'from Empleado e'
+    Check 'from <Entidad> tambien trae tipos (la relacion es NUMERO: sale como el id de la FK)' `
+          (($r.json.types -join ',') -eq 'NUMERO,TEXTO,NUMERO,FECHA,NUMERO') ($r.json.types -join ',')
+
+    $r = Exec 'SELECT e.nombre FROM Empleado e WHERE e.id = 999'
+    Check 'con 0 filas el tipo es OTRO (no hay nada que mirar)' (($r.json.types -join ',') -eq 'OTRO') ($r.json.types -join ',')
+
+    $r = Exec 'DESC Libro'
+    Check 'el DESC de una entidad trae todos los tipos TEXTO' (($r.json.types -join ',') -eq 'TEXTO,TEXTO,TEXTO,TEXTO') ($r.json.types -join ',')
+    $r = Exec 'DESC'
+    Check 'la lista de entidades tipa CAMPOS como NUMERO' (($r.json.types -join ',') -eq 'TEXTO,TEXTO,NUMERO') ($r.json.types -join ',')
+
+    # --- el orden de la grilla ---
+    Check 'la pagina trae el orden por click en el header' `
+          ($page.Content -match 'function ordenarPor' -and $page.Content -match 'function compararCeldas' -and $page.Content -match "addEventListener\('click', function\(\) \{\s*ordenarPor") 'falta el orden por header'
+    Check 'el orden usa el tipo que manda el backend' ($page.Content -match 'function tipoDeColumna' -and $page.Content -match 'datos\.types') 'no se usan los tipos del backend'
+    Check 'el header muestra la flecha y el estado' ($page.Content -match 'th\.orden-asc::after' -and $page.Content -match 'aria-sort') 'falta el indicador de orden'
+    Check 'ordenar guarda las filas originales (no las pisa)' ($page.Content -match 'tabla\.__filas' -and $page.Content -match 'function ordenarFilas') 'no se guardan las filas originales'
+    Check 'ordenar reengancha las filas clickeables' ($page.Content -match 'function recablearFilas' -and $page.Content -match 'recablearFilas\(tabla\)') 'las filas ordenadas pierden el click'
 
     # --- tope de filas ---
     if ($MaxRows -lt 6) {

@@ -58,6 +58,15 @@ public class HqlQueryRunner
 	private final EntityDescriber describer;
 	private final int maxRows;
 
+	/**
+	 * El metamodelo de la sentencia que se está ejecutando, para poder resolver los tipos Java de la
+	 * grilla aplanada. Se guarda en un campo porque {@code _flatTypes} necesitaría arrastrarlo por
+	 * media docena de métodos; se pisa al principio de cada ejecución. Es un bean singleton, así que
+	 * dos requests a la vez comparten el valor: lo peor que puede pasar es que una grilla salga con
+	 * el tipo de una relación mal clasificado, nunca un dato equivocado.
+	 */
+	private volatile Metamodel _metamodel;
+
 	public HqlQueryRunner(ObjectProvider<EntityManagerFactory> entityManagerFactory,EntityDescriber describer,int maxRows)
 	{
 		this.entityManagerFactory=entityManagerFactory;
@@ -325,6 +334,7 @@ public class HqlQueryRunner
 			// Se resuelve antes de ejecutar la consulta para que un nombre mal escrito dé el error
 			// con la sugerencia, y no el de Hibernate.
 			EntityType<?> flatEntity=_implicitEntitySelect(emf,texto);
+			_metamodel = emf.getMetamodel();
 
 			EntityTransaction tx=_begin(em);
 			try
@@ -384,7 +394,8 @@ public class HqlQueryRunner
 				log.debug("Sentencia leída con {} fila(s) y headers {}",rows.size(),headers);
 
 				tx.rollback(); // es una lectura: no dejamos la transacción abierta
-				return HqlResult.query(headers,rows,truncated,_millis(t0),_mensajeLimite(consulta,truncated));
+				return HqlResult.query(headers,flatEntity==null?_columnTypes(visible,headers.size()):_flatTypes(flatEntity),
+						rows,truncated,_millis(t0),_mensajeLimite(consulta,truncated));
 			}
 			catch(RuntimeException e)
 			{
@@ -623,6 +634,54 @@ public class HqlQueryRunner
 		return headers;
 	}
 
+	/**
+	 * Los tipos de la grilla aplanada, que salen del <b>metamodelo</b> y no de las celdas.
+	 *
+	 * <p>Acá no se puede mirar el valor: una relación se aplana al id de la FK, y si la fila no tiene
+	 * autor, la celda es NULL y no dice nada. El tipo Java del atributo sí lo dice siempre. Y para
+	 * ordenar da igual que la relación sea un objeto o un número: lo que se ve —y lo que se
+	 * compara— es el id.</p>
+	 */
+	private List<String> _flatTypes(EntityType<?> entityType)
+	{
+		List<String> types=new ArrayList<>();
+		for(Attribute<?,?> attribute:Mapping.columnsInDeclarationOrder(entityType))
+		{
+			types.add(Mapping.isToOne(attribute)
+					?_typeOf(Mapping.idOf(Mapping.relatedEntity(_metamodel,attribute)).getJavaType())
+					:_typeOf(attribute.getJavaType()));
+		}
+		return types;
+	}
+
+	/** El tipo de comparación de una clase Java. */
+	private String _typeOf(Class<?> javaType)
+	{
+		if( javaType==null )
+		{
+			return HqlResult.ColumnType.OTRO.name();
+		}
+		if( Number.class.isAssignableFrom(javaType)||javaType.isPrimitive()
+				&&javaType!=boolean.class&&javaType!=char.class )
+		{
+			return HqlResult.ColumnType.NUMERO.name();
+		}
+		if( javaType==Boolean.class||javaType==boolean.class )
+		{
+			return HqlResult.ColumnType.BOOLEANO.name();
+		}
+		if( java.util.Date.class.isAssignableFrom(javaType)||java.time.temporal.Temporal.class.isAssignableFrom(javaType)
+				||javaType==Calendar.class )
+		{
+			return HqlResult.ColumnType.FECHA.name();
+		}
+		if( javaType==String.class||javaType==Character.class||javaType==char.class||javaType.isEnum() )
+		{
+			return HqlResult.ColumnType.TEXTO.name();
+		}
+		return HqlResult.ColumnType.OTRO.name();
+	}
+
 	/** Devuelve null si las filas no tienen la forma esperada, para que siga el camino normal. */
 	private List<List<Object>> _flatRows(List<?> raw,EntityType<?> entityType,EntityManagerFactory emf)
 	{
@@ -684,6 +743,81 @@ public class HqlQueryRunner
 	}
 
 	// ==================== headers ====================
+
+	/**
+	 * El tipo de cada columna, mirando <b>todas</b> las celdas de esa columna.
+	 *
+	 * <p>Mirar todas y no sólo la primera no es capricho: una columna puede empezar con NULL y tener
+	 * números abajo, y quedarse con el tipo de la primera celda la dejaría como "otro", que se ordena
+	 * como texto. Gana el primer tipo que aparece, salteando los NULL y el texto.</p>
+	 *
+	 * <p>El caso que importa es la fecha: el backend serializa {@code LocalDate} y compañía como
+	 * texto ISO, así que sin esto una fecha se ordenaría alfabéticamente (que por suerte coincide,
+	 * pero no está garantizado) y un número se ordenaría como texto (que directamente está mal: 10
+	 * antes que 9).</p>
+	 */
+	private List<String> _columnTypes(List<?> raw,int columns)
+	{
+		List<String> types=new ArrayList<>(columns);
+		for(int i=0;i<columns;i++)
+		{
+			String type=HqlResult.ColumnType.OTRO.name();
+			for(Object row:raw)
+			{
+				Object[] values=_values(row);
+				if( i>=values.length )
+				{
+					continue;
+				}
+				String candidate=_columnType(values[i]);
+				if( candidate!=null&&!HqlResult.ColumnType.TEXTO.name().equals(candidate) )
+				{
+					type=candidate;
+					break;
+				}
+				if( candidate!=null )
+				{
+					type=candidate; // el texto es el último recurso: se sigue mirando por si hay algo mejor
+				}
+			}
+			types.add(type);
+		}
+		return types;
+	}
+
+	/** El tipo de una celda, o {@code null} si no dice nada (un NULL o algo que no se puede leer). */
+	private String _columnType(Object value)
+	{
+		if( value==null )
+		{
+			return null;
+		}
+		if( value instanceof Number )
+		{
+			return HqlResult.ColumnType.NUMERO.name();
+		}
+		if( value instanceof Boolean )
+		{
+			return HqlResult.ColumnType.BOOLEANO.name();
+		}
+		if( value instanceof Date||value instanceof Calendar||value instanceof java.time.temporal.Temporal )
+		{
+			return HqlResult.ColumnType.FECHA.name();
+		}
+		if( value instanceof String text )
+		{
+			// Un temporal ya saneado a texto: es lo que viaja por JSON y lo que el cliente no puede
+			// distinguir de un texto cualquiera.
+			return _looksLikeDate(text)?HqlResult.ColumnType.FECHA.name():HqlResult.ColumnType.TEXTO.name();
+		}
+		return HqlResult.ColumnType.OTRO.name();
+	}
+
+	/** Fecha ISO (con o sin hora) y nada más: un texto que empieza con dígitos no alcanza. */
+	private boolean _looksLikeDate(String text)
+	{
+		return text.matches("\\d{4}-\\d{2}-\\d{2}([T ].*)?");
+	}
 
 	private List<String> _headersOf(List<Tuple> tuples,String statement)
 	{

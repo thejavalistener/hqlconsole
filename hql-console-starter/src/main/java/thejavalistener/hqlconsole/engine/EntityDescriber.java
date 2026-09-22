@@ -38,6 +38,8 @@ import jakarta.persistence.metamodel.Attribute;
 import jakarta.persistence.metamodel.EntityType;
 import jakarta.persistence.metamodel.Metamodel;
 
+import static thejavalistener.hqlconsole.engine.HqlResult.ColumnType;
+
 /**
  * Arma las respuestas de {@code DESC}.
  *
@@ -82,7 +84,7 @@ public class EntityDescriber
 					Mapping.physicalName(Mapping.tableName(entityType)),
 					String.valueOf(Mapping.columnsInDeclarationOrder(entityType).size())));
 		}
-		return HqlResult.query(LIST_HEADERS,rows,false,_millis(t0),
+		return HqlResult.query(LIST_HEADERS,_tipos(ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.NUMERO),rows,false,_millis(t0),
 				entities.size()+" entidad(es). Hacé DESC <Entidad> para ver sus columnas.");
 	}
 
@@ -111,7 +113,21 @@ public class EntityDescriber
 			// TIPO SQL son cómo se llama y qué es eso en la base.
 			rows.add(List.of(attribute.getName(),Mapping.javaTypeName(attribute),campo,sqlType));
 		}
-		return HqlResult.query(HEADERS,rows,false,_millis(t0));
+		// Todos los tipos de esta grilla son texto: son nombres. Ordenar por "TIPO JAVA" o por
+		// "CAMPO" es ordenar alfabéticamente, que es exactamente lo que se espera.
+		return HqlResult.query(HEADERS,_tipos(ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO),
+				rows,false,_millis(t0));
+	}
+
+	/** Los tipos de una grilla, en el orden de sus columnas. */
+	private static List<String> _tipos(HqlResult.ColumnType... tipos)
+	{
+		List<String> nombres=new ArrayList<>(tipos.length);
+		for(HqlResult.ColumnType tipo:tipos)
+		{
+			nombres.add(tipo.name());
+		}
+		return nombres;
 	}
 
 	/** Una columna tal como la reporta la base. */

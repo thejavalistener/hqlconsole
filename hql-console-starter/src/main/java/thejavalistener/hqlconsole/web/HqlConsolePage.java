@@ -87,6 +87,15 @@ public final class HqlConsolePage
 		  th { position:sticky; top:0; background:#eceff3; font-weight:600; }
 		  tr:nth-child(even) td { background:#fafbfc; }
 		  td.nulo { color:#8b949e; font-style:italic; }
+
+		  /* Los headers se pueden clickear para ordenar. La flechita va como contenido del ::after
+		     para no ensuciar el textContent del th, que es el nombre de la columna. */
+		  th.ordenable { cursor:pointer; user-select:none; }
+		  th.ordenable:hover { background:#e2e7ee; }
+		  th.ordenable::after { content:''; opacity:.35; margin-left:6px; }
+		  th.ordenable:hover::after { content:'\\21C5'; opacity:.6; }
+		  th.orden-asc::after { content:'\\2191'; opacity:1; }
+		  th.orden-desc::after { content:'\\2193'; opacity:1; }
 		  .pie { flex:0 0 auto; font-size:12px; opacity:.7; }
 		  details { flex:0 0 auto; font-size:12px; }
 		  summary { cursor:pointer; opacity:.7; }
@@ -365,6 +374,88 @@ public final class HqlConsolePage
 		function pideConfirmacion(hql) {
 		  const t = hql.trim().toLowerCase();
 		  return t.indexOf('update') === 0 || t.indexOf('delete') === 0;
+		}
+
+		// --- el orden de la grilla (click en un header) ---
+		// El tipo lo dice el backend, columna por columna: sin eso habría que adivinar mirando el
+		// texto, y un número ordenado como texto da 10 antes que 9. Si no viene (o no coincide con la
+		// cantidad de columnas), se ordena como texto, que es lo único honesto que se puede hacer.
+		function tipoDeColumna(tipos, indice) {
+		  if (!tipos || indice < 0 || indice >= tipos.length) { return 'TEXTO'; }
+		  return String(tipos[indice] || 'TEXTO');
+		}
+
+		// Compara dos celdas del mismo tipo. Devuelve <0, 0 o >0, y NUNCA aplica la dirección: de eso
+		// se encarga el que ordena, que necesita distinguir "los NULL van al final" (que no se
+		// invierte) de "el resto se da vuelta" (que sí).
+		function compararCeldas(a, b, tipo) {
+		  const vacioA = (a === null || a === undefined);
+		  const vacioB = (b === null || b === undefined);
+		  if (vacioA && vacioB) { return 0; }
+		  if (vacioA) { return 1; }
+		  if (vacioB) { return -1; }
+
+		  if (tipo === 'NUMERO') {
+		    const na = Number(a);
+		    const nb = Number(b);
+		    if (isFinite(na) && isFinite(nb)) { return na - nb; }
+		  }
+		  if (tipo === 'BOOLEANO') {
+		    const ba = (a === true || a === 'true') ? 1 : 0;
+		    const bb = (b === true || b === 'true') ? 1 : 0;
+		    if (ba !== bb) { return ba - bb; }
+		  }
+		  if (tipo === 'FECHA') {
+		    // El backend manda las fechas como texto ISO, y así el orden alfabético ya es el
+		    // cronológico. Igual se comparan como fechas cuando se puede, para no depender de eso.
+		    const fa = Date.parse(a);
+		    const fb = Date.parse(b);
+		    if (!isNaN(fa) && !isNaN(fb)) { return fa - fb; }
+		  }
+		  // Alfabético, y nada más: si la columna es TEXTO, "10" va antes que "9", que es lo que
+		  // significa ordenar texto. Con sensitivity:'base' las mayúsculas y los acentos no parten la
+		  // lista en dos (Ana y ana son la misma palabra a los fines de ordenar).
+		  return String(a).localeCompare(String(b), undefined, { sensitivity: 'base' });
+		}
+
+		// El signo que pone la dirección: ascendente multiplica por 1, descendente invierte.
+		function factorDeDireccion(direccion) {
+		  return direccion === 'desc' ? -1 : 1;
+		}
+
+		/**
+		 * Ordena las filas por una columna y devuelve una lista NUEVA (no toca la que recibe).
+		 *
+		 * <p>Es una copia a propósito: las filas originales quedan guardadas tal como llegaron del
+		 * servidor, así que volver a ordenar por otra columna siempre parte del mismo lugar y el
+		 * orden que pidió la consulta no se va perdiendo de a poco con cada click.</p>
+		 *
+		 * <p>La dirección se aplica sólo a las celdas con valor: los NULL van <b>siempre al final</b>,
+		 * también en descendente. Si se invirtiera todo, ordenar al revés arrancaría con una pantalla
+		 * llena de NULL y el dato que uno fue a buscar quedaría al fondo.</p>
+		 */
+		function ordenarFilas(filas, indice, tipo, direccion) {
+		  const copia = (filas || []).slice();
+		  const factor = factorDeDireccion(direccion);
+		  copia.sort(function(a, b) {
+		    const va = a[indice];
+		    const vb = b[indice];
+		    const vacioA = (va === null || va === undefined);
+		    const vacioB = (vb === null || vb === undefined);
+		    if (vacioA || vacioB) {
+		      if (vacioA && vacioB) { return 0; }
+		      return vacioA ? 1 : -1; // el NULL va al final, en las dos direcciones
+		    }
+		    return factor * compararCeldas(va, vb, tipo);
+		  });
+		  return copia;
+		}
+
+		// El estado del orden de una grilla: qué columna, para qué dirección, y de dónde salieron las
+		// filas. La dirección del próximo click sale de acá: la primera vez es ascendente y después
+		// alterna.
+		function direccionSiguiente(direccionActual) {
+		  return direccionActual === 'asc' ? 'desc' : 'asc';
 		}
 
 		// El texto del confirm(). El número es la alarma: si esperabas 1 fila y dice 4, cancelás.
@@ -699,22 +790,49 @@ public final class HqlConsolePage
 
 		// Dibuja una grilla en la caja y la tabla que le pasen, y devuelve las cabeceras que usó.
 		// Lo usan la grilla de resultados y la del detalle: son la misma cosa.
+		//
+		// Las filas que recibe NO se tocan: se guardan como "originales" para que ordenar por otra
+		// columna vuelva a partir de lo que mandó el servidor.
 		function dibujarGrilla(caja, tabla, datos) {
 		  const cabeceras = (datos.headers && datos.headers.length) ? datos.headers : cabecerasDeFilas(datos.rows);
+		  const filas = datos.rows || [];
 		  tabla.textContent = '';
 
 		  const thead = document.createElement('thead');
 		  const filaCabeceras = document.createElement('tr');
-		  cabeceras.forEach(function(c) {
+		  cabeceras.forEach(function(c, indice) {
 		    const th = document.createElement('th');
 		    th.textContent = c;
+		    th.className = 'ordenable';
+		    th.title = 'Ordenar por ' + c;
+		    // El estado arranca sin orden: el primer click ordena ascendente y el segundo, descendente.
+		    th.setAttribute('aria-sort', 'none');
+		    th.addEventListener('click', function() {
+		      ordenarPor(tabla, indice, cabeceras.length);
+		    });
 		    filaCabeceras.appendChild(th);
 		  });
 		  thead.appendChild(filaCabeceras);
 		  tabla.appendChild(thead);
 
+		  // El estado va colgado de la propia tabla: la grilla de resultados y la del detalle son dos
+		  // tablas distintas y cada una ordena por su cuenta, sin variables globales que se pisen.
+		  tabla.__filas = (datos.rows || []).slice();
+		  tabla.__tipos = datos.types || [];
+		  tabla.__orden = null;
+
+		  pintarFilas(tabla, filas);
+		  caja.hidden = false;
+		  return cabeceras;
+		}
+
+		// Vuelca las filas en el tbody. Se llama al dibujar y cada vez que se ordena.
+		function pintarFilas(tabla, filas) {
+		  const viejo = tabla.querySelector('tbody');
+		  if (viejo) { viejo.remove(); }
+
 		  const tbody = document.createElement('tbody');
-		  (datos.rows || []).forEach(function(fila) {
+		  filas.forEach(function(fila) {
 		    const tr = document.createElement('tr');
 		    fila.forEach(function(celda) {
 		      const td = document.createElement('td');
@@ -729,8 +847,34 @@ public final class HqlConsolePage
 		    tbody.appendChild(tr);
 		  });
 		  tabla.appendChild(tbody);
-		  caja.hidden = false;
-		  return cabeceras;
+		}
+
+		// Un click en un header: si es la misma columna, invierte la dirección; si es otra, empieza
+		// ascendente por la nueva. Siempre parte de las filas originales.
+		function ordenarPor(tabla, indice, columnas) {
+		  const originales = tabla.__filas || [];
+		  const anterior = tabla.__orden;
+		  const direccion = (anterior && anterior.indice === indice) ? direccionSiguiente(anterior.direccion) : 'asc';
+		  const tipo = tipoDeColumna(tabla.__tipos, indice);
+
+		  pintarFilas(tabla, ordenarFilas(originales, indice, tipo, direccion));
+		  tabla.__orden = { indice: indice, direccion: direccion };
+		  marcarOrden(tabla, indice, direccion);
+		  recablearFilas(tabla);
+		}
+
+		// La flechita y el resaltado del header activo. Se limpian los demás.
+		function marcarOrden(tabla, indice, direccion) {
+		  const celdas = tabla.querySelectorAll('thead th');
+		  for (let i = 0; i < celdas.length; i++) {
+		    const th = celdas[i];
+		    th.classList.remove('orden-asc', 'orden-desc');
+		    th.setAttribute('aria-sort', 'none');
+		    if (i === indice) {
+		      th.classList.add(direccion === 'desc' ? 'orden-desc' : 'orden-asc');
+		      th.setAttribute('aria-sort', direccion === 'desc' ? 'descending' : 'ascending');
+		    }
+		  }
 		}
 
 		// Devuelve las cabeceras dibujadas, o nada si el resultado no era una grilla.
@@ -882,6 +1026,24 @@ public final class HqlConsolePage
 		  if (!filas || !filas.length) { return []; }
 		  const salida = [];
 		  for (let i = 0; i < filas[0].length; i++) { salida.push('col' + (i + 1)); }
+		  return salida;
+		}
+
+		// Volver a enganchar lo que depende de las filas dibujadas. Ordenar rehace el tbody entero, así
+		// que las filas viejas (con sus listeners) dejan de existir: sin esto, después de ordenar un
+		// "DESC" las filas nuevas dejarían de abrir el detalle.
+		function recablearFilas(tabla) {
+		  if (tabla.querySelectorAll('thead th').length && tabla.__orden !== null) {
+		    hacerListaClickeable(cabecerasActuales(tabla));
+		  }
+		}
+
+		// Los nombres de las cabeceras dibujadas, leídos del thead (no se guardan aparte para no
+		// tener el mismo dato en dos lugares que se pueden desincronizar).
+		function cabecerasActuales(tabla) {
+		  const celdas = tabla.querySelectorAll('thead th');
+		  const salida = [];
+		  for (let i = 0; i < celdas.length; i++) { salida.push(celdas[i].textContent); }
 		  return salida;
 		}
 

@@ -14,10 +14,50 @@ trabajo (una sesión nueva, otro modelo) no tenga que adivinar: la documentació
 | #3 `SELECT * FROM Entidad` equivalente a `FROM Entidad` | **hecho** |
 | #4 `LIMIT n` al final de las consultas | **hecho** |
 | #5 panel lateral de entidades, colapsable | **hecho** |
+| #6 ordenar la grilla clickeando el header de una columna | **hecho** |
 
-Verificación: `verify-demo.ps1` → **172 PASS / 0 FAIL**; con `-ContextPath /demo -MaxRows 3` →
-**179 PASS / 0 FAIL** (venía de 144/148). Las cuatro features están cubiertas end-to-end; el clic y
-el layout del panel en sí no los ve ningún test automático, eso se mira en el navegador.
+Verificación: `verify-demo.ps1` → **183 PASS / 0 FAIL**; con `-ContextPath /demo -MaxRows 3` →
+**190 PASS / 0 FAIL** (venía de 144/148). Las features están cubiertas end-to-end; el clic en sí (el
+header, el del panel lateral) no lo ve ningún test automático, eso se mira en el navegador. Lo que sí
+se prueba de verdad, en Node sobre la página que sirve el jar, es el comparador.
+
+## #6 — Ordenar la grilla clickeando el header
+
+**Decisión: todo en el cliente, y sólo sobre las filas que se ven.** No se vuelve a consultar la
+base: un click ordena el array que ya está en memoria. El orden que pidió la sentencia es el punto de
+partida y no se toca.
+
+- **Hizo falta un dato nuevo en el JSON: `types`.** El pedido original era "si tenemos los tipos Java
+  podemos deducir...", pero el JSON sólo traía `headers` (nombres) y `rows`, así que el cliente no
+  tenía de dónde sacar el tipo. Se agregó `types` a `HqlResult`, con un tipo por columna:
+  `TEXTO | NUMERO | FECHA | BOOLEANO | OTRO` (enum `HqlResult.ColumnType`).
+- **De dónde sale cada tipo, y por qué no siempre igual:**
+  - Consulta con `SELECT` explícito: se mira **el valor de las celdas**. Se recorren todas las de la
+    columna (no sólo la primera: una columna puede empezar en NULL y tener números abajo). Los
+    temporales llegan ya saneados a texto ISO, así que se reconocen por la forma (`_looksLikeDate`).
+  - `from <Entidad>` (aplanado): se mira el **metamodelo**, porque una relación se aplana al id de la
+    FK y si la fila no tiene autor la celda es NULL y no dice nada. El tipo Java del atributo sí lo
+    dice siempre. Es el único lugar donde el runner necesita el metamodelo, que se guarda en un campo
+    `_metamodel` (con el comentario del por qué y de qué pasa si dos requests se pisan).
+  - `DESC`: tipos fijos (la lista de entidades tipa `CAMPOS` como `NUMERO`; el detalle, todo `TEXTO`).
+- **Con 0 filas el tipo queda `OTRO`**, que se ordena como texto. No hay nada que mirar; es el
+  comportamiento honesto.
+- **Los NULL van siempre al final, en las dos direcciones.** Eso obliga a que `compararCeldas` **no**
+  aplique la dirección: el factor vive en `ordenarFilas`, que distingue "sin valor" (siempre al final)
+  de "con valor" (se da vuelta). Si se invirtiera todo, ordenar descendente arrancaría con una
+  pantalla de NULL.
+- **TEXTO es alfabético puro**, sin `numeric:true`: si la columna es texto, "10" va antes que "9", que
+  es lo que significa ordenar texto. Si querés orden numérico, la columna tiene que ser `NUMERO`
+  (o sea, el campo numérico en la entidad).
+- **Las filas originales se guardan** en `tabla.__filas` (colgado de la tabla, no en una variable
+  global: la grilla de resultados y la del detalle ordenan por su cuenta). Cada click reordena desde
+  ahí, así que cambiar de columna no acumula recortes.
+- **Ojo con los listeners:** ordenar rehace el `tbody` entero y las filas viejas desaparecen con sus
+  listeners. Por eso `ordenarPor` llama a `recablearFilas(tabla)`, que vuelve a enganchar el click de
+  las filas del `DESC` (si no, después de ordenar la lista de entidades, las filas nuevas dejarían de
+  abrir el detalle).
+- La flechita del header va como `content` del `::after` para no ensuciar el `textContent` del `th`,
+  que es el nombre de la columna (y que `hacerListaClickeable` busca por texto).
 
 ## #1 — Orden de `DESC`
 
