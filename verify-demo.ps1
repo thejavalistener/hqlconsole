@@ -102,7 +102,9 @@ try {
     Check 'el encabezado solo dice HQL Console' ($barra.Success -and $barra.Groups[1].Value -match 'HQL Console' -and $barra.Groups[1].Value -notmatch '<span') 'el encabezado tiene algo demas'
     Check 'la pagina ya no muestra la ruta ni el aviso' ($page.Content -notmatch 'class="ruta"' -and $page.Content -notmatch 'herramienta de desarrollo') 'quedo la ruta o el aviso'
     Check 'la pagina apunta al base correcto' ($page.Content -match [regex]::Escape("const BASE = '$ContextPath/hqlconsole'")) "no encontro BASE = '$ContextPath/hqlconsole'"
-    Check 'el banner avisa la URL en el log' ((Get-Content $log -Raw) -match 'Consola HQL en http') 'no aparece el banner'
+    # Ojo: (Get-Content -Raw) puede devolver un array si el archivo tiene una sola linea, y entonces
+    # -match devuelve un array y Check explota. El cast a [bool] lo deja siempre booleano.
+    Check 'el banner avisa la URL en el log' ([bool]((Get-Content $log -Raw) -match 'Consola HQL en http')) 'no aparece el banner'
 
     # --- consultas ---
     $r = Exec 'SELECT e.id, e.nombre FROM Empleado e'
@@ -160,13 +162,16 @@ try {
     # Orden del contrato: primero lo que uno escribe (ATRIBUTO, TIPO JAVA) y después lo que hay en la
     # base (CAMPO, TIPO SQL).
     $r = Exec 'DESC Libro'
-    Check 'DESC devuelve las 4 columnas del contrato' (($r.json.headers -join ',') -eq 'ATRIBUTO,TIPO JAVA,CAMPO,TIPO SQL') ($r.json.headers -join ',')
+    Check 'DESC devuelve las 5 columnas del contrato' (($r.json.headers -join ',') -eq 'ATRIBUTO,TIPO JAVA,CAMPO,TIPO SQL,RELACION') ($r.json.headers -join ',')
     Check 'DESC muestra primero el ATRIBUTO y despues el CAMPO' ($r.json.rows[0][0] -eq 'id*' -and $r.json.rows[0][2] -eq 'ID') "$($r.json.rows[0][0]),$($r.json.rows[0][2])"
     Check 'DESC marca con * el atributo que es @Id' ($r.json.rows[0][0] -eq 'id*') $r.json.rows[0][0]
     # El * va SOLO en el id: los demas atributos van pelados.
     Check 'ningun otro atributo lleva el *' (@($r.json.rows | Where-Object { $_[0] -like '*`*' -and $_[0] -ne 'id*' }).Count -eq 0) (($r.json.rows | ForEach-Object { $_[0] }) -join ',')
-    Check 'DESC respeta el orden de declaracion de la entidad' ($r.json.rows[0][2] -eq 'ID' -and $r.json.rows[1][2] -eq 'TITULO') "$($r.json.rows[0][2]),$($r.json.rows[1][2])"
+    # La columna RELACION: dice el id de la entidad apuntada, y '-' cuando no es una relacion.
     $fk = $r.json.rows | Where-Object { $_[0] -eq 'autor' }
+    Check 'DESC describe la relacion con su id y su tipo' ($fk[4] -eq 'Autor#id (Long)') ($fk -join ' | ')
+    Check 'DESC deja en - las columnas que no son relaciones' (@($r.json.rows | Where-Object { $_[0] -eq 'titulo' -and $_[4] -eq '-' }).Count -eq 1) (($r.json.rows | Where-Object { $_[0] -eq 'titulo' }) -join ' | ')
+    Check 'DESC respeta el orden de declaracion de la entidad' ($r.json.rows[0][2] -eq 'ID' -and $r.json.rows[1][2] -eq 'TITULO') "$($r.json.rows[0][2]),$($r.json.rows[1][2])"
     Check 'DESC muestra la FK como CAMPO y la relacion como ATRIBUTO' ($fk[2] -match 'ID_AUTOR' -and $fk[1] -eq 'Autor') ($fk -join ' | ')
     $fecha = $r.json.rows | Where-Object { $_[0] -eq 'fechaPublicacion' }
     Check 'DESC trae el TIPO SQL real de la base' ($fecha[3] -eq 'DATE' -and $fecha[1] -eq 'LocalDate') ($fecha -join ' | ')
@@ -177,8 +182,7 @@ try {
     $atributosDesc = ($r.json.rows | ForEach-Object { $_[0] -replace '\*$','' }) -join ','
 
     $r = Exec 'DESC'
-    Check 'DESC sin argumentos lista las entidades' (($r.json.headers -join ',') -eq 'ENTIDAD,TABLA,CAMPOS' -and $r.json.rowCount -ge 4) $r.raw
-    Check 'la lista incluye Libro con su tabla' (@($r.json.rows | Where-Object { $_[0] -eq 'Libro' -and $_[1] -eq 'LIBROS' }).Count -eq 1) $r.raw
+    Check 'DESC sin argumentos lista las entidades' (($r.json.headers -join ',') -eq 'ENTIDAD,TABLA,CAMPOS' -and $r.json.rowCount -ge 4) $r.raw    Check 'la lista incluye Libro con su tabla' (@($r.json.rows | Where-Object { $_[0] -eq 'Libro' -and $_[1] -eq 'LIBROS' }).Count -eq 1) $r.raw
     # Convencion de la consola: el nombre fisico en un solo caso se muestra en MAYUSCULAS...
     Check 'la tabla en un solo caso se muestra en mayusculas' (@($r.json.rows | Where-Object { $_[0] -eq 'Libro' -and $_[1] -ceq 'LIBROS' }).Count -eq 1) $r.raw
     # ...y el que tiene mayusculas mezcladas (o sea, entrecomillado en SQL) se muestra tal cual.
@@ -594,8 +598,8 @@ check('id: un atributo normal no', esAtributoId('titulo'), false);
 check('id: saca la marca', sinMarcaDeId('id*'), 'id');
 check('id: deja el nombre igual si no tiene marca', sinMarcaDeId('titulo'), 'titulo');
 
-// Las filas son las del DESC: [ATRIBUTO, TIPO JAVA, CAMPO, TIPO SQL]
-var descLibro = [['id*','Long','ID','BIGINT'],['titulo','String','TITULO','VARCHAR'],['autor','Autor','ID_AUTOR','BIGINT'],['precio','BigDecimal','PRECIO','DECIMAL']];
+// Las filas son las del DESC: [ATRIBUTO, TIPO JAVA, CAMPO, TIPO SQL, RELACION]
+var descLibro = [['id*','Long','ID','BIGINT','-'],['titulo','String','TITULO','VARCHAR','-'],['autor','Autor','ID_AUTOR','BIGINT','Autor#id (Long)'],['precio','BigDecimal','PRECIO','DECIMAL','-']];
 var ins = insertDeEntidad('Libro', descLibro);
 check('insert: lleva el comentario arriba', ins.indexOf('// Completa y ejecuta esta sentencia') === 0, true);
 check('insert: excluye el id', ins.indexOf('(titulo,autor,precio)') > 0, true);
@@ -603,17 +607,29 @@ check('insert: no escribe la columna id', ins.indexOf('id,') < 0, true);
 check('insert: el texto va entre comillas', ins.indexOf("'999'") > 0, true);
 check('insert: el numero va pelado', ins.indexOf(', 999') > 0 || ins.indexOf(',999') > 0, true);
 check('insert: termina en punto y coma', ins.slice(-2) === ');', true);
-check('insert: la entidad es la que se clickeo', insertDeEntidad('Autor', [['id*','Long','ID','BIGINT'],['nombre','String','NOMBRE','VARCHAR']]).indexOf('INSERT INTO Autor (nombre)') > 0, true);
+check('insert: la entidad es la que se clickeo', insertDeEntidad('Autor', [['id*','Long','ID','BIGINT','-'],['nombre','String','NOMBRE','VARCHAR','-']]).indexOf('INSERT INTO Autor (nombre)') > 0, true);
 check('insert: sin columnas no rompe', insertDeEntidad('X', []).indexOf('INSERT INTO X () VALUES ()') > 0, true);
+// El bug reportado: la FK salia entre comillas y el id es un numero.
+check('insert: una relacion con id numerico va SIN comillas', ins.indexOf('VALUES (\'999\',999,999)') > 0, true);
+check('insert: la relacion no queda entre comillas', ins.indexOf('999,999,999') > 0 || ins.indexOf("'999',999") > 0, true);
 
 // Los tipos tienen que dar valores que la consola entienda: fecha ISO, NOW, booleano
-check('valor: Long es numerico', valorDeEjemplo('Long'), '999');
-check('valor: BigDecimal es numerico', valorDeEjemplo('BigDecimal'), '999');
-check('valor: String va entre comillas', valorDeEjemplo('String'), "'999'");
-check('valor: LocalDate es ISO', valorDeEjemplo('LocalDate'), "'2024-01-01'");
-check('valor: LocalDateTime usa NOW', valorDeEjemplo('LocalDateTime'), 'NOW');
-check('valor: Boolean es false', valorDeEjemplo('Boolean'), 'false');
-check('valor: una relacion va por id (numerico)', valorDeEjemplo('Autor'), "'999'");
+check('valor: Long es numerico', valorDeEjemplo('Long', '-'), '999');
+check('valor: BigDecimal es numerico', valorDeEjemplo('BigDecimal', '-'), '999');
+check('valor: String va entre comillas', valorDeEjemplo('String', '-'), "'999'");
+check('valor: LocalDate es ISO', valorDeEjemplo('LocalDate', '-'), "'2024-01-01'");
+check('valor: LocalDateTime usa NOW', valorDeEjemplo('LocalDateTime', '-'), 'NOW');
+check('valor: Boolean es false', valorDeEjemplo('Boolean', '-'), 'false');
+// La relacion: el tipo Java es el nombre de la clase y no alcanza; manda la columna RELACION.
+check('valor: relacion con id Long va sin comillas', valorDeEjemplo('Departamento', 'Departamento#id (Long)'), '999');
+check('valor: relacion con id Integer va sin comillas', valorDeEjemplo('Autor', 'Autor#id (Integer)'), '999');
+check('valor: relacion con id String va con comillas', valorDeEjemplo('Pais', 'Pais#codigo (String)'), "'999'");
+check('valor: sin dato de relacion cae al tipo Java', valorDeEjemplo('Departamento', '-'), "'999'");
+check('valor: sin columna de relacion (DESC viejo)', valorDeEjemplo('Departamento'), "'999'");
+check('tipo numerico: Long si', esTipoNumerico('Long'), true);
+check('tipo numerico: int si', esTipoNumerico('int'), true);
+check('tipo numerico: String no', esTipoNumerico('String'), false);
+check('tipo numerico: LocalDate no', esTipoNumerico('LocalDate'), false);
 
 check('select: arma el SELECT * con LIMIT', selectDeEntidad('Libro'), 'SELECT * FROM Libro LIMIT 100');
 check('select: el limite sale de la constante', selectDeEntidad('X').indexOf('LIMIT 100') > 0, true);
@@ -736,7 +752,7 @@ check('insertar: en un editor vacio no agrega lineas de mas al principio', vacio
     Check 'con 0 filas el tipo es OTRO (no hay nada que mirar)' (($r.json.types -join ',') -eq 'OTRO') ($r.json.types -join ',')
 
     $r = Exec 'DESC Libro'
-    Check 'el DESC de una entidad trae todos los tipos TEXTO' (($r.json.types -join ',') -eq 'TEXTO,TEXTO,TEXTO,TEXTO') ($r.json.types -join ',')
+    Check 'el DESC de una entidad trae todos los tipos TEXTO' (($r.json.types -join ',') -eq 'TEXTO,TEXTO,TEXTO,TEXTO,TEXTO') ($r.json.types -join ',')
     $r = Exec 'DESC'
     Check 'la lista de entidades tipa CAMPOS como NUMERO' (($r.json.types -join ',') -eq 'TEXTO,TEXTO,NUMERO') ($r.json.types -join ',')
 

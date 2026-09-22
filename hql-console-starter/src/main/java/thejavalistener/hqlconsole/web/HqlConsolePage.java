@@ -513,18 +513,31 @@ public final class HqlConsolePage
 		  (filasDesc || []).forEach(function(fila) {
 		    const atributo = fila[0];
 		    const tipoJava = String(fila[1] || '');
+		    const relacion = String(fila[4] || '-');
 		    if (esAtributoId(atributo)) { return; }
 		    columnas.push(sinMarcaDeId(atributo));
-		    valores.push(valorDeEjemplo(tipoJava));
+		    valores.push(valorDeEjemplo(tipoJava, relacion));
 		  });
 		  return '// Completa y ejecuta esta sentencia\\n'
 		       + 'INSERT INTO ' + entidad + ' (' + columnas.join(',') + ') VALUES (' + valores.join(',') + ');';
 		}
 
-		// Un valor de ejemplo acorde al tipo Java que muestra el DESC. Los que no se pueden inventar
-		// quedan como un texto entre comillas, que al menos se ve y se reemplaza a mano.
-		function valorDeEjemplo(tipoJava) {
-		  if (/^(Integer|int|Long|long|Short|short|Byte|byte|BigInteger|BigDecimal|Double|double|Float|float)$/.test(tipoJava)) {
+		/**
+		 * Un valor de ejemplo acorde a la columna del DESC.
+		 *
+		 * <p>El caso que importa es la <b>relación</b>: su TIPO JAVA es el nombre de una clase
+		 * (`Departamento`), que se ve igual que un String, así que no alcanza con mirarlo. La columna
+		 * RELACION del DESC dice cuál es el id de la entidad apuntada y de qué tipo, y con eso el
+		 * valor sale sin comillas cuando el id es numérico. Sin ese dato (un DESC viejo, o una consulta
+		 * a mano) se cae al tipo Java, que para una relación da texto entre comillas.</p>
+		 */
+		function valorDeEjemplo(tipoJava, relacion) {
+		  if (relacion && relacion !== '-') {
+		    // "Entidad#id (Tipo)" -> el tipo del id decide si lleva comillas.
+		    const tipoId = /\\(([^)]*)\\)\\s*$/.exec(relacion);
+		    return tipoId && esTipoNumerico(tipoId[1]) ? '999' : "'999'";
+		  }
+		  if (esTipoNumerico(tipoJava)) {
 		    return '999';
 		  }
 		  if (/^(Boolean|boolean)$/.test(tipoJava)) {
@@ -536,9 +549,14 @@ public final class HqlConsolePage
 		  if (/^(LocalDateTime|Instant|OffsetDateTime|ZonedDateTime|Date|Timestamp)$/.test(tipoJava)) {
 		    return 'NOW';
 		  }
-		  // Las relaciones (el TIPO JAVA es otra entidad) van por id, así que son un número.
 		  return "'999'";
 		}
+
+		/** Los tipos que van pelados en la sentencia, sin comillas. */
+		function esTipoNumerico(tipo) {
+		  return /^(Integer|int|Long|long|Short|short|Byte|byte|BigInteger|BigDecimal|Double|double|Float|float)$/.test(String(tipo));
+		}
+
 
 		// El "SELECT *" del menú: siempre con límite, para que un click no traiga una tabla entera.
 		function selectDeEntidad(entidad) {

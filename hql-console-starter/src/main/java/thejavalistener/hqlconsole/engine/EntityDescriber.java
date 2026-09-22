@@ -60,7 +60,7 @@ public class EntityDescriber
 {
 	private static final Logger log=LoggerFactory.getLogger(EntityDescriber.class);
 
-	private static final List<String> HEADERS=List.of("ATRIBUTO","TIPO JAVA","CAMPO","TIPO SQL");
+	private static final List<String> HEADERS=List.of("ATRIBUTO","TIPO JAVA","CAMPO","TIPO SQL","RELACION");
 	private static final List<String> LIST_HEADERS=List.of("ENTIDAD","TABLA","CAMPOS");
 
 	private final ObjectProvider<DataSource> dataSource;
@@ -115,14 +115,43 @@ public class EntityDescriber
 			// contrato que dice que los títulos de "from <Entidad>" son exactamente estos atributos.
 			String nombre=attribute.getName()+(attribute.equals(id)?"*":"");
 
+			// RELACION dice qué es lo que hay que escribir en esa columna cuando el atributo es una
+			// relación: el id de la entidad apuntada, con su tipo. Sin esto no hay forma de saber que
+			// "departamento" se llena con un número, porque el TIPO JAVA de una relación es el nombre
+			// de la clase (Departamento) y se ve igual que un String.
+			String relacion=_relacionDe(metamodel,attribute);
+
 			// El orden es el de la sentencia: ATRIBUTO y TIPO JAVA son lo que uno escribe, CAMPO y
 			// TIPO SQL son cómo se llama y qué es eso en la base.
-			rows.add(List.of(nombre,Mapping.javaTypeName(attribute),campo,sqlType));
+			rows.add(List.of(nombre,Mapping.javaTypeName(attribute),campo,sqlType,relacion));
 		}
 		// Todos los tipos de esta grilla son texto: son nombres. Ordenar por "TIPO JAVA" o por
 		// "CAMPO" es ordenar alfabéticamente, que es exactamente lo que se espera.
-		return HqlResult.query(HEADERS,_tipos(ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO),
+		return HqlResult.query(HEADERS,_tipos(ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO),
 				rows,false,_millis(t0));
+	}
+
+	/**
+	 * La descripción de una relación: {@code Entidad#id (TipoDelId)}, o {@code -} si el atributo no es
+	 * una relación.
+	 *
+	 * <p>Es lo que permite escribir un INSERT con la FK por número en vez de por texto: el
+	 * {@code TIPO JAVA} de una relación es el nombre de la clase y se ve igual que un String, así que
+	 * sin este dato no hay forma de saber que {@code departamento} espera un id.</p>
+	 */
+	private String _relacionDe(Metamodel metamodel,Attribute<?,?> attribute)
+	{
+		if( !Mapping.isToOne(attribute) )
+		{
+			return "-";
+		}
+		EntityType<?> related=Mapping.relatedEntity(metamodel,attribute);
+		if( related==null )
+		{
+			return "-";
+		}
+		Attribute<?,?> id=Mapping.idOf(related);
+		return related.getName()+"#"+id.getName()+" ("+Mapping.javaTypeName(id)+")";
 	}
 
 	/** Los tipos de una grilla, en el orden de sus columnas. */
