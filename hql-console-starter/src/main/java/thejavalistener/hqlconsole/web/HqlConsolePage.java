@@ -67,7 +67,11 @@ public final class HqlConsolePage
 		  #panel-editor { flex:0 0 var(--ancho-editor); display:flex; flex-direction:column; gap:8px; min-width:0; }
 		  #hql { flex:1 1 auto; width:100%; min-height:0; margin:0; padding:10px; background:#fff;
 		         font-family: ui-monospace, Consolas, monospace; font-size:13px; line-height:1.5;
-		         border:1px solid var(--borde); border-radius:6px; resize:none; tab-size:2; }
+		         border:1px solid var(--borde); border-radius:6px; resize:none; tab-size:2;
+		         /* Sin wrap: una línea larga scrollea en horizontal en vez de partirse. El wrap="off"
+		            del HTML es el que manda (el atributo gana sobre el CSS en algunos navegadores), pero
+		            se declara también acá para que la regla se lea sola. */
+		         wrap:off; white-space:pre; overflow-x:auto; overflow-y:auto; }
 		  /* La barra del pie del editor: el aviso de alcance a la izquierda, el botón a la derecha. */
 		  .pie-editor { flex:0 0 auto; display:flex; align-items:center; gap:8px; min-width:0; }
 		  .pie-editor .alcance { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -142,6 +146,18 @@ public final class HqlConsolePage
 		  .entidad-item:hover { background:#eef4ff; }
 		  .entidad-item.elegida { background:#dce8ff; font-weight:600; }
 
+		  /* --- el menú contextual (botón derecho sobre una entidad) --- */
+		  #menu { position:fixed; z-index:50; min-width:190px; padding:4px;
+		          background:#fff; border:1px solid var(--borde); border-radius:6px;
+		          box-shadow:0 6px 20px rgba(0,0,0,.18); }
+		  .menu-item { display:block; width:100%; text-align:left; padding:6px 10px;
+		               font-size:13px; font-weight:400; color:inherit; background:none; border:0;
+		               border-radius:4px; cursor:pointer; white-space:nowrap; }
+		  .menu-item:hover { background:#eef4ff; }
+		  .menu-titulo { padding:4px 10px 6px; font-size:11px; opacity:.6;
+		                 border-bottom:1px solid var(--borde); margin-bottom:4px;
+		                 white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
 		  /* En pantallas angostas el divisor no tiene sentido: se apilan. */
 		  @media (max-width: 720px) {
 		    body { height:auto; overflow:auto; }
@@ -174,7 +190,7 @@ public final class HqlConsolePage
 		    <div id="lista-entidades"></div>
 		  </aside>
 		  <div id="panel-editor">
-		    <textarea id="hql" spellcheck="false" placeholder="SELECT e.id, e.nombre FROM Empleado e"></textarea>
+		    <textarea id="hql" spellcheck="false" wrap="off" placeholder="SELECT e.id, e.nombre FROM Empleado e"></textarea>
 		    <div class="pie-editor">
 		      <span class="estado" id="pista">Ctrl+Enter:</span>
 		      <span class="estado sel alcance" id="seleccion"></span>
@@ -198,6 +214,11 @@ public final class HqlConsolePage
 		    <div class="pie" id="pie"></div>
 		    <details id="crudo" hidden><summary>JSON crudo</summary><pre id="crudo-pre"></pre></details>
 		  </div>
+		</div>
+		<div id="menu" hidden>
+		  <div class="menu-titulo" id="menu-titulo"></div>
+		  <button type="button" class="menu-item" id="menu-insert">Generar INSERT</button>
+		  <button type="button" class="menu-item" id="menu-select">SELECT *</button>
 		</div>
 		<script>
 		const BASE = '__BASE__';
@@ -230,6 +251,10 @@ public final class HqlConsolePage
 		const panelEntidades = document.getElementById('panel-entidades');
 		const toggleEntidades = document.getElementById('toggle-entidades');
 		const listaEntidades = document.getElementById('lista-entidades');
+		const menu = document.getElementById('menu');
+		const menuTitulo = document.getElementById('menu-titulo');
+		const menuInsert = document.getElementById('menu-insert');
+		const menuSelect = document.getElementById('menu-select');
 
 		const EJEMPLO = 'SELECT e.id, e.nombre, e.salario FROM Empleado e';
 		const CLAVE_TEXTO = 'hql-console.consulta';
@@ -451,11 +476,73 @@ public final class HqlConsolePage
 		  return copia;
 		}
 
-		// El estado del orden de una grilla: qué columna, para qué dirección, y de dónde salieron las
-		// filas. La dirección del próximo click sale de acá: la primera vez es ascendente y después
-		// alterna.
+		// La dirección siguiente del orden: si ya estaba ascendente, el próximo click baja.
 		function direccionSiguiente(direccionActual) {
 		  return direccionActual === 'asc' ? 'desc' : 'asc';
+		}
+
+		// --- el menú contextual de una entidad (las sentencias que genera) ---
+		// Cuántas filas trae el [SELECT *] del menú. 100 entra cómodo en pantalla y no castiga con un
+		// click accidental; si el tope global (max-rows) es menor, gana ese.
+		//
+		// Va acá adentro, con las funciones puras, a propósito: es una constante que usan, y el bloque
+		// marcado es lo que verify-demo.ps1 extrae para correr en Node.
+		const LIMITE_MENU = 100;
+
+		// El atributo del id lleva un "*" pegado (lo pone el DESC), así que hay que sacarlo para
+		// escribir nombres de columna de verdad.
+		function sinMarcaDeId(nombre) {
+		  return String(nombre).replace(/\\*$/, '');
+		}
+
+		function esAtributoId(nombre) {
+		  return /\\*$/.test(String(nombre));
+		}
+
+		/**
+		 * El INSERT de ejemplo de una entidad, a partir de las filas de su DESC.
+		 *
+		 * <p>El id se excluye: es el que genera la base, así que ponerlo a mano choca con la
+		 * secuencia. Las relaciones van por su id (un número), y el resto por un literal del tipo que
+		 * corresponda —texto entre comillas, número pelado, fecha ISO, booleano— para que la
+		 * sentencia se pueda ejecutar tal cual después de completarla.</p>
+		 */
+		function insertDeEntidad(entidad, filasDesc) {
+		  const columnas = [];
+		  const valores = [];
+		  (filasDesc || []).forEach(function(fila) {
+		    const atributo = fila[0];
+		    const tipoJava = String(fila[1] || '');
+		    if (esAtributoId(atributo)) { return; }
+		    columnas.push(sinMarcaDeId(atributo));
+		    valores.push(valorDeEjemplo(tipoJava));
+		  });
+		  return '// Completa y ejecuta esta sentencia\\n'
+		       + 'INSERT INTO ' + entidad + ' (' + columnas.join(',') + ') VALUES (' + valores.join(',') + ');';
+		}
+
+		// Un valor de ejemplo acorde al tipo Java que muestra el DESC. Los que no se pueden inventar
+		// quedan como un texto entre comillas, que al menos se ve y se reemplaza a mano.
+		function valorDeEjemplo(tipoJava) {
+		  if (/^(Integer|int|Long|long|Short|short|Byte|byte|BigInteger|BigDecimal|Double|double|Float|float)$/.test(tipoJava)) {
+		    return '999';
+		  }
+		  if (/^(Boolean|boolean)$/.test(tipoJava)) {
+		    return 'false';
+		  }
+		  if (/^(LocalDate)$/.test(tipoJava)) {
+		    return "'2024-01-01'";
+		  }
+		  if (/^(LocalDateTime|Instant|OffsetDateTime|ZonedDateTime|Date|Timestamp)$/.test(tipoJava)) {
+		    return 'NOW';
+		  }
+		  // Las relaciones (el TIPO JAVA es otra entidad) van por id, así que son un número.
+		  return "'999'";
+		}
+
+		// El "SELECT *" del menú: siempre con límite, para que un click no traiga una tabla entera.
+		function selectDeEntidad(entidad) {
+		  return 'SELECT * FROM ' + entidad + ' LIMIT ' + LIMITE_MENU;
 		}
 
 		// El texto del confirm(). El número es la alarma: si esperabas 1 fila y dice 4, cancelás.
@@ -475,10 +562,21 @@ public final class HqlConsolePage
 		  const inicio = ta.selectionStart, fin = ta.selectionEnd;
 		  const recorte = textoAejecutar(ta.value, inicio, fin);
 		  if (fin > inicio && recorte.trim()) {
-		    return { hql: recorte, etiqueta: 'sólo la selección' };
+		    // Ya estaba seleccionado por el usuario: no se toca la selección al terminar.
+		    return { hql: recorte, etiqueta: 'sólo la selección', inicio: inicio, fin: fin, pintar: false };
 		  }
 		  const parrafo = rangoParrafo(ta.value, inicio);
-		  return { hql: ta.value.substring(parrafo.inicio, parrafo.fin), etiqueta: 'el párrafo del cursor' };
+		  return { hql: ta.value.substring(parrafo.inicio, parrafo.fin), etiqueta: 'el párrafo del cursor',
+		           inicio: parrafo.inicio, fin: parrafo.fin, pintar: true };
+		}
+
+		// Deja pintado el párrafo que se ejecutó, para que se vea qué se corrió (y para poder volver a
+		// correr lo mismo con Ctrl+Enter sin apuntar de nuevo con el cursor). Sólo cuando la sentencia
+		// salió del párrafo: si el usuario ya tenía algo seleccionado, su selección se respeta.
+		function pintarRango(rango) {
+		  if (!rango || !rango.pintar) { return; }
+		  ta.focus();
+		  ta.setSelectionRange(rango.inicio, rango.fin);
 		}
 
 		// El aviso de alcance que se ve al pie del editor: qué se va a ejecutar con Ctrl+Enter.
@@ -669,11 +767,87 @@ public final class HqlConsolePage
 		    boton.type = 'button';
 		    boton.className = 'entidad-item';
 		    boton.textContent = nombre;
-		    boton.title = 'DESC ' + nombre;
+		    boton.title = 'DESC ' + nombre + '  (botón derecho: más acciones)';
 		    boton.addEventListener('click', function() { abrirEntidad(nombre); });
+		    boton.addEventListener('contextmenu', function(ev) {
+		      ev.preventDefault();
+		      abrirMenu(ev.clientX, ev.clientY, nombre);
+		    });
 		    listaEntidades.appendChild(boton);
 		  });
 		  marcarEntidadElegida(entidadElegida);
+		}
+
+		// ==================== el menú contextual ====================
+		// Acciones sobre una entidad sin escribir nada: generar el INSERT de ejemplo o correr un
+		// SELECT * acotado. El menú se cierra con click en cualquier lado, con Escape, con scroll o
+		// al elegir una opción. Vive en el body y se posiciona con coordenadas de pantalla.
+		let entidadDelMenu = null;
+
+		function abrirMenu(x, y, entidad) {
+		  entidadDelMenu = entidad;
+		  menuTitulo.textContent = entidad;
+		  menu.hidden = false;
+
+		  // Si el menú no entra en la pantalla, se corre hacia adentro: si no, aparece cortado.
+		  const caja = menu.getBoundingClientRect();
+		  const ancho = caja.width, alto = caja.height;
+		  const x2 = Math.max(4, Math.min(x, window.innerWidth - ancho - 4));
+		  const y2 = Math.max(4, Math.min(y, window.innerHeight - alto - 4));
+		  menu.style.left = x2 + 'px';
+		  menu.style.top = y2 + 'px';
+		}
+
+		function cerrarMenu() {
+		  menu.hidden = true;
+		  entidadDelMenu = null;
+		}
+
+		document.addEventListener('click', function(ev) {
+		  if (!menu.hidden && !menu.contains(ev.target)) { cerrarMenu(); }
+		});
+		document.addEventListener('keydown', function(ev) {
+		  if (ev.key === 'Escape') { cerrarMenu(); }
+		});
+		// El scroll de la lista o de la grilla dejaría el menú flotando lejos de su entidad.
+		window.addEventListener('scroll', cerrarMenu, true);
+		window.addEventListener('resize', cerrarMenu);
+
+		// [Generar INSERT]: NO ejecuta. Escribe la sentencia en el editor para que la completes y la
+		// corras vos. Necesita el DESC de la entidad para saber sus columnas y sus tipos, así que se
+		// pide al backend (es la misma lectura que hace el panel de detalle).
+		menuInsert.addEventListener('click', async function() {
+		  const entidad = entidadDelMenu;
+		  cerrarMenu();
+		  if (!entidad) { return; }
+		  estado.textContent = 'Armando el INSERT de ' + entidad + '...';
+		  const respuesta = await pedir('DESC ' + entidad, false);
+		  if (!respuesta.ok || !respuesta.datos.rows) {
+		    mostrarError(respuesta.datos || { error: 'No se pudo leer el DESC de ' + entidad });
+		    return;
+		  }
+		  textoDelEditor(insertDeEntidad(entidad, respuesta.datos.rows));
+		  estado.textContent = 'INSERT de ' + entidad + ' escrito en el editor: completá los valores y ejecutá.';
+		});
+
+		// [SELECT *]: se ejecuta sin pasar por el editor. El LIMIT va en la sentencia, así que el
+		// número que se ve en el pie es el que se usó de verdad.
+		menuSelect.addEventListener('click', function() {
+		  const entidad = entidadDelMenu;
+		  cerrarMenu();
+		  if (!entidad) { return; }
+		  marcarEntidadElegida(entidad);
+		  ejecutarTexto(selectDeEntidad(entidad), 'el menú de ' + entidad);
+		});
+
+		// Poner texto en el editor reemplazando todo. Se guarda y se refresca el aviso de alcance,
+		// igual que si lo hubieras tipeado.
+		function textoDelEditor(texto) {
+		  ta.value = texto;
+		  ta.focus();
+		  ta.setSelectionRange(texto.length, texto.length);
+		  guardarTexto();
+		  refrescarSeleccion();
 		}
 
 		// Click en una entidad: equivale a escribir "DESC <Entidad>" y ejecutar. No se toca el editor
@@ -701,6 +875,9 @@ public final class HqlConsolePage
 		  // Se guarda el contenido del editor, no lo último ejecutado: es el estado del textarea.
 		  guardarTexto();
 		  const rango = rangoAEjecutar();
+		  // Queda pintado lo que se ejecutó: se ve de un vistazo qué corrió, y el próximo Ctrl+Enter
+		  // corre exactamente lo mismo.
+		  pintarRango(rango);
 		  // Un pegado desde Windows puede traer CRLF: el retorno de carro sobra y Hibernate no lo
 		  // necesita. (Barra invertida doble por el text block de Java.)
 		  ejecutarTexto(rango.hql.split('\\r').join('').trim(), rango.etiqueta);

@@ -203,6 +203,23 @@ Detalles del párrafo, que están cubiertos por los tests:
   pisar lo que tengas en el editor. La entidad que estás mirando queda marcada, y la lista se
   **contrae y se expande** con el botoncito de su cabecera; el estado se recuerda en el navegador
   igual que el ancho del editor.
+- **Botón derecho sobre una entidad: menú contextual** con dos acciones que no te obligan a escribir
+  nada. Se cierra con un clic afuera, con `Escape`, con la rueda del mouse o al elegir una opción, y
+  si no entra en la pantalla se corre hacia adentro en vez de aparecer cortado.
+  - **[Generar INSERT]**: arma un `INSERT` de ejemplo y lo **escribe en el editor** (no lo ejecuta).
+    Excluye el `id` —lo genera la base— y pone un valor acorde al tipo de cada columna: `999` para
+    los números, `'999'` para los textos, `'2024-01-01'` para las fechas, `NOW` para los timestamps y
+    `false` para los booleanos. Las relaciones van por su id. Te queda completar los valores y correr
+    la sentencia.
+  - **[SELECT *]**: corre `SELECT * FROM Entidad LIMIT 100` sin pasar por el editor. El `100` es
+    porque un clic no debería traerte una tabla entera; si el tope global `max-rows` es menor, gana
+    ese y el resultado se marca como truncado.
+- **El editor no envuelve las líneas.** Una línea larga **scrollea en horizontal** en vez de partirse,
+  que es lo que se espera de un editor de código: la sentencia se lee como la escribiste.
+- **El párrafo que ejecutaste queda pintado.** Al correr sin selección, la consola selecciona el
+  párrafo que acaba de ejecutar: se ve de un vistazo qué corrió, y el próximo `Ctrl+Enter` corre
+  exactamente lo mismo sin volver a apuntar con el cursor. Si ya tenías algo seleccionado, tu
+  selección se respeta y no se toca.
 - **El texto del editor es persistente.** Lo que escribís queda en el `localStorage` del navegador y
   reaparece la próxima vez que abrís la página: sobrevive a recargar, a cerrar el navegador y a
   bajar y volver a levantar la aplicación. Se guarda mientras tipeás (con un retardo de 400 ms) y
@@ -395,11 +412,13 @@ DESC Libro
 
 | ATRIBUTO | TIPO JAVA | CAMPO | TIPO SQL |
 |---|---|---|---|
-| id | Long | ID | BIGINT |
+| id* | Long | ID | BIGINT |
 | titulo | String | TITULO | CHARACTER VARYING |
 | fechaPublicacion | LocalDate | FECHA_PUBLICACION | DATE |
 | autor | Autor | ID_AUTOR | BIGINT |
 
+- El **`*` marca el atributo que es `@Id`**, o sea el que genera la base y el que conviene excluir de
+  un `INSERT` a mano. Va pegado al nombre, en la misma columna, para no agregar una columna nueva.
 - Primero lo que escribís en una sentencia —`ATRIBUTO` y su `TIPO JAVA`— y después lo que existe en
   la base: la columna física (`CAMPO`) y su tipo SQL (`TIPO SQL`).
 - `CAMPO` y `TIPO SQL` son los **reales de la base**, leídos por JDBC (`DatabaseMetaData`). Sin
@@ -612,8 +631,8 @@ Verificado end-to-end con `verify-demo.ps1`, que compila, levanta el fat jar del
 comprobaciones contra una H2 en memoria (Spring Boot 3.2.5, Hibernate 6.4.4, Java 21):
 
 ```
-.\verify-demo.ps1                                  # 183 PASS / 0 FAIL
-.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 190 PASS / 0 FAIL
+.\verify-demo.ps1                                  # 196 PASS / 0 FAIL
+.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 203 PASS / 0 FAIL
 ```
 
 Cubre: descubrimiento de la auto-configuración por el `.imports` del jar, la página servida desde

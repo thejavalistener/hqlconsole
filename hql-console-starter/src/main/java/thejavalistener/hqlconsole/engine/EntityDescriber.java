@@ -97,6 +97,8 @@ public class EntityDescriber
 			return index<0?Integer.MAX_VALUE:index;
 		}));
 
+		Attribute<?,?> id=Mapping.idOf(entityType);
+
 		List<List<Object>> rows=new ArrayList<>(attributes.size());
 		for(Attribute<?,?> attribute:attributes)
 		{
@@ -109,9 +111,13 @@ public class EntityDescriber
 			String campo=Mapping.physicalName(real!=null?real.name():derived);
 			String sqlType=real!=null?real.typeName():(isColumn?_derivedSqlType(metamodel,attribute):"-");
 
+			// El asterisco del @Id va pegado al ATRIBUTO (y no en una columna nueva) para no romper el
+			// contrato que dice que los títulos de "from <Entidad>" son exactamente estos atributos.
+			String nombre=attribute.getName()+(attribute.equals(id)?"*":"");
+
 			// El orden es el de la sentencia: ATRIBUTO y TIPO JAVA son lo que uno escribe, CAMPO y
 			// TIPO SQL son cómo se llama y qué es eso en la base.
-			rows.add(List.of(attribute.getName(),Mapping.javaTypeName(attribute),campo,sqlType));
+			rows.add(List.of(nombre,Mapping.javaTypeName(attribute),campo,sqlType));
 		}
 		// Todos los tipos de esta grilla son texto: son nombres. Ordenar por "TIPO JAVA" o por
 		// "CAMPO" es ordenar alfabéticamente, que es exactamente lo que se espera.

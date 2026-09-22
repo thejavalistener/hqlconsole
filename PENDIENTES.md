@@ -5,6 +5,31 @@ cada decisión y las **trampas** que aparecieron. Está escrito para que cualqui
 trabajo (una sesión nueva, otro modelo) no tenga que adivinar: la documentación de usuario está en el
 `README.md` y la verificación en `verify-demo.ps1`.
 
+## Para retomar el trabajo (leer primero)
+
+- **El repositorio es este**: `D:\vscode\Workspace\hqlconsole`, y es el único clon. Hubo otro en
+  `C:\Users\pablo\Documents\DeepSeekHardnes\hqlconsole` (una copia de trabajo del agente) que se
+  descartó: no lo recrees, y no trabajes sobre una copia, porque las dos se desincronizan y se pierde
+  el hilo. El remote es `github.com/thejavalistener/hqlconsole`.
+- **El workspace de la sesión tiene que ser `D:\vscode\Workspace`** (la carpeta padre de este repo).
+  Con el workspace en otro lado, cada escritura en el proyecto pide aprobación; con ese, no.
+- **`verify-demo.ps1` necesita acceso completo**, no por la escritura sino porque Gradle forkea su
+  daemon capturando la salida por pipe y el sandbox confinado lo deniega. Se escala una vez por
+  corrida y listo.
+- **El push y los tags los hace el dueño del repo**, no el agente.
+
+### Estado del release (importante al publicar)
+
+- Lo último **publicado** es **`v0.1.3`** (tag, release de GitHub con los jars, y artefacto en
+  JitPack). Ese tag tiene las features #1 a #5.
+- La feature **#6 (ordenar por click en el header) está commiteada pero SIN publicar**: `HEAD` está
+  por delante de `v0.1.3` y `build.gradle` sigue en `0.1.3`.
+- Para publicar #6 hay que **subir la versión en `build.gradle`** (`version = ... ?: '0.1.4'`) y
+  taggear `v0.1.4`: el workflow `.github/workflows/release.yml` **compara el tag con `printVersion`
+  y corta si no coinciden**.
+- Ojo con esto: el `README.md` de la raíz ya documenta #6 y dice 183/190 PASS, o sea que **describe
+  el commit sin publicar**, no el `v0.1.3` que está en GitHub. Es a propósito, pero conviene saberlo.
+
 ## Estado
 
 | Feature | Estado |
@@ -15,11 +40,55 @@ trabajo (una sesión nueva, otro modelo) no tenga que adivinar: la documentació
 | #4 `LIMIT n` al final de las consultas | **hecho** |
 | #5 panel lateral de entidades, colapsable | **hecho** |
 | #6 ordenar la grilla clickeando el header de una columna | **hecho** |
+| #7 editor con scroll horizontal (sin wrap) | **hecho** |
+| #8 el párrafo ejecutado queda seleccionado | **hecho** |
+| #9 `*` en el atributo `@Id` de `DESC` | **hecho** |
+| #10 menú contextual de una entidad (INSERT / SELECT *) | **hecho** |
 
-Verificación: `verify-demo.ps1` → **183 PASS / 0 FAIL**; con `-ContextPath /demo -MaxRows 3` →
-**190 PASS / 0 FAIL** (venía de 144/148). Las features están cubiertas end-to-end; el clic en sí (el
-header, el del panel lateral) no lo ve ningún test automático, eso se mira en el navegador. Lo que sí
-se prueba de verdad, en Node sobre la página que sirve el jar, es el comparador.
+### Pendientes, acordados y NO hechos todavía
+
+Se dejaron para más adelante por ser los que más riesgo tienen (los tres tocan parseo o arquitectura de
+la página, no cosmética):
+
+| Feature | Por qué quedó pendiente |
+|---|---|
+| **Solapas con X** para cada `SELECT`/`DESC` | Es el más caro: reescribe la arquitectura del panel derecho (cada solapa con su caja/tabla/estado) y hay que decidir antes qué pasa con los `DESC` sin argumentos, con el panel de detalle de abajo y con dónde caen los INSERT y los errores. |
+| **Comentarios `//`, `#`, `--`** (excluirlos al ejecutar) | Toca `Text`, que es la base de todo el parseo: `splitStatements` corta por `;` y un `;` dentro de un comentario hoy parte la sentencia; `indexOfKeyword` podría encontrar un `values`/`where` dentro de un comentario. Además hay que decidir si un comentario es frontera de párrafo, y reemplazar por espacio (no borrar) para no pegar dos tokens. |
+| **Color de los comentarios** | No se puede con un `<textarea>`: hace falta el truco del overlay (`<pre>` pintado detrás + textarea transparente encima), y eso se lleva mal con el scroll horizontal recién agregado. Conviene hacerlo después de que el parseo de comentarios esté estable. |
+
+Verificación: `verify-demo.ps1` → **196 PASS / 0 FAIL**; con `-ContextPath /demo -MaxRows 3` →
+**203 PASS / 0 FAIL** (venía de 144/148). Las features están cubiertas end-to-end; el clic en sí (el
+header, el del panel lateral, el menú contextual) no lo ve ningún test automático, eso se mira en el
+navegador. Lo que sí se prueba de verdad, en Node sobre la página que sirve el jar, son las funciones
+puras: el comparador del orden, el armado del INSERT y del SELECT del menú.
+
+## #7 a #10 — Los cuatro features chicos
+
+- **#7 scroll horizontal**: es `wrap="off"` en el `<textarea>` más `wrap:off; white-space:pre;
+  overflow-x:auto` en el CSS. El atributo es el que manda en algunos navegadores, así que van los dos.
+- **#8 párrafo pintado**: `rangoAEjecutar` ahora devuelve también `inicio`, `fin` y un flag `pintar`.
+  `pintarRango` hace `focus()` + `setSelectionRange`, y sólo cuando la sentencia salió del párrafo:
+  si el usuario ya tenía algo seleccionado, su selección no se toca (`pintar: false`). El `focus()` es
+  imprescindible: sin el foco, el navegador no pinta la selección.
+- **#9 marca de `@Id`**: el `*` va **pegado al nombre del atributo** (`id*`) y no en una columna
+  nueva, para no romper el contrato de que los títulos de `from <Entidad>` son exactamente los de la
+  columna `ATRIBUTO`. Consecuencia: los títulos de la grilla aplanada siguen saliendo pelados (el
+  runner usa `attribute.getName()`, no el texto del `DESC`), y en los tests el `$atributosDesc` se
+  calcula sacándole el `*` con `-replace '\*$',''`.
+- **#10 menú contextual**: `contextmenu` sobre los botones del panel lateral, con `preventDefault`.
+  El menú vive en el `body`, se posiciona con coordenadas de pantalla y se corre hacia adentro si no
+  entra. Se cierra con clic afuera, `Escape`, scroll (con `capture:true`, para agarrar también el
+  scroll de la lista) y `resize`.
+  - **[Generar INSERT]** pide el `DESC` de la entidad y arma la sentencia **en el cliente**
+    (`insertDeEntidad`): excluye el `id` (lo detecta por el `*`), y elige el valor de ejemplo por
+    `TIPO JAVA` (`valorDeEjemplo`). **No la ejecuta**: la escribe en el editor y te deja el cursor al
+    final. Es lo que se acordó.
+  - **[SELECT *]** corre `SELECT * FROM Entidad LIMIT 100` sin pasar por el editor. El 100 es una
+    constante (`LIMITE_MENU`) y el tope global `max-rows` sigue ganando si es menor, porque el `LIMIT`
+    del motor ya funciona así.
+  - **Ojo con la ubicación de `LIMITE_MENU`**: va **dentro** del bloque `// INICIO funciones puras`,
+    porque `selectDeEntidad` la usa y `verify-demo.ps1` extrae sólo ese bloque para correrlo en Node.
+    Si se mueve afuera, el test falla con `ReferenceError: LIMITE_MENU is not defined`.
 
 ## #6 — Ordenar la grilla clickeando el header
 

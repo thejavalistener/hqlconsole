@@ -161,7 +161,10 @@ try {
     # base (CAMPO, TIPO SQL).
     $r = Exec 'DESC Libro'
     Check 'DESC devuelve las 4 columnas del contrato' (($r.json.headers -join ',') -eq 'ATRIBUTO,TIPO JAVA,CAMPO,TIPO SQL') ($r.json.headers -join ',')
-    Check 'DESC muestra primero el ATRIBUTO y despues el CAMPO' ($r.json.rows[0][0] -eq 'id' -and $r.json.rows[0][2] -eq 'ID') "$($r.json.rows[0][0]),$($r.json.rows[0][2])"
+    Check 'DESC muestra primero el ATRIBUTO y despues el CAMPO' ($r.json.rows[0][0] -eq 'id*' -and $r.json.rows[0][2] -eq 'ID') "$($r.json.rows[0][0]),$($r.json.rows[0][2])"
+    Check 'DESC marca con * el atributo que es @Id' ($r.json.rows[0][0] -eq 'id*') $r.json.rows[0][0]
+    # El * va SOLO en el id: los demas atributos van pelados.
+    Check 'ningun otro atributo lleva el *' (@($r.json.rows | Where-Object { $_[0] -like '*`*' -and $_[0] -ne 'id*' }).Count -eq 0) (($r.json.rows | ForEach-Object { $_[0] }) -join ',')
     Check 'DESC respeta el orden de declaracion de la entidad' ($r.json.rows[0][2] -eq 'ID' -and $r.json.rows[1][2] -eq 'TITULO') "$($r.json.rows[0][2]),$($r.json.rows[1][2])"
     $fk = $r.json.rows | Where-Object { $_[0] -eq 'autor' }
     Check 'DESC muestra la FK como CAMPO y la relacion como ATRIBUTO' ($fk[2] -match 'ID_AUTOR' -and $fk[1] -eq 'Autor') ($fk -join ' | ')
@@ -169,8 +172,9 @@ try {
     Check 'DESC trae el TIPO SQL real de la base' ($fecha[3] -eq 'DATE' -and $fecha[1] -eq 'LocalDate') ($fecha -join ' | ')
     $titulo = $r.json.rows | Where-Object { $_[0] -eq 'titulo' }
     Check 'DESC trae el TIPO SQL de un texto' ($titulo[3] -match 'CHAR|VARCHAR|TEXT') $titulo[3]
-    # La columna ATRIBUTO de DESC es el contrato de titulos de "from <Entidad>".
-    $atributosDesc = ($r.json.rows | ForEach-Object { $_[0] }) -join ','
+    # La columna ATRIBUTO de DESC es el contrato de titulos de "from <Entidad>", pero el * de la marca
+    # de id NO viaja: los titulos de la grilla son los nombres de atributo pelados.
+    $atributosDesc = ($r.json.rows | ForEach-Object { $_[0] -replace '\*$','' }) -join ','
 
     $r = Exec 'DESC'
     Check 'DESC sin argumentos lista las entidades' (($r.json.headers -join ',') -eq 'ENTIDAD,TABLA,CAMPOS' -and $r.json.rowCount -ge 4) $r.raw
@@ -583,6 +587,36 @@ check('ordenar: no toca las filas originales', filas.map(function(f){return f[0]
 check('ordenar: por texto', ordenarFilas(filas, 1, 'TEXTO', 'asc').map(function(f){return f[1];}).join(','), 'a,b,c');
 check('ordenar: sin filas no explota', ordenarFilas(null, 0, 'TEXTO', 'asc').length, 0);
 check('ordenar: tolera filas de distinto largo', ordenarFilas([[1],[2,'x']], 1, 'TEXTO', 'asc').length, 2);
+
+// --- el menu contextual: el INSERT de ejemplo y el SELECT * ---
+check('id: reconoce la marca', esAtributoId('id*'), true);
+check('id: un atributo normal no', esAtributoId('titulo'), false);
+check('id: saca la marca', sinMarcaDeId('id*'), 'id');
+check('id: deja el nombre igual si no tiene marca', sinMarcaDeId('titulo'), 'titulo');
+
+// Las filas son las del DESC: [ATRIBUTO, TIPO JAVA, CAMPO, TIPO SQL]
+var descLibro = [['id*','Long','ID','BIGINT'],['titulo','String','TITULO','VARCHAR'],['autor','Autor','ID_AUTOR','BIGINT'],['precio','BigDecimal','PRECIO','DECIMAL']];
+var ins = insertDeEntidad('Libro', descLibro);
+check('insert: lleva el comentario arriba', ins.indexOf('// Completa y ejecuta esta sentencia') === 0, true);
+check('insert: excluye el id', ins.indexOf('(titulo,autor,precio)') > 0, true);
+check('insert: no escribe la columna id', ins.indexOf('id,') < 0, true);
+check('insert: el texto va entre comillas', ins.indexOf("'999'") > 0, true);
+check('insert: el numero va pelado', ins.indexOf(', 999') > 0 || ins.indexOf(',999') > 0, true);
+check('insert: termina en punto y coma', ins.slice(-2) === ');', true);
+check('insert: la entidad es la que se clickeo', insertDeEntidad('Autor', [['id*','Long','ID','BIGINT'],['nombre','String','NOMBRE','VARCHAR']]).indexOf('INSERT INTO Autor (nombre)') > 0, true);
+check('insert: sin columnas no rompe', insertDeEntidad('X', []).indexOf('INSERT INTO X () VALUES ()') > 0, true);
+
+// Los tipos tienen que dar valores que la consola entienda: fecha ISO, NOW, booleano
+check('valor: Long es numerico', valorDeEjemplo('Long'), '999');
+check('valor: BigDecimal es numerico', valorDeEjemplo('BigDecimal'), '999');
+check('valor: String va entre comillas', valorDeEjemplo('String'), "'999'");
+check('valor: LocalDate es ISO', valorDeEjemplo('LocalDate'), "'2024-01-01'");
+check('valor: LocalDateTime usa NOW', valorDeEjemplo('LocalDateTime'), 'NOW');
+check('valor: Boolean es false', valorDeEjemplo('Boolean'), 'false');
+check('valor: una relacion va por id (numerico)', valorDeEjemplo('Autor'), "'999'");
+
+check('select: arma el SELECT * con LIMIT', selectDeEntidad('Libro'), 'SELECT * FROM Libro LIMIT 100');
+check('select: el limite sale de la constante', selectDeEntidad('X').indexOf('LIMIT 100') > 0, true);
 '@
             $archivo = Join-Path $env:TEMP 'hql-console-sel-test.js'
             Set-Content -Path $archivo -Value $js -Encoding UTF8
@@ -686,13 +720,31 @@ check('ordenar: tolera filas de distinto largo', ordenarFilas([[1],[2,'x']], 1, 
     $r = Exec 'DESC'
     Check 'la lista de entidades tipa CAMPOS como NUMERO' (($r.json.types -join ',') -eq 'TEXTO,TEXTO,NUMERO') ($r.json.types -join ',')
 
-    # --- el orden de la grilla ---
+    # --- el orden por click en el header ---
     Check 'la pagina trae el orden por click en el header' `
           ($page.Content -match 'function ordenarPor' -and $page.Content -match 'function compararCeldas' -and $page.Content -match "addEventListener\('click', function\(\) \{\s*ordenarPor") 'falta el orden por header'
     Check 'el orden usa el tipo que manda el backend' ($page.Content -match 'function tipoDeColumna' -and $page.Content -match 'datos\.types') 'no se usan los tipos del backend'
     Check 'el header muestra la flecha y el estado' ($page.Content -match 'th\.orden-asc::after' -and $page.Content -match 'aria-sort') 'falta el indicador de orden'
     Check 'ordenar guarda las filas originales (no las pisa)' ($page.Content -match 'tabla\.__filas' -and $page.Content -match 'function ordenarFilas') 'no se guardan las filas originales'
     Check 'ordenar reengancha las filas clickeables' ($page.Content -match 'function recablearFilas' -and $page.Content -match 'recablearFilas\(tabla\)') 'las filas ordenadas pierden el click'
+
+    # --- editor sin wrap (scroll horizontal) ---
+    Check 'el textarea no envuelve las lineas largas' ($page.Content -match 'id="hql"[^>]*wrap="off"') 'falta wrap="off" en el textarea'
+    Check 'el CSS del textarea scrollea en horizontal' ($page.Content -match 'wrap:off' -and $page.Content -match 'overflow-x:auto') 'falta el scroll horizontal'
+
+    # --- el parrafo ejecutado queda seleccionado ---
+    Check 'al ejecutar se pinta el parrafo que corrio' ($page.Content -match 'function pintarRango' -and $page.Content -match 'ta\.setSelectionRange\(rango\.inicio') 'no se pinta el parrafo'
+    Check 'pintarRango no pisa una seleccion del usuario' ($page.Content -match 'pintar: false' -and $page.Content -match 'pintar: true') 'no se distingue seleccion de parrafo'
+    Check 'el rango del parrafo viaja con el texto a ejecutar' ($page.Content -match 'inicio: parrafo\.inicio, fin: parrafo\.fin') 'el rango no se propaga'
+
+    # --- el menu contextual de una entidad ---
+    Check 'la pagina trae el menu contextual' ($page.Content -match 'id="menu"' -and $page.Content -match 'id="menu-insert"' -and $page.Content -match 'id="menu-select"') 'falta el menu'
+    Check 'el boton derecho abre el menu' ($page.Content -match "addEventListener\('contextmenu'" -and $page.Content -match 'abrirMenu\(ev\.clientX') 'no se abre con el boton derecho'
+    Check 'el menu se cierra con click afuera, Escape y scroll' ($page.Content -match 'function cerrarMenu' -and $page.Content -match "ev\.key === 'Escape'" -and $page.Content -match "addEventListener\('scroll', cerrarMenu, true\)") 'el menu no se cierra'
+    Check 'el menu no se sale de la pantalla' ($page.Content -match 'window\.innerWidth - ancho' -and $page.Content -match 'window\.innerHeight - alto') 'no se reposiciona'
+    Check 'Generar INSERT escribe en el editor y NO ejecuta' `
+          ($page.Content -match 'function textoDelEditor' -and $page.Content -match "menuInsert\.addEventListener\('click'") 'el INSERT del menu no escribe'
+    Check 'SELECT * del menu usa LIMIT' ($page.Content -match 'function selectDeEntidad' -and $page.Content -match 'LIMITE_MENU = 100' -and $page.Content -match "ejecutarTexto\(selectDeEntidad") 'el SELECT del menu no limita'
 
     # --- tope de filas ---
     if ($MaxRows -lt 6) {
