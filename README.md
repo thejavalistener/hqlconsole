@@ -203,8 +203,8 @@ Detalles del párrafo, que están cubiertos por los tests:
   pisar lo que tengas en el editor. La entidad que estás mirando queda marcada, y la lista se
   **contrae y se expande** con el botoncito de su cabecera; el estado se recuerda en el navegador
   igual que el ancho del editor.
-- **Dejá el mouse sobre una entidad y sale el menú solo** (al segundo), con las tres acciones y cada
-  rótulo mostrando la sentencia que genera:
+- **Dejá el mouse sobre una entidad y sale el menú solo** (al segundo), o **abrilo ya con el botón
+  derecho**. Tiene las tres acciones y cada rótulo muestra la sentencia que genera:
   - **`DESC Entidad`**: el mismo atajo que el clic.
   - **`SELECT * FROM Entidad`**: corre `SELECT * FROM Entidad LIMIT 100` sin pasar por el editor. El
     `100` es porque un clic no debería traerte una tabla entera; si el tope global `max-rows` es
@@ -219,9 +219,11 @@ Detalles del párrafo, que están cubiertos por los tests:
     `RELACION` del `DESC`).
   - El **clic sigue haciendo el `DESC`**, que es el atajo rápido: el menú es para lo demás. Al hacer
     clic el menú se **cierra y no vuelve** hasta que saques el mouse y vuelvas a entrar.
-  - El menú se **cancela** si sacás el mouse antes del segundo, se **sostiene** mientras el mouse está
-    adentro (para que llegues a elegir) y **se cierra si alejás el mouse** sin haber entrado. También
-    con `Escape`, con la rueda, al salir de la ventana o si cambiás el tamaño.
+  - El menú se **cancela** si sacás el mouse antes del segundo, y **se cierra si alejás el mouse**:
+    para eso se mide la distancia al ítem y al menú con una tolerancia de unos píxeles, así el menú
+    **no se cierra mientras cruzás** del ítem al menú (que es lo que pasaba yendo lento, con el
+    divisor de paneles justo en el medio). También se cierra con `Escape`, con la rueda, al salir de
+    la ventana o si cambiás el tamaño.
 - **El editor no envuelve las líneas.** Una línea larga **scrollea en horizontal** en vez de partirse,
   que es lo que se espera de un editor de código: la sentencia se lee como la escribiste.
 - **El párrafo que ejecutaste queda pintado.** Al correr sin selección, la consola selecciona el
@@ -677,8 +679,8 @@ Verificado end-to-end con `verify-demo.ps1`, que compila, levanta el fat jar del
 comprobaciones contra una H2 en memoria (Spring Boot 3.2.5, Hibernate 6.4.4, Java 21):
 
 ```
-.\verify-demo.ps1                                  # 223 PASS / 0 FAIL
-.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 230 PASS / 0 FAIL
+.\verify-demo.ps1                                  # 226 PASS / 0 FAIL
+.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 233 PASS / 0 FAIL
 ```
 
 Cubre: descubrimiento de la auto-configuración por el `.imports` del jar, la página servida desde

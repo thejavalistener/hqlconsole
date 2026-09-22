@@ -824,7 +824,9 @@ check('insertar: en un editor vacio no agrega lineas de mas al principio', vacio
     Check 'la pagina trae el menu' ($page.Content -match 'id="menu"' -and $page.Content -match 'id="menu-desc"' -and $page.Content -match 'id="menu-insert"' -and $page.Content -match 'id="menu-select"') 'falta el menu'
     Check 'el menu sale al pasar el mouse, no con el boton derecho' `
           ($page.Content -match "addEventListener\('mouseenter'" -and $page.Content -match 'function programarMenu') 'no se abre por hover'
-    Check 'el menu ya no se abre con el boton derecho' ($page.Content -notmatch "addEventListener\('contextmenu'") 'quedo el contextmenu'
+    # El boton derecho volvio: abre el mismo menu, de inmediato (sin esperar el segundo).
+    Check 'el boton derecho abre el menu de inmediato' `
+          ($page.Content -match "addEventListener\('contextmenu'" -and $page.Content -match 'cancelarMenuProgramado\(\);\s*const caja = boton\.getBoundingClientRect') 'no se abre con el boton derecho'
     Check 'la espera del menu es de un segundo' ($page.Content -match 'ESPERA_MENU = 1000' -and $page.Content -match 'setTimeout\(function\(\)') 'no hay espera'
     Check 'el menu se cancela si el mouse se va antes' ($page.Content -match 'function cancelarMenuProgramado' -and $page.Content -match 'clearTimeout\(temporizadorMenu\)') 'no se cancela el temporizador'
     Check 'el menu se sostiene mientras el mouse esta adentro' ($page.Content -match "menu\.addEventListener\('mouseleave', cerrarMenu\)") 'el menu se cierra solo'
@@ -851,13 +853,19 @@ check('insertar: en un editor vacio no agrega lineas de mas al principio', vacio
           ($page.Content -match 'function insertarEnParrafo' -and $page.Content -notmatch 'ta\.value = sentencia') 'el INSERT pisa el editor'
     Check 'el cursor queda en el parentesis de columnas' ($page.Content -match 'puesto\.cursor, puesto\.cursor') 'el cursor no se posiciona'
     Check 'SELECT * del menu usa LIMIT' ($page.Content -match 'function selectDeEntidad' -and $page.Content -match 'LIMITE_MENU = 100' -and $page.Content -match "ejecutarTexto\(selectDeEntidad") 'el SELECT del menu no limita'
-    # El header no puede cambiar de tamano al pasar el mouse: el indicador de orden se reserva siempre.
-    # Se comparan strings literales (IndexOf) y no un regex, porque el patron lleva barras invertidas
-    # y en PowerShell escaparlas bien es un dolor.
+    # El header no puede cambiar de tamano al pasar el mouse NI al cambiar de glyph: el indicador se
+    # reserva siempre y con ancho fijo (⇅ no mide lo mismo que ↑ ni que ↓ en monoespaciada).
     $reserva = $page.Content.IndexOf("th.ordenable::after { content:'\21C5'")
     $hoverConGlyph = $page.Content.IndexOf("th.ordenable:hover::after { content:")
     Check 'el indicador de orden no cambia el tamano del header' `
           ($reserva -ge 0 -and $hoverConGlyph -lt 0) "reserva=$reserva hoverConGlyph=$hoverConGlyph"
+    Check 'los tres glyphs del indicador tienen el mismo ancho' `
+          ($page.Content -match 'display:inline-block; width:1em') 'el indicador no tiene ancho fijo'
+    # El menu se cierra por distancia a los rectangulos, con tolerancia: sin eso se cerraba al cruzar
+    # el hueco entre el item y el menu (peor aun yendo lento).
+    Check 'el menu tolera el trayecto del mouse al menu' `
+          ($page.Content -match 'MARGEN_MENU = 24' -and $page.Content -match 'function _distancia\(caja') 'no hay tolerancia de distancia'
+    Check 'el menu nace pegado al item, sin hueco' ($page.Content -match 'abrirMenu\(caja\.right, caja\.top') 'el menu queda separado del item'
 
     # --- tope de filas ---
     if ($MaxRows -lt 6) {

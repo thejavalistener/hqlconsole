@@ -94,14 +94,15 @@ public final class HqlConsolePage
 
 		  /* Los headers se pueden clickear para ordenar. La flechita va como contenido del ::after
 		     para no ensuciar el textContent del th, que es el nombre de la columna.
-		     OJO: el indicador tiene que existir SIEMPRE y con el mismo ancho. Si el contenido del
-		     ::after aparece recién en el :hover, el header se agranda al pasar el mouse (el carácter
-		     nuevo ocupa ancho, y con white-space:pre eso ensancha la columna y sube el alto). Por eso
-		     los cuatro estados usan el mismo glyph y lo que cambia es sólo el color: el ancho se
-		     reserva desde el principio y nada se mueve. */
+		     OJO con el ancho: el glyph tiene que ocupar SIEMPRE lo mismo. Si el content aparece recién
+		     en el :hover, el header se agranda al pasar el mouse; y si el glyph cambia de ⇅ a ↑ o ↓,
+		     el ancho también cambia, porque ⇅ (U+21C5) no mide lo mismo que ↑ (U+2191) ni que ↓
+		     (U+2193) en una fuente monoespaciada. Por eso el indicador es inline-block con un ancho
+		     fijo: los tres estados miden exactamente igual y nada se corre. */
 		  th.ordenable { cursor:pointer; user-select:none; }
 		  th.ordenable:hover { background:#e2e7ee; }
-		  th.ordenable::after { content:'\\21C5'; margin-left:6px; opacity:.25; }
+		  th.ordenable::after { content:'\\21C5'; display:inline-block; width:1em; margin-left:6px;
+		                        text-align:center; opacity:.25; }
 		  th.ordenable:hover::after { opacity:.55; }
 		  th.orden-asc::after { content:'\\2191'; opacity:1; }
 		  th.orden-desc::after { content:'\\2193'; opacity:1; }
@@ -586,6 +587,10 @@ public final class HqlConsolePage
 		// instantáneo, pasar el mouse por la lista sería una ametralladora de menús.
 		const ESPERA_MENU = 1000;
 
+		// Cuántos píxeles se tolera que el mouse esté lejos del ítem o del menú antes de cerrarlo.
+		// Es lo que permite cruzar del ítem al menú sin que se cierre en el camino.
+		const MARGEN_MENU = 24;
+
 		/**
 		 * Dónde meter el INSERT generado: en el párrafo donde está el cursor, no encima de todo lo
 		 * que había escrito.
@@ -860,11 +865,19 @@ public final class HqlConsolePage
 		    // Sin title: el menú que sale solo ya muestra las tres acciones, y un tooltip encima
 		    // tapa justo el menú y confunde.
 		    boton.addEventListener('click', function() { abrirEntidad(nombre); });
-		    // El menú sale solo: no hay botón derecho. Se programa al entrar y se cancela al salir.
+		    // El menú sale solo: se programa al entrar y se cancela al salir.
 		    boton.addEventListener('mouseenter', function() {
 		      programarMenu(boton, nombre);
 		    });
 		    boton.addEventListener('mouseleave', cancelarMenuProgramado);
+		    // Y con el botón derecho sale de una, sin esperar el segundo: el hover es para el atajo
+		    // rápido, el botón derecho para cuando ya sabés que lo querés.
+		    boton.addEventListener('contextmenu', function(ev) {
+		      ev.preventDefault();
+		      cancelarMenuProgramado();
+		      const caja = boton.getBoundingClientRect();
+		      abrirMenu(caja.right, caja.top, nombre);
+		    });
 		    listaEntidades.appendChild(boton);
 		  });
 		  marcarEntidadElegida(entidadElegida);
@@ -886,8 +899,10 @@ public final class HqlConsolePage
 		  temporizadorMenu = setTimeout(function() {
 		    temporizadorMenu = null;
 		    const caja = boton.getBoundingClientRect();
-		    // El menú nace pegado al borde derecho de la entidad, a la altura del renglón.
-		    abrirMenu(caja.right + 4, caja.top, entidad);
+		    // El menú nace pegado al borde derecho de la entidad, a la altura del renglón. Pegado y no
+		    // separado: si hubiera un hueco, el mouse tendría que atravesarlo para llegar al menú, y
+		    // en ese hueco no está ni en el ítem ni en el menú (y el menú se cerraría solo).
+		    abrirMenu(caja.right, caja.top, entidad);
 		  }, ESPERA_MENU);
 		}
 
@@ -932,15 +947,34 @@ public final class HqlConsolePage
 		 *
 		 * <p>Hace falta porque el menú aparece <b>al lado</b> del ítem: en cuanto sale, el mouse ya no
 		 * está ni sobre el ítem ni sobre el menú, así que ningún {@code mouseleave} se dispara y el
-		 * menú quedaba colgado para siempre. Acá se mira si el mouse sigue cerca del ítem dueño o
-		 * adentro del menú, y si no, se cierra.</p>
+		 * menú quedaba colgado para siempre.</p>
+		 *
+		 * <p>La distancia se mide <b>a los rectángulos</b> (el del ítem y el del menú) con una
+		 * tolerancia, y no celda por celda. Esa tolerancia es lo que hace que el menú no se cierre
+		 * cuando el mouse va lento y tarda en cruzar del ítem al menú —y menos mal que la hay, porque
+		 * el panel se puede desplazar y el ítem cambia de lugar mientras el mouse viaja—. Con el menú
+		 * pegado al ítem y unos píxeles de margen, el trayecto nunca queda en tierra de nadie.</p>
 		 */
 		function cerrarSiSeAlejo(ev) {
 		  if (menu.hidden) { return; }
 		  const dentroDelMenu = menu.contains(ev.target);
 		  const duenio = _botonDeEntidad(entidadDelMenu);
 		  const sobreElDuenio = duenio !== null && duenio.contains(ev.target);
-		  if (!dentroDelMenu && !sobreElDuenio) { cerrarMenu(); }
+		  if (dentroDelMenu || sobreElDuenio) { return; }
+
+		  // Ni en el ítem ni en el menú: se mide la distancia a los dos y se tolera un margen.
+		  const cajaMenu = menu.getBoundingClientRect();
+		  const cajaItem = duenio === null ? null : duenio.getBoundingClientRect();
+		  const lejos = _distancia(cajaMenu, ev.clientX, ev.clientY) > MARGEN_MENU
+				     && (cajaItem === null || _distancia(cajaItem, ev.clientX, ev.clientY) > MARGEN_MENU);
+		  if (lejos) { cerrarMenu(); }
+		}
+
+		/** Distancia de un punto al rectángulo: 0 si está adentro. */
+		function _distancia(caja, x, y) {
+		  const dx = Math.max(caja.left - x, 0, x - caja.right);
+		  const dy = Math.max(caja.top - y, 0, y - caja.bottom);
+		  return Math.sqrt(dx * dx + dy * dy);
 		}
 
 		function _botonDeEntidad(nombre) {

@@ -82,6 +82,24 @@ trabajo (una sesión nueva, otro modelo) no tenga que adivinar: la documentació
    `entidadDelMenu` en null y se pierde la marca de `entidadSinMenu`, con lo que el menú volvía a
    aparecer. Es exactamente el bug que se estaba arreglando.
 
+### Segunda ronda: el ancho del indicador y el trayecto al menú
+
+4. **Los tres glyphs del indicador no medían lo mismo.** Reservar el espacio arregló el salto del
+   `:hover`, pero al cambiar de `⇅` a `↑` o `↓` el header se seguía moviendo un poco: **`⇅` (U+21C5)
+   no mide lo mismo que `↑` (U+2191) ni que `↓` (U+2193)** en una fuente monoespaciada. Se arregló
+   con `display:inline-block; width:1em; text-align:center` en el `::after`: los tres estados miden
+   exactamente igual y no depende de la fuente.
+5. **El menú se cerraba al cruzar hacia él, sobre todo yendo lento.** El menú nacía **separado** del
+   ítem (`caja.right + 4`), así que había un hueco donde el mouse no estaba ni en el ítem ni en el
+   menú; y encima el divisor de paneles está justo en el medio, con lo que el hueco se agranda.
+   Yendo rápido se llegaba antes de que el `mousemove` lo cerrara, yendo lento no. **Dos arreglos:**
+   el menú ahora nace **pegado** al borde del ítem (`caja.right`, sin el `+4`), y el cierre mide la
+   **distancia a los dos rectángulos** (ítem y menú) con una tolerancia de 24 px (`MARGEN_MENU`), en
+   vez de exigir que el mouse esté dentro de uno de los dos. La tolerancia también cubre el caso de
+   que el panel se desplace y el ítem se mueva mientras el mouse viaja.
+6. **Volvió el botón derecho**, que ahora **abre el mismo menú de inmediato**, sin esperar el
+   segundo. El hover sigue siendo el atajo y el clic sigue haciendo el `DESC`.
+
 ### #13 — El header se agrandaba al pasar el mouse
 
 Era el `::after` del indicador de orden: la regla base era `content:''` y el glyph (`⇅`) aparecía
