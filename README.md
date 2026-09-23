@@ -210,14 +210,14 @@ Detalles del párrafo, que están cubiertos por los tests:
     `100` es porque un clic no debería traerte una tabla entera; si el tope global `max-rows` es
     menor, gana ese y el resultado se marca como truncado.
   - **`INSERT INTO Entidad`**: arma un `INSERT` de ejemplo y lo **escribe en el editor** (no lo
-    ejecuta), **abajo del párrafo donde está el cursor**, sin pisar lo que tenías escrito y **sin
-    mover el scroll**, así quedás mirando donde estabas. La sentencia insertada queda
-    **seleccionada**, que es lo que hace evidente dónde apareció; la contra es que la próxima tecla
-    la reemplaza, así que para completarla hay que hacer clic adentro. Excluye el `id` —lo genera la
-    base— y pone un valor acorde al tipo de cada columna: `999` para los números, `'999'` para los
-    textos, `'2024-01-01'` para las fechas, `NOW` para los timestamps y `false` para los booleanos.
-    Las relaciones van **por el id, sin comillas** cuando ese id es numérico (lo dice la columna
-    `RELACION` del `DESC`).
+    ejecuta), **abajo del párrafo donde está el cursor** —o **al principio de todo** si el cursor está
+    en una línea en blanco por encima de lo escrito— sin pisar lo que tenías y **sin mover el
+    scroll**, así quedás mirando donde estabas. La sentencia insertada queda **seleccionada**, que es
+    lo que hace evidente dónde apareció; la contra es que la próxima tecla la reemplaza, así que para
+    completarla hay que hacer clic adentro. Excluye el `id` —lo genera la base— y pone un valor
+    acorde al tipo de cada columna: `999` para los números, `'999'` para los textos, `'2024-01-01'`
+    para las fechas, `NOW` para los timestamps y `false` para los booleanos. Las relaciones van **por
+    el id, sin comillas** cuando ese id es numérico (lo dice la columna `RELACION` del `DESC`).
   - El **clic sigue haciendo el `DESC`**, que es el atajo rápido: el menú es para lo demás. Al hacer
     clic el menú se **cierra y no vuelve** hasta que saques el mouse y vuelvas a entrar.
   - El menú se **cancela** si sacás el mouse antes del segundo, y **se cierra si alejás el mouse**:
@@ -231,6 +231,8 @@ Detalles del párrafo, que están cubiertos por los tests:
   párrafo que acaba de ejecutar: se ve de un vistazo qué corrió, y el próximo `Ctrl+Enter` corre
   exactamente lo mismo sin volver a apuntar con el cursor. Si ya tenías algo seleccionado, tu
   selección se respeta y no se toca.
+- **El foco arranca en el editor.** Al abrir la consola el cursor ya está en el textarea, en el
+  carácter 0: uno viene a escribir acá, así que no hace falta hacer clic primero.
 - **El texto del editor es persistente.** Lo que escribís queda en el `localStorage` del navegador y
   reaparece la próxima vez que abrís la página: sobrevive a recargar, a cerrar el navegador y a
   bajar y volver a levantar la aplicación. Se guarda mientras tipeás (con un retardo de 400 ms) y
@@ -680,8 +682,8 @@ Verificado end-to-end con `verify-demo.ps1`, que compila, levanta el fat jar del
 comprobaciones contra una H2 en memoria (Spring Boot 3.2.5, Hibernate 6.4.4, Java 21):
 
 ```
-.\verify-demo.ps1                                  # 227 PASS / 0 FAIL
-.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 234 PASS / 0 FAIL
+.\verify-demo.ps1                                  # 228 PASS / 0 FAIL
+.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 235 PASS / 0 FAIL
 ```
 
 Cubre: descubrimiento de la auto-configuración por el `.imports` del jar, la página servida desde

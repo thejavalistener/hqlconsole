@@ -651,6 +651,22 @@ check('insertar: el parrafo de abajo queda intacto', puesto.texto.indexOf('SELEC
 check('insertar: deja una linea en blanco antes', puesto.texto.indexOf('\n\nINSERT') > 0, true);
 check('insertar: deja una linea en blanco despues', puesto.texto.indexOf(');\n\nSELECT 2') > 0, true);
 check('insertar: no duplica los saltos que ya habia', puesto.texto.indexOf(');\n\n\n') < 0, true);
+// Con el cursor ARRIBA de todo lo escrito, el INSERT va al principio y no debajo del primer parrafo.
+var conCursorArriba = '\n\nSELECT 1';
+var alPrincipio = insertarEnParrafo(conCursorArriba, 0, 'INSERT INTO X (a) VALUES (1);');
+check('insertar arriba: el INSERT queda primero', alPrincipio.texto.indexOf('INSERT INTO X') === 0, true);
+check('insertar arriba: no queda debajo del primer parrafo', alPrincipio.texto.indexOf('INSERT INTO X') < alPrincipio.texto.indexOf('SELECT 1'), true);
+check('insertar arriba: separa del parrafo de abajo', alPrincipio.texto.indexOf(');\n\nSELECT 1') > 0, true);
+check('insertar arriba: lo insertado queda seleccionado', alPrincipio.texto.substring(alPrincipio.seleccion.inicio, alPrincipio.seleccion.fin), 'INSERT INTO X (a) VALUES (1);');
+check('insertar arriba: la seleccion arranca en 0', alPrincipio.seleccion.inicio, 0);
+// En un editor vacio pasa lo mismo: el INSERT arranca en 0 y no deja saltos colgando.
+var enVacio = insertarEnParrafo('', 0, 'INSERT INTO Z (c) VALUES (3);');
+check('insertar arriba: en un editor vacio arranca en 0', enVacio.texto.indexOf('INSERT INTO Z'), 0);
+check('insertar arriba: en un editor vacio no deja saltos', enVacio.texto, 'INSERT INTO Z (c) VALUES (3);');
+// Y si el cursor esta arriba pero ya hay texto abajo, el orden se respeta.
+var conTextoAbajo = insertarEnParrafo('SELECT 9', 0, 'INSERT INTO W (d) VALUES (4);');
+check('insertar arriba: con el cursor en el primer parrafo sigue yendo despues de el', conTextoAbajo.texto.indexOf('INSERT INTO W') > conTextoAbajo.texto.indexOf('SELECT 9'), true);
+
 // El cursor queda adentro del parentesis de VALUES, que es donde se completan los valores. OJO: el
 // primer parentesis de la sentencia es el de la LISTA DE COLUMNAS, que es donde NO va.
 var esperadoCursor = puesto.texto.indexOf('VALUES (') + 'VALUES ('.length;
@@ -727,6 +743,9 @@ check('insertar: en un editor vacio no agrega lineas de mas al principio', vacio
     # --- persistencia del texto ---
     Check 'el texto del editor se persiste en el navegador' ($page.Content -match "CLAVE_TEXTO = 'hql-console\.consulta'" -and $page.Content -match 'ALMACEN\.setItem\(CLAVE_TEXTO') 'no se guarda el texto'
     Check 'el texto se restituye al abrir la pagina' ($page.Content -match 'ta\.value = \(textoGuardado === null') 'no se restituye el texto'
+    # Al abrir, el foco arranca en el editor y el cursor en el caracter 0.
+    Check 'al abrir el foco queda en el editor con el cursor en 0' `
+          ($page.Content -match '(?s)ta\.value = \(textoGuardado === null.*?ta\.focus\(\);\s*ta\.setSelectionRange\(0, 0\)') 'no se enfoca el editor al abrir'
     Check 'se guarda tambien mientras se escribe' ($page.Content -match "ta\.addEventListener\('input'" -and $page.Content -match 'setTimeout\(guardarTexto') 'no hay guardado al tipear'
     Check 'el ancho del divisor tambien se persiste' ($page.Content -match 'CLAVE_ANCHO') 'no se persiste el ancho'
 

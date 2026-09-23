@@ -142,6 +142,29 @@ trabajo (una sesión nueva, otro modelo) no tenga que adivinar: la documentació
    sola unidad. Si alguna vez molesta que una tecla se lleve también el comentario, hay que
    seleccionar sólo desde el `INSERT` (una línea de cambio).
 
+10. **Foco y cursor al abrir.** Al cargar la página el foco arranca en el editor y el cursor en el
+    carácter 0 (`ta.focus(); ta.setSelectionRange(0, 0)`), con `scrollTop`/`scrollLeft` en 0 para que
+    se vea el comienzo de lo que quedó guardado y no el final. Uno abre la consola a escribir: no
+    tiene que hacer clic primero.
+
+11. **El INSERT va al principio cuando el cursor está arriba de todo.** Este tuvo **dos intentos
+    fallidos** antes de quedar bien, y las dos trampas valen la pena:
+
+    - **Primer intento**: `if (antes.trim().length === 0)`. No servía: cuando el cursor está arriba de
+      todo y el texto arranca con líneas en blanco, `rangoParrafo` devuelve el párrafo de **abajo**
+      (`inicio: 2, fin: 10` para `"\n\nSELECT 1"`), así que ese `antes` incluía **todo el texto** y la
+      condición nunca se cumplía.
+    - **Segundo intento**: `if (cursor <= parrafo.inicio && ...)`. Tampoco: con el cursor al principio
+      del **primer párrafo** (en la línea del `SELECT`, no en una línea en blanco) también se cumple,
+      y el INSERT terminaba **antes** de la consulta que estabas mirando.
+    - **Lo que quedó**: la condición es que el cursor esté en una **línea en blanco** por encima de la
+      primera línea escrita (`_lineaEnBlanco`). Es la distinción que hace el usuario: "estoy arriba de
+      todo" no es lo mismo que "estoy en la primera línea".
+
+    Los cinco escenarios quedaron cubiertos por tests: línea en blanco arriba (va al principio), primer
+    párrafo (va después), final del primer párrafo (después), segundo párrafo (después del segundo) y
+    editor vacío (al principio y sin saltos colgando).
+
 ### La trampa del template: `constant string too long`
 
 Al agregar el último arreglo, el build falló con **`constant string too long`**: el límite de un

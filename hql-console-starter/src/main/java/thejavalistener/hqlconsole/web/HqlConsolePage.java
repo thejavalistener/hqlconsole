@@ -305,6 +305,14 @@ public final class HqlConsolePage
 		const textoGuardado = ALMACEN.getItem(CLAVE_TEXTO);
 		ta.value = (textoGuardado === null || textoGuardado === undefined) ? EJEMPLO : textoGuardado;
 
+		// Al abrir, el foco arranca en el editor y el cursor en el carácter 0: uno viene a escribir
+		// acá, así que no tiene que hacer clic primero. El scroll también va al principio, para que se
+		// vea el comienzo de lo que quedó guardado y no el final.
+		ta.focus();
+		ta.setSelectionRange(0, 0);
+		ta.scrollTop = 0;
+		ta.scrollLeft = 0;
+
 		// Se guarda mientras se escribe (con retardo) y también al ejecutar y al cerrar: así no se
 		// pierde lo escrito aunque nunca se llegue a ejecutar.
 		let temporizador = null;
@@ -621,13 +629,31 @@ public final class HqlConsolePage
 		 */
 		function insertarEnParrafo(texto, cursor, sentencia) {
 		  const parrafo = rangoParrafo(texto, cursor);
+
+		  // El INSERT va al principio de todo sólo si el cursor está en una línea EN BLANCO por encima
+		  // de la primera línea escrita. Ese es el caso que el usuario espera: "estoy arriba de todo,
+		  // quiero el INSERT primero".
+		  //
+		  // La distinción importa: con el cursor al principio del primer párrafo (no en una línea en
+		  // blanco, sino en la línea del SELECT), el INSERT tiene que ir DESPUÉS de ese párrafo, como
+		  // cualquier otro. Si se mirara sólo "el cursor está antes del párrafo", los dos casos caerían
+		  // en el mismo lugar y el INSERT aparecería antes de la consulta que estabas mirando.
+		  const cursorEnBlanco = texto.substring(cursor, cursor + 1).trim() === ''
+		                          && _lineaEnBlanco(texto, cursor);
+		  if (cursorEnBlanco && texto.substring(0, cursor).trim().length === 0) {
+		    const despues = texto.substring(parrafo.inicio);
+		    const salto = despues.trim().length > 0 ? '\\n\\n' : '';
+		    return { texto: sentencia + salto + despues, cursor: posicionDeValores(sentencia),
+		             seleccion: { inicio: 0, fin: sentencia.length } };
+		  }
+
 		  const antes = texto.substring(0, parrafo.fin);
 		  const despues = texto.substring(parrafo.fin);
 
 		  // Los separadores se calculan mirando los saltos que YA hay, no agregando a ciegas: entre
 		  // dos párrafos el hueco ya aporta sus saltos, y sumarle "\\n\\n" dejaba cuatro líneas en
 		  // blanco en vez de una. Se completa lo que falta hasta tener una línea en blanco.
-		  const sepAntes = antes.trim().length > 0 ? _saltosQueFaltan(antes, 'antes') : '';
+		  const sepAntes = _saltosQueFaltan(antes, 'antes');
 		  const sepDespues = despues.trim().length > 0 ? _saltosQueFaltan(despues, 'despues') : '';
 
 		  // Los espacios del final del texto de arriba se descartan: el separador se pega después de
@@ -637,6 +663,15 @@ public final class HqlConsolePage
 
 		  return { texto: nuevo, cursor: inicio + posicionDeValores(sentencia),
 		           seleccion: { inicio: inicio, fin: inicio + sentencia.length } };
+		}
+
+		/** ¿La línea donde cae esa posición está vacía (o son sólo espacios)? */
+		function _lineaEnBlanco(texto, posicion) {
+		  const lineas = lineasDe(texto);
+		  for (let i = 0; i < lineas.length; i++) {
+		    if (lineas[i].inicio <= posicion && posicion <= lineas[i].fin) { return lineas[i].blanco; }
+		  }
+		  return false;
 		}
 
 		// Cuántos saltos hay que agregar para dejar UNA línea en blanco de ese lado. Si ya hay dos o
