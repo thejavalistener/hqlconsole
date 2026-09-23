@@ -1,6 +1,10 @@
 package thejavalistener.hqlconsole.engine;
 
 import java.lang.reflect.Constructor;
+import java.sql.PreparedStatement;
+import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collection;
@@ -12,6 +16,7 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.hibernate.Session;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
@@ -115,6 +120,106 @@ public class HqlQueryRunner
 			return _runBulkWrite(emf,statement,t0,dryRun);
 		}
 		return _runQuery(emf,statement,t0);
+	}
+
+	/** Ejecuta un SELECT SQL nativo, siempre dentro de una transacciÃ³n que termina en rollback. */
+	public HqlResult executeSqlReadOnly(String sql)
+	{
+		EntityManagerFactory emf=_entityManagerFactory();
+		long t0=System.nanoTime();
+		EntityManager em=emf.createEntityManager();
+		try
+		{
+			EntityTransaction tx=_begin(em);
+			try
+			{
+				Query query=em.createNativeQuery(sql);
+				_limite(query,maxRows,maxRows>0);
+				List<?> raw=query.getResultList();
+				boolean truncated=maxRows>0&&raw.size()>maxRows;
+				List<?> visible=truncated?raw.subList(0,maxRows):raw;
+				SqlMetadata metadata=_sqlMetadata(em,sql);
+				List<List<Object>> rows=_toRows(visible,emf);
+				List<String> headers=metadata.headers().isEmpty()?_defaultHeaders(rows):metadata.headers();
+				List<String> types=metadata.types().size()==headers.size()
+						?metadata.types():_columnTypes(visible,headers.size());
+				tx.rollback();
+				return HqlResult.query(headers,types,rows,truncated,_millis(t0),
+						truncated?"truncado a "+maxRows+" filas":null);
+			}
+			catch(RuntimeException e)
+			{
+				_rollbackQuietly(tx);
+				throw e;
+			}
+		}
+		finally
+		{
+			em.close();
+		}
+	}
+
+	/** El DESC de SQL es metadata de JDBC, no una sentencia enviada al motor. */
+	public HqlResult executeSqlDesc(String statement)
+	{
+		EntityManagerFactory emf=_entityManagerFactory();
+		long t0=System.nanoTime();
+		Statement parsed=StatementParser.parse(statement);
+		if( parsed==null||parsed.kind()!=Statement.Kind.DESC )
+		{
+			throw new IllegalArgumentException("DESC espera una tabla o nada: DESC [tabla]");
+		}
+		return parsed.entity()==null
+				?describer.describeTables(emf.getMetamodel(),t0)
+				:describer.describeTable(parsed.entity(),t0);
+	}
+
+	private record SqlMetadata(List<String> headers,List<String> types) {}
+
+	/** Lee la metadata con la misma conexiÃ³n de Hibernate; si el driver no la expone, degrada. */
+	private SqlMetadata _sqlMetadata(EntityManager em,String sql)
+	{
+		try
+		{
+			return em.unwrap(Session.class).doReturningWork(connection -> {
+				try( PreparedStatement statement=connection.prepareStatement(sql) )
+				{
+					ResultSetMetaData metadata=statement.getMetaData();
+					if( metadata==null ) { return new SqlMetadata(List.of(),List.of()); }
+					List<String> headers=new ArrayList<>();
+					List<String> types=new ArrayList<>();
+					for(int i=1;i<=metadata.getColumnCount();i++)
+					{
+						String label=metadata.getColumnLabel(i);
+						headers.add(label==null||label.isBlank()?"col"+i:label);
+						types.add(_sqlColumnType(metadata.getColumnType(i)).name());
+					}
+					return new SqlMetadata(headers,types);
+				}
+				catch(SQLException e)
+				{
+					return new SqlMetadata(List.of(),List.of());
+				}
+			});
+		}
+		catch(RuntimeException unsupported)
+		{
+			return new SqlMetadata(List.of(),List.of());
+		}
+	}
+
+	private HqlResult.ColumnType _sqlColumnType(int type)
+	{
+		return switch(type)
+		{
+			case Types.BIGINT,Types.BIT,Types.DECIMAL,Types.DOUBLE,Types.FLOAT,Types.INTEGER,Types.NUMERIC,
+					Types.REAL,Types.SMALLINT,Types.TINYINT -> HqlResult.ColumnType.NUMERO;
+			case Types.DATE,Types.TIME,Types.TIME_WITH_TIMEZONE,Types.TIMESTAMP,Types.TIMESTAMP_WITH_TIMEZONE -> HqlResult.ColumnType.FECHA;
+			case Types.BOOLEAN -> HqlResult.ColumnType.BOOLEANO;
+			case Types.CHAR,Types.CLOB,Types.LONGNVARCHAR,Types.LONGVARCHAR,Types.NCHAR,Types.NCLOB,Types.NVARCHAR,
+					Types.VARCHAR -> HqlResult.ColumnType.TEXTO;
+			default -> HqlResult.ColumnType.OTRO;
+		};
 	}
 
 	// ==================== sentencias propias de la consola ====================

@@ -82,6 +82,7 @@ public class HqlConsoleController
 		// Los comentarios se sacan ANTES de partir por ';' y de parsear: así un ';' adentro de un
 		// comentario no parte la sentencia, y lo que llega al motor (y al control de escrituras) es
 		// sólo la sentencia. El texto original se conserva aparte para el mensaje de error.
+		String language=body!=null&&body.get("language") instanceof String value?value:"hql";
 		String texto=Text.withoutComments(hql);
 		if( texto.isBlank() )
 		{
@@ -92,6 +93,35 @@ public class HqlConsoleController
 		if( statements.isEmpty() )
 		{
 			return ResponseEntity.badRequest().body(Map.of("error","No hay ninguna sentencia para ejecutar."));
+		}
+
+		if( "sql".equalsIgnoreCase(language) )
+		{
+			if( statements.size()!=1 )
+			{
+				return ResponseEntity.badRequest().body(Map.of("error","En modo SQL se ejecuta una sentencia por vez.",
+						"statement",hql.trim()));
+			}
+			String statement=statements.get(0);
+			String first=_firstWord(statement);
+			try
+			{
+				if( "desc".equals(first)||"describe".equals(first) )
+				{
+					return ResponseEntity.ok(runner.executeSqlDesc(statement));
+				}
+				if( !"select".equals(first) )
+				{
+					return ResponseEntity.badRequest().body(Map.of("error",
+							"En la solapa SQL sÃ³lo se permite SELECT (DESC sirve para ver tablas y columnas).",
+							"statement",hql.trim()));
+				}
+				return ResponseEntity.ok(runner.executeSqlReadOnly(statement));
+			}
+			catch(Exception e)
+			{
+				return ResponseEntity.badRequest().body(_error(e,hql));
+			}
 		}
 
 		// allow-writes se mira ANTES de cualquier cosa: con la consola en solo-lectura, un dry-run

@@ -38,9 +38,10 @@ function Check([string]$name, [bool]$condition, [string]$detail = '') {
     }
 }
 
-function Exec([string]$hql, $DryRun = $null) {
-    $payload = @{ hql = $hql }
-    if ($null -ne $DryRun) { $payload['dryRun'] = $DryRun }
+function Exec([string]$hql, $DryRun = $null, [string]$Language = 'hql') {
+	$payload = @{ hql = $hql }
+	if ($null -ne $DryRun) { $payload['dryRun'] = $DryRun }
+	$payload['language'] = $Language
     $body = $payload | ConvertTo-Json -Compress
     try {
         $r = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$base/hqlconsole/api/execute" `
@@ -68,7 +69,7 @@ if ($LASTEXITCODE -ne 0) { throw 'El build fallo.' }
 #
 # Se busca el jar de ESA version, no el primero que aparezca en build/libs: despues de un par de
 # releases hay jars de versiones viejas y agarrar el primero daba un FAIL falso.
-$versionImpreso = (& (Join-Path $root 'gradlew.bat') -p $root --console=plain -q printVersion | Select-Object -Last 1)
+$versionImpreso = (& (Join-Path $root 'gradlew.bat') -p $root --console=plain -q printVersion | Where-Object { $_ -match '^\d+\.\d+\.\d+$' } | Select-Object -Last 1)
 $versionImpreso = "$versionImpreso".Trim()
 $jarEsperado = Join-Path $root "hql-console-starter\build\libs\hql-console-starter-$versionImpreso.jar"
 $jarStarter = Get-Item $jarEsperado -ErrorAction SilentlyContinue
@@ -98,6 +99,8 @@ try {
 
     Check 'GET /hqlconsole responde 200 HTML' ($page.StatusCode -eq 200 -and "$($page.Headers['Content-Type'])" -like 'text/html*') $page.StatusCode
     Check 'la pagina trae el textarea y el boton' ($page.Content -match '<textarea' -and $page.Content -match 'id="run"')
+    Check 'la pagina trae las dos solapas y los dos editores' ($page.Content -match 'id="tab-hql"' -and $page.Content -match 'id="tab-sql"' -and $page.Content -match 'id="sql"') 'falta HQL o SQL'
+    Check 'la pagina persiste SQL y la solapa activa' ($page.Content -match 'hql-console.consulta-sql' -and $page.Content -match 'hql-console.solapa') 'faltan claves SQL'
     $barra = [regex]::Match($page.Content, '(?s)<div class="barra">(.*?)</div>')
     Check 'el encabezado solo dice HQL Console' ($barra.Success -and $barra.Groups[1].Value -match 'HQL Console' -and $barra.Groups[1].Value -notmatch '<span') 'el encabezado tiene algo demas'
     Check 'la pagina ya no muestra la ruta ni el aviso' ($page.Content -notmatch 'class="ruta"' -and $page.Content -notmatch 'herramienta de desarrollo') 'quedo la ruta o el aviso'
@@ -189,6 +192,21 @@ try {
     Check 'la tabla con mayusculas mezcladas se muestra tal cual' (@($r.json.rows | Where-Object { $_[0] -eq 'Etiqueta' -and $_[1] -ceq 'EtiquetaRara' }).Count -eq 1) $r.raw
     # Los atributos y las clases no se tocan: se muestran como estan escritos.
     Check 'la entidad se muestra como la clase' (@($r.json.rows | Where-Object { $_[0] -ceq 'Etiqueta' }).Count -eq 1) $r.raw
+
+    # --- SQL nativo de solo lectura ---
+    $r = Exec 'SELECT ID, TITULO FROM LIBROS ORDER BY ID' $null 'sql'
+    Check 'SQL SELECT nativo devuelve filas y headers' ($r.status -eq 200 -and $r.json.rowCount -gt 0 -and ($r.json.headers -join ',') -eq 'ID,TITULO') $r.raw
+    if ($MaxRows -lt 6) { Check 'SQL respeta el tope de filas' ($r.json.rowCount -eq $MaxRows -and $r.json.truncated -eq $true) $r.raw }
+    $r = Exec "-- comentario`nSELECT ID FROM LIBROS" $null 'sql'
+    Check 'SQL acepta comentarios' ($r.status -eq 200 -and $r.json.rowCount -gt 0) $r.raw
+    $r = Exec 'DROP TABLE LIBROS' $null 'sql'
+    Check 'SQL bloquea DDL y dice que solo permite SELECT' ($r.status -eq 400 -and $r.json.error -match 'permite SELECT') $r.raw
+    $r = Exec 'SELECT ID FROM LIBROS; SELECT TITULO FROM LIBROS' $null 'sql'
+    Check 'SQL bloquea varias sentencias' ($r.status -eq 400 -and $r.json.error -match 'una sentencia por vez') $r.raw
+    $r = Exec 'DESC' $null 'sql'
+    Check 'DESC SQL lista tablas sin catalogos del sistema' ($r.status -eq 200 -and ($r.json.headers -join ',') -eq 'TABLA,TIPO,ES_ENTIDAD' -and ($r.json.rows -join ',') -notmatch 'INFORMATION_SCHEMA') $r.raw
+    $r = Exec 'DESC LIBROS' $null 'sql'
+    Check 'DESC SQL muestra campos, PK y FK' ($r.status -eq 200 -and ($r.json.headers -join ',') -eq 'CAMPO,TIPO SQL,NULO,PK,FK' -and @($r.json.rows | Where-Object { $_[3] -eq 'PK' -and $_[4] -eq '-' }).Count -gt 0 -and @($r.json.rows | Where-Object { $_[4] -match 'AUTORES\(ID\)' }).Count -gt 0) $r.raw
     $r = Exec 'DESC NoExiste'
     Check 'DESC de una entidad inexistente da 400 y lista las que hay' ($r.status -eq 400 -and $r.json.error -match 'Las que hay son') $r.raw
 
@@ -495,6 +513,17 @@ check('parrafo: recorta las lineas en blanco de los bordes', par('\n\nSELECT 1\n
 check('parrafo: linea en blanco al inicio ancla hacia abajo', par('\n\nSELECT 9', 0), 'SELECT 9');
 check('parrafo: un texto solo de blancos no tiene parrafo', par('   \n\n', 2).trim(), '');
 check('parrafo: con CRLF el de abajo no se mezcla', par('A\r\n\r\nB', 6), 'B');
+
+// --- filtro y seguridad de la solapa SQL ---
+check('sql: normaliza filtro', normalizarFiltro('  LiBrOs  '), 'libros');
+check('sql: SELECT es solo lectura', esSoloLectura(' SELECT '), true);
+check('sql: DROP no es solo lectura', esSoloLectura('drop'), false);
+check('sql: clave SQL propia', claveDeTexto('sql'), 'hql-console.consulta-sql');
+check('sql: clave HQL por defecto', claveDeTexto('otro'), 'hql-console.consulta');
+var tablasFiltro = [{nombre:'LIBROS',tipo:'TABLA'},{nombre:'V_LIBROS',tipo:'VISTA'}];
+check('sql: filtra por texto', filtrarTablas(tablasFiltro, 'v_', 'Todas').length, 1);
+check('sql: filtra por tipo', filtrarTablas(tablasFiltro, '', 'Tablas').length, 1);
+check('sql: filtro no muta la lista', tablasFiltro.length, 2);
 
 // --- el alert del INSERT (el texto va con escapes porque este archivo lo lee PowerShell como ANSI) ---
 check('insert: una fila', mensajeInsercion(1, 1), 'Se insert\u00f3 1 fila');

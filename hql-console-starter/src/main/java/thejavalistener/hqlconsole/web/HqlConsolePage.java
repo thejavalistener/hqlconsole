@@ -185,6 +185,10 @@ public final class HqlConsolePage
 		<div class="barra">
 		  <h1>HQL Console</h1>
 		</div>
+		<div id="solapas" role="tablist" aria-label="Lenguaje de consulta">
+		  <button type="button" id="tab-hql" role="tab" aria-selected="true">HQL</button>
+		  <button type="button" id="tab-sql" role="tab" aria-selected="false">SQL</button>
+		</div>
 		<div id="error"><div id="error-msg"></div><pre id="error-sql"></pre></div>
 		<div id="split">
 		  <aside id="panel-entidades">
@@ -197,6 +201,7 @@ public final class HqlConsolePage
 		  </aside>
 		  <div id="panel-editor">
 		    <textarea id="hql" spellcheck="false" wrap="off" placeholder="SELECT e.id, e.nombre FROM Empleado e"></textarea>
+		    <textarea id="sql" spellcheck="false" wrap="off" placeholder="SELECT ID, TITULO FROM LIBROS" hidden></textarea>
 		    <div class="pie-editor">
 		      <span class="estado" id="pista">Ctrl+Enter:</span>
 		      <span class="estado sel alcance" id="seleccion"></span>
@@ -297,7 +302,12 @@ public final class HqlConsolePage
 		})();
 
 		function guardarTexto() {
-		  try { ALMACEN.setItem(CLAVE_TEXTO, ta.value); } catch (e) {}
+		  if (typeof languageActiva === 'undefined' || languageActiva === 'hql') {
+		    try { ALMACEN.setItem(CLAVE_TEXTO, ta.value); } catch (e) {}
+		    return;
+		  }
+		  const editor = typeof editorActivo === 'function' ? editorActivo() : ta;
+		  try { ALMACEN.setItem(claveDeTexto(typeof languageActiva === 'undefined' ? 'hql' : languageActiva), editor.value); } catch (e) {}
 		}
 
 		// Lo que haya guardado se restituye al abrir la página: sobrevive a recargar y a reiniciar
@@ -331,6 +341,17 @@ public final class HqlConsolePage
 		  if (inicio < fin) { return valor.substring(inicio, fin); }
 		  return valor;
 		}
+
+		function normalizarFiltro(texto) { return String(texto || '').trim().toLowerCase(); }
+		function claveDeTexto(language) { return language === 'sql' ? 'hql-console.consulta-sql' : 'hql-console.consulta'; }
+		function esSoloLectura(primeraPalabra) { return normalizarFiltro(primeraPalabra) === 'select'; }
+		function pasaFiltroTabla(tabla, filtro, tipo) {
+		  const fila = tabla || {};
+		  const coincideTexto = normalizarFiltro(fila.nombre).indexOf(normalizarFiltro(filtro)) >= 0;
+		  const coincideTipo = !tipo || tipo === 'Todas' || tipo === fila.tipo || (tipo === 'Tablas' && fila.tipo === 'TABLA') || (tipo === 'Vistas' && fila.tipo === 'VISTA');
+		  return coincideTexto && coincideTipo;
+		}
+		function filtrarTablas(tablas, filtro, tipo) { return (tablas || []).filter(function(tabla) { return pasaFiltroTabla(tabla, filtro, tipo); }); }
 
 		// El texto, partido en líneas con sus offsets. Una línea en blanco (o con sólo espacios) es
 		// la frontera entre párrafos. Se conserva el salto de línea final implícito: un texto que
@@ -903,7 +924,10 @@ public final class HqlConsolePage
 
 		// Dibuja (o redibuja) la lista con los nombres que ya conocemos. Se puede llamar varias veces.
 		function pintarEntidades() {
-		  const nombres = entidadesConocidas ? Array.from(entidadesConocidas).sort() : [];
+		  const filtro = normalizarFiltro(typeof filtroTablas === 'undefined' ? '' : filtroTablas.value);
+		  const nombres = (entidadesConocidas ? Array.from(entidadesConocidas) : []).filter(function(nombre) {
+		    return normalizarFiltro(nombre).indexOf(filtro) >= 0;
+		  }).sort();
 		  listaEntidades.textContent = '';
 		  nombres.forEach(function(nombre) {
 		    const boton = document.createElement('button');
@@ -1138,6 +1162,7 @@ public final class HqlConsolePage
 
 		// ==================== ejecutar ====================
 		function ejecutar() {
+		  if (typeof languageActiva !== 'undefined' && languageActiva === 'sql') { ejecutarSql(); return; }
 		  // Se guarda el contenido del editor, no lo último ejecutado: es el estado del textarea.
 		  guardarTexto();
 		  const rango = rangoAEjecutar();
@@ -1211,7 +1236,7 @@ public final class HqlConsolePage
 		  const respuesta = await fetch(BASE + '/api/execute', {
 		    method: 'POST',
 		    headers: { 'Content-Type': 'application/json' },
-		    body: JSON.stringify({ hql: hql, dryRun: dryRun })
+		    body: JSON.stringify({ hql: hql, dryRun: dryRun, language: typeof languageActiva === 'undefined' ? 'hql' : languageActiva })
 		  });
 		  let datos;
 		  try {
@@ -1495,7 +1520,48 @@ public final class HqlConsolePage
 
 		// La lista de entidades se pide sola al abrir la página: es lo que llena el panel lateral.
 		// Si el pedido falla, el panel queda vacío y no pasa nada más: no es un error para el usuario.
-		asegurarEntidades();
+		const sqlEditor = document.getElementById('sql');
+		const tabHql = document.getElementById('tab-hql');
+		const tabSql = document.getElementById('tab-sql');
+		const CLAVE_TEXTO_SQL = 'hql-console.consulta-sql';
+		const CLAVE_SOLAPA = 'hql-console.solapa';
+		let languageActiva = ALMACEN.getItem(CLAVE_SOLAPA) === 'sql' ? 'sql' : 'hql';
+		let tablasConocidas = [];
+		const estiloSql = document.createElement('style');
+		estiloSql.textContent = '#solapas{display:flex;gap:4px}.solapa-activa{background:#174f96}#sql{flex:1 1 auto;width:100%;min-height:0;margin:0;padding:10px;background:#fff;font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:1.5;border:1px solid var(--borde);border-radius:6px;resize:none;tab-size:2;wrap:off;white-space:pre;overflow:auto}body.modo-hql #panel-entidades,body.modo-sql #panel-entidades{width:220px}body.modo-sql #menu{display:none!important}.filtros-tablas{display:flex;gap:3px;padding:4px}.filtros-tablas input{width:100%;min-width:0}.filtros-tablas select{max-width:70px}';
+		document.head.appendChild(estiloSql);
+		const filtros = document.createElement('div');
+		filtros.className = 'filtros-tablas';
+		filtros.innerHTML = '<input id="filtro-tablas" type="search" placeholder="Filtrar tablas" aria-label="Filtrar tablas"><select id="tipo-tablas" aria-label="Tipo de objeto"><option>Todas</option><option>Tablas</option><option>Vistas</option></select>';
+		const filtroTablas = filtros.querySelector('#filtro-tablas');
+		const tipoTablas = filtros.querySelector('#tipo-tablas');
+		panelEntidades.querySelector('#entidades-cabecera').after(filtros);
+
+		function editorActivo() { return languageActiva === 'sql' ? sqlEditor : ta; }
+		function cambiarSolapa(language) {
+		  languageActiva = language === 'sql' ? 'sql' : 'hql';
+		  document.body.classList.toggle('modo-sql', languageActiva === 'sql'); document.body.classList.toggle('modo-hql', languageActiva !== 'sql');
+		  ta.hidden = languageActiva === 'sql'; sqlEditor.hidden = languageActiva !== 'sql';
+		  tabHql.classList.toggle('solapa-activa', languageActiva === 'hql'); tabSql.classList.toggle('solapa-activa', languageActiva === 'sql');
+		  tabHql.setAttribute('aria-selected', languageActiva === 'hql' ? 'true' : 'false'); tabSql.setAttribute('aria-selected', languageActiva === 'sql' ? 'true' : 'false');
+		  filtros.hidden = false; tipoTablas.hidden = languageActiva !== 'sql'; filtroTablas.placeholder = languageActiva === 'sql' ? 'Filtrar tablas' : 'Filtrar entidades'; panelEntidades.querySelector('.entidades-titulo').textContent = languageActiva === 'sql' ? 'Tablas' : 'Entidades';
+		  ALMACEN.setItem(CLAVE_SOLAPA, languageActiva); if (languageActiva === 'sql') { asegurarTablas(); } else { asegurarEntidades(); }
+		  editorActivo().focus(); refrescarSeleccionActiva();
+		}
+		function guardarTextoActivo() { try { ALMACEN.setItem(claveDeTexto(languageActiva), editorActivo().value); } catch (e) {} }
+		const sqlGuardado = ALMACEN.getItem(CLAVE_TEXTO_SQL);
+		sqlEditor.value = sqlGuardado === null || sqlGuardado === undefined ? '' : sqlGuardado;
+		tabHql.addEventListener('click', function() { cambiarSolapa('hql'); }); tabSql.addEventListener('click', function() { cambiarSolapa('sql'); });
+		function rangoSql() { const inicio=sqlEditor.selectionStart, fin=sqlEditor.selectionEnd, recorte=textoAejecutar(sqlEditor.value,inicio,fin); if(fin>inicio&&recorte.trim()){return {hql:recorte,etiqueta:'selecciÃ³n',inicio:inicio,fin:fin,pintar:false};} const p=rangoParrafo(sqlEditor.value,inicio); return {hql:sqlEditor.value.substring(p.inicio,p.fin),etiqueta:'pÃ¡rrafo del cursor',inicio:p.inicio,fin:p.fin,pintar:true}; }
+		function refrescarSeleccionActiva() { const editor=editorActivo(),inicio=editor.selectionStart,fin=editor.selectionEnd,seleccionado=fin>inicio&&editor.value.substring(inicio,fin).trim(),p=rangoParrafo(editor.value,inicio),cantidad=seleccionado?fin-inicio:editor.value.substring(p.inicio,p.fin).trim().length; seleccion.textContent=(seleccionado?'se ejecutarÃ¡ sÃ³lo la selecciÃ³n':'se ejecutarÃ¡ el pÃ¡rrafo del cursor')+' ('+cantidad+' caracteres)'; }
+		function ejecutarSql() { guardarTextoActivo(); const rango=rangoSql(); if(rango.pintar){sqlEditor.focus();sqlEditor.setSelectionRange(rango.inicio,rango.fin);} ejecutarTextoSql(rango.hql.split('\\r').join('').trim(),rango.etiqueta); }
+		async function ejecutarTextoSql(sql,etiqueta) { if(!sql){mostrarError({error:'No hay nada que ejecutar.'});return;} btn.disabled=true;cajaError.style.display='none';estado.textContent='Ejecutando '+etiqueta+'...';try{const respuesta=await pedir(sql,false);if(!respuesta.ok){mostrarError(respuesta.datos);return;}resetPanelDerecho();mostrarResultado(respuesta.datos);}catch(e){mostrarError({error:'No se pudo contactar la consola: '+e});}finally{btn.disabled=false;} }
+		function pintarTablas() { const visibles=filtrarTablas(tablasConocidas,filtroTablas.value,tipoTablas.value);listaEntidades.textContent='';visibles.forEach(function(tablaSql){const boton=document.createElement('button');boton.type='button';boton.className='entidad-item';boton.textContent=tablaSql.nombre;boton.title=tablaSql.tipo+(tablaSql.entidad?' (entidad mapeada)':'');boton.addEventListener('click',function(){ejecutarTextoSql('SELECT * FROM '+tablaSql.nombre+' LIMIT '+LIMITE_MENU,'la tabla '+tablaSql.nombre);});listaEntidades.appendChild(boton);}); }
+		async function asegurarTablas() { if(tablasConocidas.length){pintarTablas();return;}const respuesta=await pedir('DESC',false);if(!respuesta.ok){tablasConocidas=[];pintarTablas();return;}const h=respuesta.datos.headers||[],n=h.indexOf('TABLA'),t=h.indexOf('TIPO'),e=h.indexOf('ES_ENTIDAD');tablasConocidas=(respuesta.datos.rows||[]).map(function(fila){return {nombre:String(fila[n]),tipo:String(fila[t]),entidad:e>=0&&fila[e]==='SI'};});pintarTablas(); }
+		filtroTablas.addEventListener('input',function(){if(languageActiva==='sql'){pintarTablas();}else{pintarEntidades();}});tipoTablas.addEventListener('change',pintarTablas);
+		sqlEditor.addEventListener('input',function(){clearTimeout(temporizador);temporizador=setTimeout(guardarTextoActivo,400);refrescarSeleccionActiva();});sqlEditor.addEventListener('keydown',function(ev){if(ev.key==='Enter'&&(ev.ctrlKey||ev.metaKey)){ev.preventDefault();ejecutarSql();}});['keyup','mouseup','select','click'].forEach(function(evento){sqlEditor.addEventListener(evento,refrescarSeleccionActiva);});window.addEventListener('pagehide',guardarTextoActivo);
+		cambiarSolapa(languageActiva);
+		if (languageActiva === 'hql') { asegurarEntidades(); }
 		</script>
 		</body>
 		</html>

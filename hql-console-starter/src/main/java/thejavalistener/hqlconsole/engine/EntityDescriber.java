@@ -170,6 +170,150 @@ public class EntityDescriber
 
 	// ==================== metadata real de la base ====================
 
+	/** {@code DESC} SQL sin argumentos: tablas y vistas del esquema de la conexiÃ³n. */
+	public HqlResult describeTables(Metamodel metamodel,long t0)
+	{
+		DataSource source=dataSource.getIfAvailable();
+		if( source==null )
+		{
+			return HqlResult.query(List.of("TABLA","TIPO","ES_ENTIDAD"),
+					_tipos(ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO),List.of(),false,_millis(t0));
+		}
+		Set<String> mapped=new LinkedHashSet<>();
+		for(EntityType<?> entity:metamodel.getEntities())
+		{
+			mapped.add(Mapping.physicalName(Mapping.tableName(entity)).toLowerCase(Locale.ROOT));
+		}
+		List<List<Object>> rows=new ArrayList<>();
+		try( Connection connection=source.getConnection() )
+		{
+			String schema=_schema(connection);
+			String[] types={"TABLE","VIEW","MATERIALIZED VIEW"};
+			try( ResultSet result=connection.getMetaData().getTables(null,schema,"%",types) )
+			{
+				while(result.next())
+				{
+					String table=result.getString("TABLE_NAME");
+					String tableSchema=result.getString("TABLE_SCHEM");
+					String type=result.getString("TABLE_TYPE");
+					if( table==null||_systemSchema(tableSchema)||(type!=null&&type.toUpperCase(Locale.ROOT).contains("TEMP")) )
+					{
+						continue;
+					}
+					String shown=Mapping.physicalName(table);
+					String kind=type!=null&&type.toUpperCase(Locale.ROOT).contains("VIEW")?"VISTA":"TABLA";
+					rows.add(List.of(shown,kind,mapped.contains(shown.toLowerCase(Locale.ROOT))?"SI":"NO"));
+				}
+			}
+		}
+		catch(SQLException e)
+		{
+			log.debug("No se pudo leer la lista de tablas SQL: {}",e.getMessage());
+		}
+		rows.sort(Comparator.comparing(row -> String.valueOf(row.get(0))));
+		return HqlResult.query(List.of("TABLA","TIPO","ES_ENTIDAD"),
+				_tipos(ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO),rows,false,_millis(t0));
+	}
+
+	/** {@code DESC <tabla>} SQL: columnas y restricciones que expone JDBC. */
+	public HqlResult describeTable(String table,long t0)
+	{
+		DataSource source=dataSource.getIfAvailable();
+		List<List<Object>> rows=new ArrayList<>();
+		if( source==null )
+		{
+			return _tableResult(rows,t0);
+		}
+		try( Connection connection=source.getConnection() )
+		{
+			DatabaseMetaData metadata=connection.getMetaData();
+			String schema=_schema(connection);
+			String actual=_tableWithColumns(metadata,schema,table);
+			if( actual==null )
+			{
+				throw new IllegalArgumentException("No conozco la tabla '"+table+"'.");
+			}
+			Set<String> primary=_primaryKeys(metadata,schema,actual);
+			Map<String,List<String>> foreign=_foreignKeys(metadata,schema,actual);
+			try( ResultSet columns=metadata.getColumns(null,schema,actual,null) )
+			{
+				while(columns.next())
+				{
+					String name=columns.getString("COLUMN_NAME");
+					boolean nullable=columns.getInt("NULLABLE")!=DatabaseMetaData.columnNoNulls;
+					List<String> destinations=foreign.getOrDefault(name.toLowerCase(Locale.ROOT),List.of());
+					rows.add(List.of(Mapping.physicalName(name),columns.getString("TYPE_NAME"),nullable?"SI":"NO",
+							primary.contains(name.toLowerCase(Locale.ROOT))?"PK":"-",
+							destinations.isEmpty()?"-":String.join(",",destinations)));
+				}
+			}
+		}
+		catch(SQLException e)
+		{
+			throw new IllegalArgumentException("No pude leer la metadata de la tabla '"+table+"': "+e.getMessage(),e);
+		}
+		return _tableResult(rows,t0);
+	}
+
+	private HqlResult _tableResult(List<List<Object>> rows,long t0)
+	{
+		return HqlResult.query(List.of("CAMPO","TIPO SQL","NULO","PK","FK"),
+				_tipos(ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO),
+				rows,false,_millis(t0));
+	}
+
+	private String _schema(Connection connection)
+	{
+		try { return connection.getSchema(); }
+		catch(AbstractMethodError|SQLException|UnsupportedOperationException e) { return null; }
+	}
+
+	private boolean _systemSchema(String schema)
+	{
+		if( schema==null ) { return false; }
+		String value=schema.toLowerCase(Locale.ROOT);
+		return value.equals("information_schema")||value.equals("pg_catalog")||value.equals("sys")
+				||value.equals("mysql")||value.equals("performance_schema");
+	}
+
+	private String _tableWithColumns(DatabaseMetaData metadata,String schema,String table) throws SQLException
+	{
+		for(String candidate:List.of(table,table.toUpperCase(Locale.ROOT),table.toLowerCase(Locale.ROOT)))
+		{
+			try( ResultSet columns=metadata.getColumns(null,schema,candidate,null) )
+			{
+				if( columns.next() ) { return candidate; }
+			}
+		}
+		return null;
+	}
+
+	private Set<String> _primaryKeys(DatabaseMetaData metadata,String schema,String table) throws SQLException
+	{
+		Set<String> keys=new LinkedHashSet<>();
+		try( ResultSet result=metadata.getPrimaryKeys(null,schema,table) )
+		{
+			while(result.next()) { keys.add(result.getString("COLUMN_NAME").toLowerCase(Locale.ROOT)); }
+		}
+		return keys;
+	}
+
+	private Map<String,List<String>> _foreignKeys(DatabaseMetaData metadata,String schema,String table) throws SQLException
+	{
+		Map<String,List<String>> keys=new LinkedHashMap<>();
+		try( ResultSet result=metadata.getImportedKeys(null,schema,table) )
+		{
+			while(result.next())
+			{
+				String column=result.getString("FKCOLUMN_NAME").toLowerCase(Locale.ROOT);
+				String target=Mapping.physicalName(result.getString("PKTABLE_NAME"))+"("
+						+Mapping.physicalName(result.getString("PKCOLUMN_NAME"))+")";
+				keys.computeIfAbsent(column,ignored -> new ArrayList<>()).add(target);
+			}
+		}
+		return keys;
+	}
+
 	private Map<String,SqlColumn> _columnsFromDatabase(EntityType<?> entityType)
 	{
 		DataSource source=dataSource.getIfAvailable();

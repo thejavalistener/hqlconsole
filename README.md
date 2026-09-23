@@ -313,6 +313,18 @@ SELECT * FROM Libro l WHERE l.precio > 10000 ORDER BY l.id LIMIT 10
   `Libro#1 | Autor#1`. Con `SELECT` explícito tampoco se aplana, porque ahí se devuelve exactamente
   lo que se pidió.
 
+### SQL nativo (sólo lectura)
+
+La solapa **SQL** ejecuta consultas SQL nativas contra la misma conexión de la aplicación. Sólo
+acepta una sentencia `SELECT` por vez: `INSERT`, `UPDATE`, `DELETE`, DDL y CTE (`WITH`) se rechazan
+antes de tocar la base. Los comentarios `//`, `#` y `--` funcionan igual que en HQL, y el tope
+`hql-console.max-rows` también se aplica y avisa si el resultado quedó truncado.
+
+El panel izquierdo muestra las tablas y vistas del esquema, incluidas las que no tienen entidad
+mapeada; permite filtrarlas por nombre y tipo. Un clic ejecuta `SELECT * FROM <tabla> LIMIT 100`.
+En esta solapa, `DESC` lista `TABLA | TIPO | ES_ENTIDAD` y `DESC <tabla>` muestra
+`CAMPO | TIPO SQL | NULO | PK | FK`. No hay navegación de relaciones ni generación de INSERT.
+
 ### Las tres sentencias propias de la consola
 
 Hibernate no las conoce. Son éstas:
@@ -682,8 +694,8 @@ Verificado end-to-end con `verify-demo.ps1`, que compila, levanta el fat jar del
 comprobaciones contra una H2 en memoria (Spring Boot 3.2.5, Hibernate 6.4.4, Java 21):
 
 ```
-.\verify-demo.ps1                                  # 228 PASS / 0 FAIL
-.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 235 PASS / 0 FAIL
+.\verify-demo.ps1                                  # 236 PASS / 0 FAIL
+.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 244 PASS / 0 FAIL
 ```
 
 Cubre: descubrimiento de la auto-configuración por el `.imports` del jar, la página servida desde

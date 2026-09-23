@@ -48,6 +48,23 @@ trabajo (una sesión nueva, otro modelo) no tenga que adivinar: la documentació
 | #12 menú de la entidad por hover (1s) con DESC / SELECT / INSERT | **hecho** |
 | #13 el header no cambia de tamaño al pasar el mouse | **hecho** |
 | #14 case estricto de atributos en los SELECT | **descartado a propósito**; documentado |
+| #15 solapa SQL nativa de sólo lectura | **hecho** |
+
+## #15 — Solapa SQL nativa de sólo lectura
+
+- Hay dos editores persistentes: HQL conserva `hql-console.consulta`; SQL usa
+  `hql-console.consulta-sql`; la solapa activa queda en `hql-console.solapa`.
+- El backend usa una lista blanca: en SQL sólo llega al motor una única sentencia `SELECT`.
+  `DESC` es una orden propia de la consola y no se ejecuta como SQL.
+- `DESC` SQL sin argumentos devuelve exactamente `TABLA | TIPO | ES_ENTIDAD`; `DESC <tabla>`
+  devuelve `CAMPO | TIPO SQL | NULO | PK | FK`. La metadata sale de JDBC, excluye catálogos del
+  sistema y no falla la página cuando no hay datasource.
+- El SELECT nativo se ejecuta en una transacción resource-local que siempre hace rollback. Se usa
+  la metadata JDBC para headers y tipos, con degradación segura si el driver no la expone.
+- En modo SQL se ocultan el menú de entidades y la generación de INSERT. El panel lista tablas y
+  vistas, permite filtrar por texto/tipo y ejecuta un SELECT limitado al hacer clic.
+- Verificación vigente: `verify-demo.ps1` da **236 PASS / 0 FAIL**; con
+  `-ContextPath /demo -MaxRows 3`, **244 PASS / 0 FAIL**.
 
 ## #12 — El menú por hover, y el bug del header
 
