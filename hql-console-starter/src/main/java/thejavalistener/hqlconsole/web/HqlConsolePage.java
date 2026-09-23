@@ -190,7 +190,6 @@ public final class HqlConsolePage
 		  <div id="solapas" role="tablist" aria-label="Lenguaje de consulta">
 		    <button type="button" id="tab-hql" role="tab" aria-selected="true">HQL</button>
 		    <button type="button" id="tab-sql" role="tab" aria-selected="false">SQL</button>
-		    <span id="alcance-solapa">Entidades + editor</span>
 		  </div>
 		  <aside id="panel-entidades">
 		    <div id="entidades-cabecera">
@@ -1355,9 +1354,9 @@ public final class HqlConsolePage
 
 		  if (datos.type === 'DML' || datos.type === 'BATCH') {
 		    cajaTabla.hidden = true;
-		    pie.textContent = '';
 		    const detalle = datos.message ? datos.message : (datos.affectedRows + ' fila(s) afectada(s)');
-		    estado.textContent = detalle + ' en ' + datos.elapsedMs + ' ms';
+		    estado.textContent = '';
+		    pie.textContent = detalle + ' en ' + datos.elapsedMs + ' ms';
 		    return null;
 		  }
 
@@ -1366,10 +1365,8 @@ public final class HqlConsolePage
 		  let resumen = datos.rowCount + ' fila' + (datos.rowCount === 1 ? '' : 's') + ' en ' + datos.elapsedMs + ' ms';
 		  if (datos.truncated) { resumen = resumen + ' - truncado a ' + MAX_ROWS + ' filas'; }
 		  if (datos.message) { resumen = resumen + ' - ' + datos.message; }
-		  estado.textContent = resumen;
-		  pie.textContent = ALLOW_WRITES
-		    ? 'escrituras habilitadas (hql-console.allow-writes=true)'
-		    : 'solo lectura (hql-console.allow-writes=false)';
+		  estado.textContent = '';
+		  pie.textContent = resumen;
 		  return cabeceras;
 		}
 		""";
@@ -1526,7 +1523,6 @@ public final class HqlConsolePage
 		const tabHql = document.getElementById('tab-hql');
 		const tabSql = document.getElementById('tab-sql');
 		const tituloConsola = document.querySelector('.barra h1');
-		const alcanceSolapa = document.getElementById('alcance-solapa');
 		const CLAVE_TEXTO_SQL = 'hql-console.consulta-sql';
 		const CLAVE_SOLAPA = 'hql-console.solapa';
 		let languageActiva = ALMACEN.getItem(CLAVE_SOLAPA) === 'sql' ? 'sql' : 'hql';
@@ -1537,6 +1533,9 @@ public final class HqlConsolePage
 		const estiloIntegrado = document.createElement('style');
 		estiloIntegrado.textContent = '.barra{justify-content:center}.barra h1{font-size:17px}#panel-entidades{margin-right:0;border:1px solid var(--borde);border-top:0;border-right:0;border-radius:0 0 0 6px;background:#eef4ff}#panel-editor{border:1px solid var(--borde);border-top:0;border-left:0;border-radius:0 0 6px 0;background:#fff;padding:0;gap:0}#hql,#sql{border:0;border-radius:0;background:transparent;outline:0}#hql:focus,#sql:focus{outline:0}#panel-editor .pie-editor{padding:0 8px 8px}#entidades-cabecera{background:transparent}#toggle-entidades{opacity:.55}#toggle-entidades:hover{opacity:1}#panel-entidades.contraido .filtros-tablas{display:none}body.modo-hql #panel-entidades.contraido,body.modo-sql #panel-entidades.contraido{width:30px}#split.entidades-contraidas #solapas{width:calc(var(--ancho-editor) + 38px)}@media(max-width:720px){#panel-entidades{border:1px solid var(--borde);border-radius:6px}#panel-editor{border:1px solid var(--borde);border-radius:6px}}';
 		document.head.appendChild(estiloIntegrado);
+		const estiloResultados = document.createElement('style');
+		estiloResultados.textContent = '#panel-resultado{margin-top:31px}@media(max-width:720px){#panel-resultado{margin-top:0}}';
+		document.head.appendChild(estiloResultados);
 		const filtros = document.createElement('div');
 		filtros.className = 'filtros-tablas';
 		filtros.innerHTML = '<input id="filtro-tablas" type="search" placeholder="Filtrar tablas" aria-label="Filtrar tablas"><select id="tipo-tablas" aria-label="Tipo de objeto"><option>Todas</option><option>Tablas</option><option>Vistas</option></select>';
@@ -1552,7 +1551,6 @@ public final class HqlConsolePage
 		  tabHql.classList.toggle('solapa-activa', languageActiva === 'hql'); tabSql.classList.toggle('solapa-activa', languageActiva === 'sql');
 		  tabHql.setAttribute('aria-selected', languageActiva === 'hql' ? 'true' : 'false'); tabSql.setAttribute('aria-selected', languageActiva === 'sql' ? 'true' : 'false');
 		  tituloConsola.textContent = languageActiva === 'sql' ? 'SQL Console' : 'HQL Console';
-		  alcanceSolapa.textContent = languageActiva === 'sql' ? 'Tablas + editor' : 'Entidades + editor';
 		  filtros.hidden = false; tipoTablas.hidden = languageActiva !== 'sql'; filtroTablas.placeholder = languageActiva === 'sql' ? 'Filtrar tablas' : 'Filtrar entidades'; panelEntidades.querySelector('.entidades-titulo').textContent = languageActiva === 'sql' ? 'Tablas (SQL)' : 'Entidades (HQL)';
 		  ALMACEN.setItem(CLAVE_SOLAPA, languageActiva); if (languageActiva === 'sql') { asegurarTablas(); } else { pintarEntidades(); asegurarEntidades(); }
 		  editorActivo().focus(); refrescarSeleccionActiva();
