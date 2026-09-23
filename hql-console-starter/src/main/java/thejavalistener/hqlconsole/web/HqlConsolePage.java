@@ -190,6 +190,7 @@ public final class HqlConsolePage
 		  <div id="solapas" role="tablist" aria-label="Lenguaje de consulta">
 		    <button type="button" id="tab-hql" role="tab" aria-selected="true">HQL</button>
 		    <button type="button" id="tab-sql" role="tab" aria-selected="false">SQL</button>
+		    <span id="alcance-solapa">Entidades + editor</span>
 		  </div>
 		  <aside id="panel-entidades">
 		    <div id="entidades-cabecera">
@@ -909,6 +910,7 @@ public final class HqlConsolePage
 		// panel se contrae y se expande con el botoncito de la cabecera, y el estado se recuerda.
 		function aplicarEntidades(abierto, persistir) {
 		  panelEntidades.classList.toggle('contraido', !abierto);
+		  split.classList.toggle('entidades-contraidas', !abierto);
 		  // Las flechitas van escapadas: el JS vive en un text block de Java.
 		  toggleEntidades.textContent = abierto ? '\u00ab' : '\u00bb';
 		  toggleEntidades.setAttribute('aria-expanded', abierto ? 'true' : 'false');
@@ -1524,13 +1526,17 @@ public final class HqlConsolePage
 		const tabHql = document.getElementById('tab-hql');
 		const tabSql = document.getElementById('tab-sql');
 		const tituloConsola = document.querySelector('.barra h1');
+		const alcanceSolapa = document.getElementById('alcance-solapa');
 		const CLAVE_TEXTO_SQL = 'hql-console.consulta-sql';
 		const CLAVE_SOLAPA = 'hql-console.solapa';
 		let languageActiva = ALMACEN.getItem(CLAVE_SOLAPA) === 'sql' ? 'sql' : 'hql';
 		let tablasConocidas = [];
 		const estiloSql = document.createElement('style');
-		estiloSql.textContent = '#split{position:relative}#solapas{position:absolute;z-index:1;top:0;left:0;width:calc(var(--ancho-editor) + 228px);height:31px;display:flex;align-items:end;gap:3px;border-bottom:1px solid var(--borde)}#solapas button{height:28px;padding:4px 13px;color:inherit;background:transparent;border:1px solid transparent;border-radius:6px 6px 0 0;font-size:12px;font-weight:600}#solapas button:hover{background:#eef4ff}#solapas .solapa-activa{color:var(--acento);background:#fff;border-color:var(--borde);border-bottom-color:#fff;margin-bottom:-1px}#panel-entidades,#panel-editor{margin-top:31px}#sql{flex:1 1 auto;width:100%;min-height:0;margin:0;padding:10px;background:#fff;font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:1.5;border:1px solid var(--borde);border-radius:6px;resize:none;tab-size:2;wrap:off;white-space:pre;overflow:auto}body.modo-hql #panel-entidades,body.modo-sql #panel-entidades{width:220px}body.modo-sql #menu{display:none!important}.filtros-tablas{display:flex;gap:3px;padding:4px}.filtros-tablas input{width:100%;min-width:0}.filtros-tablas select{max-width:70px}@media(max-width:720px){#solapas{position:static;width:auto}#panel-entidades,#panel-editor{margin-top:0}}';
+		estiloSql.textContent = '#split{position:relative}#solapas{position:absolute;z-index:1;top:0;left:0;width:calc(var(--ancho-editor) + 228px);height:31px;display:flex;align-items:end;gap:3px;border-bottom:1px solid var(--borde)}#solapas button{height:28px;padding:4px 13px;color:inherit;background:transparent;border:1px solid transparent;border-radius:6px 6px 0 0;font-size:12px;font-weight:600}#solapas button:hover{background:#eef4ff}#solapas .solapa-activa{color:var(--acento);background:#fff;border-color:var(--borde);border-bottom-color:#fff;margin-bottom:-1px}#alcance-solapa{margin-left:auto;margin-bottom:6px;font-size:11px;opacity:.62;white-space:nowrap}#panel-entidades,#panel-editor{margin-top:31px}#sql{flex:1 1 auto;width:100%;min-height:0;margin:0;padding:10px;background:#fff;font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:1.5;border:1px solid var(--borde);border-radius:6px;resize:none;tab-size:2;wrap:off;white-space:pre;overflow:auto}body.modo-hql #panel-entidades,body.modo-sql #panel-entidades{width:220px}body.modo-sql #menu{display:none!important}.filtros-tablas{display:flex;gap:3px;padding:4px}.filtros-tablas input{width:100%;min-width:0}.filtros-tablas select{max-width:70px}@media(max-width:720px){#solapas{position:static;width:auto}#panel-entidades,#panel-editor{margin-top:0}#alcance-solapa{display:none}}';
 		document.head.appendChild(estiloSql);
+		const estiloIntegrado = document.createElement('style');
+		estiloIntegrado.textContent = '.barra{justify-content:center}.barra h1{font-size:17px}#panel-entidades{margin-right:0;border:1px solid var(--borde);border-top:0;border-right:0;border-radius:0 0 0 6px;background:#eef4ff}#panel-editor{border:1px solid var(--borde);border-top:0;border-left:0;border-radius:0 0 6px 0;background:#fff;padding:0;gap:0}#hql,#sql{border:0;border-radius:0;background:transparent;outline:0}#hql:focus,#sql:focus{outline:0}#panel-editor .pie-editor{padding:0 8px 8px}#entidades-cabecera{background:transparent}#toggle-entidades{opacity:.55}#toggle-entidades:hover{opacity:1}#panel-entidades.contraido .filtros-tablas{display:none}body.modo-hql #panel-entidades.contraido,body.modo-sql #panel-entidades.contraido{width:30px}#split.entidades-contraidas #solapas{width:calc(var(--ancho-editor) + 38px)}@media(max-width:720px){#panel-entidades{border:1px solid var(--borde);border-radius:6px}#panel-editor{border:1px solid var(--borde);border-radius:6px}}';
+		document.head.appendChild(estiloIntegrado);
 		const filtros = document.createElement('div');
 		filtros.className = 'filtros-tablas';
 		filtros.innerHTML = '<input id="filtro-tablas" type="search" placeholder="Filtrar tablas" aria-label="Filtrar tablas"><select id="tipo-tablas" aria-label="Tipo de objeto"><option>Todas</option><option>Tablas</option><option>Vistas</option></select>';
@@ -1545,8 +1551,9 @@ public final class HqlConsolePage
 		  ta.hidden = languageActiva === 'sql'; sqlEditor.hidden = languageActiva !== 'sql';
 		  tabHql.classList.toggle('solapa-activa', languageActiva === 'hql'); tabSql.classList.toggle('solapa-activa', languageActiva === 'sql');
 		  tabHql.setAttribute('aria-selected', languageActiva === 'hql' ? 'true' : 'false'); tabSql.setAttribute('aria-selected', languageActiva === 'sql' ? 'true' : 'false');
-		  tituloConsola.textContent = languageActiva === 'sql' ? 'Consola SQL' : 'HQL Console';
-		  filtros.hidden = false; tipoTablas.hidden = languageActiva !== 'sql'; filtroTablas.placeholder = languageActiva === 'sql' ? 'Filtrar tablas' : 'Filtrar entidades'; panelEntidades.querySelector('.entidades-titulo').textContent = languageActiva === 'sql' ? 'Tablas' : 'Entidades';
+		  tituloConsola.textContent = languageActiva === 'sql' ? 'SQL Console' : 'HQL Console';
+		  alcanceSolapa.textContent = languageActiva === 'sql' ? 'Tablas + editor' : 'Entidades + editor';
+		  filtros.hidden = false; tipoTablas.hidden = languageActiva !== 'sql'; filtroTablas.placeholder = languageActiva === 'sql' ? 'Filtrar tablas' : 'Filtrar entidades'; panelEntidades.querySelector('.entidades-titulo').textContent = languageActiva === 'sql' ? 'Tablas (SQL)' : 'Entidades (HQL)';
 		  ALMACEN.setItem(CLAVE_SOLAPA, languageActiva); if (languageActiva === 'sql') { asegurarTablas(); } else { pintarEntidades(); asegurarEntidades(); }
 		  editorActivo().focus(); refrescarSeleccionActiva();
 		}
