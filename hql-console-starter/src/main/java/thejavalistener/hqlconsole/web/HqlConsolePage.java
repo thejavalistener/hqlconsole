@@ -1281,6 +1281,7 @@ public final class HqlConsolePage
 		  tabla.__filas = (datos.rows || []).slice();
 		  tabla.__tipos = datos.types || [];
 		  tabla.__orden = null;
+		  tabla.__relacionesSql = false;
 
 		  pintarFilas(tabla, filas);
 		  caja.hidden = false;
@@ -1432,6 +1433,33 @@ public final class HqlConsolePage
 		  }
 		}
 
+		// En SQL la relación sale de la metadata JDBC: "TABLA (CAMPO)". A diferencia del modo HQL,
+		// el destino es una tabla, así que el detalle vuelve a pedir el DESC emulado en modo SQL.
+		function esDescDeTablaSql(sql) {
+		  return /^desc\\s+\\S/i.test(String(sql || '').trim());
+		}
+
+		function tablaRelacionadaSql(relacion) {
+		  const coincidencia = /^\\s*(.+?)\\s+\\([^)]*\\)/.exec(String(relacion || ''));
+		  return coincidencia ? coincidencia[1] : null;
+		}
+
+		function hacerRelacionesSqlClickeables(cabeceras, tablaSql) {
+		  const columnaRelacion = cabeceras.indexOf('RELACION');
+		  if (columnaRelacion < 0) { return; }
+		  tablaSql.__relacionesSql = true;
+		  const filas = tablaSql.querySelectorAll('tbody tr');
+		  for (let i = 0; i < filas.length; i++) {
+		    const fila = filas[i];
+		    const celda = fila.cells[columnaRelacion];
+		    const destino = celda ? tablaRelacionadaSql(celda.textContent) : null;
+		    if (!destino) { continue; }
+		    fila.classList.add('fila-clickeable');
+		    fila.title = 'Ver el DESC de ' + destino;
+		    fila.addEventListener('click', function() { mostrarDetalleSql(destino, fila); });
+		  }
+		}
+
 		// Marca la fila clickeada (en cualquiera de las dos grillas) y desmarca el resto.
 		function marcarElegida(filaElegida) {
 		  const filas = document.querySelectorAll('#t tbody tr, #t-detalle tbody tr');
@@ -1457,6 +1485,23 @@ public final class HqlConsolePage
 		  const cabeceras = dibujarGrilla(cajaDetalle, tablaDetalle, respuesta.datos);
 		  // Encadenar: desde el detalle de abajo también se puede saltar a otra relación.
 		  hacerRelacionesClickeables(cabeceras, tablaDetalle);
+		}
+
+		async function mostrarDetalleSql(tablaSql, filaElegida) {
+		  marcarElegida(filaElegida);
+		  detalleTitulo.textContent = 'Detalle de ' + tablaSql;
+		  detalleError.hidden = true;
+		  cajaDetalle.hidden = true;
+		  abrirDetalle();
+
+		  const respuesta = await pedir('DESC ' + tablaSql, false);
+		  if (!respuesta.ok) {
+		    detalleError.textContent = respuesta.datos.error || 'No se pudo traer el detalle.';
+		    detalleError.hidden = false;
+		    return;
+		  }
+		  const cabeceras = dibujarGrilla(cajaDetalle, tablaDetalle, respuesta.datos);
+		  hacerRelacionesSqlClickeables(cabeceras, tablaDetalle);
 		}
 
 		function abrirDetalle() {
@@ -1500,6 +1545,10 @@ public final class HqlConsolePage
 		// que las filas viejas (con sus listeners) dejan de existir: sin esto, después de ordenar un
 		// "DESC" las filas nuevas dejarían de abrir el detalle.
 		function recablearFilas(tabla) {
+		  if (tabla.__relacionesSql) {
+		    hacerRelacionesSqlClickeables(cabecerasActuales(tabla), tabla);
+		    return;
+		  }
 		  if (tabla.querySelectorAll('thead th').length && tabla.__orden !== null) {
 		    hacerListaClickeable(cabecerasActuales(tabla));
 		  }
@@ -1559,7 +1608,7 @@ public final class HqlConsolePage
 		function rangoSql() { const inicio=sqlEditor.selectionStart, fin=sqlEditor.selectionEnd, recorte=textoAejecutar(sqlEditor.value,inicio,fin); if(fin>inicio&&recorte.trim()){return {hql:recorte,etiqueta:'selecciÃ³n',inicio:inicio,fin:fin,pintar:false};} const p=rangoParrafo(sqlEditor.value,inicio); return {hql:sqlEditor.value.substring(p.inicio,p.fin),etiqueta:'pÃ¡rrafo del cursor',inicio:p.inicio,fin:p.fin,pintar:true}; }
 		function refrescarSeleccionActiva() {}
 		function ejecutarSql() { guardarTextoActivo(); const rango=rangoSql(); if(rango.pintar){sqlEditor.focus();sqlEditor.setSelectionRange(rango.inicio,rango.fin);} ejecutarTextoSql(rango.hql.split('\\r').join('').trim(),rango.etiqueta); }
-		async function ejecutarTextoSql(sql,etiqueta) { if(!sql){mostrarError({error:'No hay nada que ejecutar.'});return;}if(btn){btn.disabled=true;}cajaError.style.display='none';estado.textContent='Ejecutando '+etiqueta+'...';try{const respuesta=await pedir(sql,false);if(!respuesta.ok){mostrarError(respuesta.datos);return;}resetPanelDerecho();mostrarResultado(respuesta.datos,sql);}catch(e){mostrarError({error:'No se pudo contactar la consola: '+e});}finally{if(btn){btn.disabled=false;}} }
+		async function ejecutarTextoSql(sql,etiqueta) { if(!sql){mostrarError({error:'No hay nada que ejecutar.'});return;}if(btn){btn.disabled=true;}cajaError.style.display='none';estado.textContent='Ejecutando '+etiqueta+'...';try{const respuesta=await pedir(sql,false);if(!respuesta.ok){mostrarError(respuesta.datos);return;}resetPanelDerecho();const cabeceras=mostrarResultado(respuesta.datos,sql);if(esDescDeTablaSql(sql)&&cabeceras){hacerRelacionesSqlClickeables(cabeceras,tabla);}}catch(e){mostrarError({error:'No se pudo contactar la consola: '+e});}finally{if(btn){btn.disabled=false;}} }
 		function pintarTablas() { const visibles=filtrarTablas(tablasConocidas,filtroTablas.value,tipoTablas.value);listaEntidades.textContent='';visibles.forEach(function(tablaSql){const boton=document.createElement('button');boton.type='button';boton.className='entidad-item';boton.appendChild(document.createTextNode(tablaSql.nombre));if(tablaSql.entidad){const marca=document.createElement('span');marca.className='marca-mapeada';marca.textContent='[M]';boton.appendChild(marca);}boton.addEventListener('click',function(){ejecutarTextoSql('DESC '+tablaSql.nombre,'la tabla '+tablaSql.nombre);});listaEntidades.appendChild(boton);}); }
 		async function asegurarTablas() { if(tablasConocidas.length){pintarTablas();return;}const respuesta=await pedir('DESC',false);if(!respuesta.ok){tablasConocidas=[];pintarTablas();return;}const h=respuesta.datos.headers||[],n=h.indexOf('TABLA'),t=h.indexOf('TIPO'),e=h.indexOf('ES_ENTIDAD');tablasConocidas=(respuesta.datos.rows||[]).map(function(fila){return {nombre:String(fila[n]),tipo:String(fila[t]),entidad:e>=0&&fila[e]==='SI'};});pintarTablas(); }
 		filtroTablas.addEventListener('input',function(){if(languageActiva==='sql'){pintarTablas();}else{pintarEntidades();}});tipoTablas.addEventListener('change',pintarTablas);

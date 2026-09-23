@@ -122,12 +122,14 @@ En modo SQL el panel izquierdo lista **tablas y vistas del esquema de la conexi�
 `DESC <tabla>` en modo SQL devuelve una grilla distinta a la de HQL:
 
 - Headers: `CAMPO,TIPO SQL,RELACION`.
-- **`CAMPO`**: una clave foránea se marca con ` (FK)`; las demás columnas se muestran sin marca.
+- **`CAMPO`**: una clave primaria se marca con ` (PK)` y una foránea con ` (FK)`; una columna que
+  participa de ambas lleva las dos marcas.
 - **`RELACION`**: el destino de la clave foránea con el formato `TABLA (CAMPO)` (por ejemplo
   `AUTORES (ID)`), o `-` si la columna no es FK. Sale de `DatabaseMetaData.getImportedKeys`
   (`PKTABLE_NAME` + `PKCOLUMN_NAME`); si una columna participa de más de una FK, se listan
   separadas por coma.
-- **Sin** `ATRIBUTO` ni `TIPO JAVA`; **sin** filas clickeables (no hay navegación).
+- **Sin** `ATRIBUTO` ni `TIPO JAVA`; las filas FK permiten abrir el `DESC` emulado de su tabla
+  destino en el detalle inferior.
 - El `DESC` actual de entidades (modo HQL) **no se toca**: es otra rama.
 
 ### 3.6. Comentarios

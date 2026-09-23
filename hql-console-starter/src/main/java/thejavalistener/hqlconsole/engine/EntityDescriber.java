@@ -204,6 +204,7 @@ public class EntityDescriber
 			{
 				throw new IllegalArgumentException("No conozco la tabla '"+table+"'.");
 			}
+			Set<String> primary=_primaryKeys(metadata,schema,actual);
 			Map<String,List<String>> foreign=_foreignKeys(metadata,schema,actual);
 			try( ResultSet columns=metadata.getColumns(null,schema,actual,null) )
 			{
@@ -211,7 +212,9 @@ public class EntityDescriber
 				{
 					String name=columns.getString("COLUMN_NAME");
 					List<String> destinations=foreign.getOrDefault(name.toLowerCase(Locale.ROOT),List.of());
-					String field=Mapping.physicalName(name)+(destinations.isEmpty()?"":" (FK)");
+					String field=Mapping.physicalName(name)
+							+(primary.contains(name.toLowerCase(Locale.ROOT))?" (PK)":"")
+							+(destinations.isEmpty()?"":" (FK)");
 					rows.add(List.of(field,columns.getString("TYPE_NAME"),
 							destinations.isEmpty()?"-":String.join(",",destinations)));
 				}
@@ -255,6 +258,16 @@ public class EntityDescriber
 			}
 		}
 		return null;
+	}
+
+	private Set<String> _primaryKeys(DatabaseMetaData metadata,String schema,String table) throws SQLException
+	{
+		Set<String> keys=new LinkedHashSet<>();
+		try( ResultSet result=metadata.getPrimaryKeys(null,schema,table) )
+		{
+			while(result.next()) { keys.add(result.getString("COLUMN_NAME").toLowerCase(Locale.ROOT)); }
+		}
+		return keys;
 	}
 
 	private Map<String,List<String>> _foreignKeys(DatabaseMetaData metadata,String schema,String table) throws SQLException

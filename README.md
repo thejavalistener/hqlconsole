@@ -322,8 +322,9 @@ El panel izquierdo muestra las tablas y vistas del esquema, incluidas las que no
 mapeada; permite filtrarlas por nombre y tipo. Un clic ejecuta el `DESC <tabla>` emulado por la
 consola, nunca una sentencia enviada al motor como `DESC` nativo. En esta solapa, `DESC` lista
 `TABLA | TIPO | ES_ENTIDAD` y `DESC <tabla>` muestra `CAMPO | TIPO SQL | RELACION`: una clave
-foránea se marca como `CAMPO (FK)` y su destino como `TABLA (CAMPO)`. No hay navegación de
-relaciones ni generación de INSERT.
+primaria se marca como `CAMPO (PK)`, una foránea como `CAMPO (FK)` y su destino como
+`TABLA (CAMPO)`. Las filas FK abren debajo el `DESC` emulado de la tabla destino. No hay generación
+de INSERT.
 
 ### Las tres sentencias propias de la consola
 
@@ -694,8 +695,8 @@ Verificado end-to-end con `verify-demo.ps1`, que compila, levanta el fat jar del
 comprobaciones contra una H2 en memoria (Spring Boot 3.2.5, Hibernate 6.4.4, Java 21):
 
 ```
-.\verify-demo.ps1                                  # 232 PASS / 0 FAIL
-.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 240 PASS / 0 FAIL
+.\verify-demo.ps1                                  # 233 PASS / 0 FAIL
+.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 241 PASS / 0 FAIL
 ```
 
 Cubre: descubrimiento de la auto-configuración por el `.imports` del jar, la página servida desde

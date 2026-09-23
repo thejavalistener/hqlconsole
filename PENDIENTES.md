@@ -57,14 +57,15 @@ trabajo (una sesión nueva, otro modelo) no tenga que adivinar: la documentació
 - El backend usa una lista blanca: en SQL sólo llega al motor una única sentencia `SELECT`.
   `DESC` es una orden propia de la consola y no se ejecuta como SQL.
 - `DESC` SQL sin argumentos devuelve exactamente `TABLA | TIPO | ES_ENTIDAD`; `DESC <tabla>`
-  devuelve `CAMPO | TIPO SQL | RELACION`. La metadata sale de JDBC, excluye catálogos del sistema
-  y no falla la página cuando no hay datasource.
+  devuelve `CAMPO | TIPO SQL | RELACION`, marca PK/FK en el campo y permite seguir una FK hacia el
+  detalle de la tabla destino. La metadata sale de JDBC, excluye catálogos del sistema y no falla la
+  página cuando no hay datasource.
 - El SELECT nativo se ejecuta en una transacción resource-local que siempre hace rollback. Se usa
   la metadata JDBC para headers y tipos, con degradación segura si el driver no la expone.
 - En modo SQL se ocultan el menú de entidades y la generación de INSERT. El panel lista tablas y
   vistas, permite filtrar por texto/tipo y ejecuta el `DESC` emulado al hacer clic.
-- Verificación vigente: `verify-demo.ps1` da **232 PASS / 0 FAIL**; con
-  `-ContextPath /demo -MaxRows 3`, **240 PASS / 0 FAIL**.
+- Verificación vigente: `verify-demo.ps1` da **233 PASS / 0 FAIL**; con
+  `-ContextPath /demo -MaxRows 3`, **241 PASS / 0 FAIL**.
 
 ## #12 — El menú por hover, y el bug del header
 

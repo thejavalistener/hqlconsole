@@ -203,7 +203,7 @@ try {
     $r = Exec 'DESC' $null 'sql'
     Check 'DESC SQL lista tablas sin catalogos del sistema' ($r.status -eq 200 -and ($r.json.headers -join ',') -eq 'TABLA,TIPO,ES_ENTIDAD' -and ($r.json.rows -join ',') -notmatch 'INFORMATION_SCHEMA') $r.raw
     $r = Exec 'DESC LIBROS' $null 'sql'
-    Check 'DESC SQL muestra campo, tipo y destino de FK' ($r.status -eq 200 -and ($r.json.headers -join ',') -eq 'CAMPO,TIPO SQL,RELACION' -and @($r.json.rows | Where-Object { $_[0] -match '\(FK\)$' -and $_[2] -match 'AUTORES \(ID\)' }).Count -gt 0) $r.raw
+    Check 'DESC SQL marca PK y muestra el destino de FK' ($r.status -eq 200 -and ($r.json.headers -join ',') -eq 'CAMPO,TIPO SQL,RELACION' -and @($r.json.rows | Where-Object { $_[0] -match 'ID \(PK\)' }).Count -gt 0 -and @($r.json.rows | Where-Object { $_[0] -match '\(FK\)$' -and $_[2] -match 'AUTORES \(ID\)' }).Count -gt 0) $r.raw
     $r = Exec 'DESC NoExiste'
     Check 'DESC de una entidad inexistente da 400 y lista las que hay' ($r.status -eq 400 -and $r.json.error -match 'Las que hay son') $r.raw
 
@@ -749,6 +749,7 @@ check('insertar: en un editor vacio no agrega lineas de mas al principio', vacio
     Check 'la lista de entidades sale del DESC sin argumentos' ($page.Content -match 'function pintarEntidades' -and $page.Content -match "pedir\('DESC', false\)") 'la lista no sale del DESC'
     Check 'el click de una entidad ejecuta su DESC' ($page.Content -match "ejecutarTexto\('DESC ' \+ nombre") 'el click no ejecuta el DESC'
     Check 'el click de una tabla ejecuta el DESC SQL emulado' ($page.Content -match "ejecutarTextoSql\('DESC '\s*\+\s*tablaSql\.nombre") 'el click de SQL no ejecuta el DESC emulado'
+    Check 'las FK SQL abren el DESC de la tabla relacionada abajo' ($page.Content -match 'function hacerRelacionesSqlClickeables' -and $page.Content -match 'function mostrarDetalleSql' -and $page.Content -match "pedir\('DESC ' \+ tablaSql") 'las FK SQL no abren el detalle emulado'
     Check 'el click no pisa el editor' ($page.Content -notmatch "ta\.value = 'DESC '") 'el panel de entidades pisa el textarea'
     Check 'la entidad elegida se marca en el panel' ($page.Content -match 'function marcarEntidadElegida' -and $page.Content -match "classList\.toggle\('elegida'") 'no se marca la entidad elegida'
     Check 'la lista se pide sola al abrir la pagina' ($page.Content -match '(?s)function cabecerasDeFilas.*?asegurarEntidades\(\);') 'no se pide la lista al abrir'
