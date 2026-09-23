@@ -102,7 +102,7 @@ try {
     Check 'la pagina trae las dos solapas y los dos editores' ($page.Content -match 'id="tab-hql"' -and $page.Content -match 'id="tab-sql"' -and $page.Content -match 'id="sql"') 'falta HQL o SQL'
     Check 'la pagina persiste SQL y la solapa activa' ($page.Content -match 'hql-console.consulta-sql' -and $page.Content -match 'hql-console.solapa') 'faltan claves SQL'
     $barra = [regex]::Match($page.Content, '(?s)<div class="barra">(.*?)</div>')
-    Check 'el encabezado solo dice HQL Console' ($barra.Success -and $barra.Groups[1].Value -match 'HQL Console' -and $barra.Groups[1].Value -notmatch '<span') 'el encabezado tiene algo demas'
+    Check 'el encabezado trae consola, idioma y atajo' ($barra.Success -and $barra.Groups[1].Value -match 'Consola' -and $barra.Groups[1].Value -match 'id="idioma-titulo"' -and $barra.Groups[1].Value -match 'id="atajo-ejecutar"') 'faltan elementos del encabezado'
     Check 'la pagina ya no muestra la ruta ni el aviso' ($page.Content -notmatch 'class="ruta"' -and $page.Content -notmatch 'herramienta de desarrollo') 'quedo la ruta o el aviso'
     Check 'la pagina apunta al base correcto' ($page.Content -match [regex]::Escape("const BASE = '$ContextPath/hqlconsole'")) "no encontro BASE = '$ContextPath/hqlconsole'"
     # Ojo: (Get-Content -Raw) puede devolver un array si el archivo tiene una sola linea, y entonces
@@ -923,11 +923,11 @@ check('insertar: en un editor vacio no agrega lineas de mas al principio', vacio
           ($reserva -ge 0 -and $hoverConGlyph -lt 0) "reserva=$reserva hoverConGlyph=$hoverConGlyph"
     Check 'los tres glyphs del indicador tienen el mismo ancho' `
           ($page.Content -match 'display:inline-block; width:1em') 'el indicador no tiene ancho fijo'
-    # El menu se cierra por distancia a los rectangulos, con tolerancia: sin eso se cerraba al cruzar
-    # el hueco entre el item y el menu (peor aun yendo lento).
+    # El menu se cierra por distancia a los rectangulos, con tolerancia. Se alinea con el texto mas
+    # largo de la lista para no dejar un hueco artificial hasta el borde del panel.
     Check 'el menu tolera el trayecto del mouse al menu' `
           ($page.Content -match 'MARGEN_MENU = 24' -and $page.Content -match 'function _distancia\(caja') 'no hay tolerancia de distancia'
-    Check 'el menu nace pegado al item, sin hueco' ($page.Content -match 'abrirMenu\(caja\.right, caja\.top') 'el menu queda separado del item'
+    Check 'el menu se alinea con el nombre mas largo de la lista' ($page.Content -match 'function posicionHorizontalDelMenu' -and $page.Content -match 'medidor\.measureText\(item\.textContent\)' -and $page.Content -match 'abrirMenu\(posicionHorizontalDelMenu\(boton\), caja\.top') 'el menu no usa el ancho de los nombres'
 
     # --- tope de filas ---
     if ($MaxRows -lt 6) {

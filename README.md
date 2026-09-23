@@ -693,8 +693,8 @@ Verificado end-to-end con `verify-demo.ps1`, que compila, levanta el fat jar del
 comprobaciones contra una H2 en memoria (Spring Boot 3.2.5, Hibernate 6.4.4, Java 21):
 
 ```
-.\verify-demo.ps1                                  # 236 PASS / 0 FAIL
-.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 244 PASS / 0 FAIL
+.\verify-demo.ps1                                  # 233 PASS / 0 FAIL
+.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 241 PASS / 0 FAIL
 ```
 
 Cubre: descubrimiento de la auto-configuración por el `.imports` del jar, la página servida desde
