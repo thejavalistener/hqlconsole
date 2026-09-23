@@ -165,17 +165,14 @@ try {
     # Orden del contrato: primero lo que uno escribe (ATRIBUTO, TIPO JAVA) y después lo que hay en la
     # base (CAMPO, TIPO SQL).
     $r = Exec 'DESC Libro'
-    Check 'DESC devuelve las 5 columnas del contrato' (($r.json.headers -join ',') -eq 'ATRIBUTO,TIPO JAVA,CAMPO,TIPO SQL,RELACION') ($r.json.headers -join ',')
+    Check 'DESC devuelve las 4 columnas del contrato' (($r.json.headers -join ',') -eq 'ATRIBUTO,TIPO JAVA,CAMPO,TIPO SQL') ($r.json.headers -join ',')
     Check 'DESC muestra primero el ATRIBUTO y despues el CAMPO' ($r.json.rows[0][0] -eq 'id*' -and $r.json.rows[0][2] -eq 'ID') "$($r.json.rows[0][0]),$($r.json.rows[0][2])"
     Check 'DESC marca con * el atributo que es @Id' ($r.json.rows[0][0] -eq 'id*') $r.json.rows[0][0]
     # El * va SOLO en el id: los demas atributos van pelados.
     Check 'ningun otro atributo lleva el *' (@($r.json.rows | Where-Object { $_[0] -like '*`*' -and $_[0] -ne 'id*' }).Count -eq 0) (($r.json.rows | ForEach-Object { $_[0] }) -join ',')
-    # La columna RELACION: dice el id de la entidad apuntada, y '-' cuando no es una relacion.
     $fk = $r.json.rows | Where-Object { $_[0] -eq 'autor' }
-    Check 'DESC describe la relacion con su id y su tipo' ($fk[4] -eq 'Autor#id (Long)') ($fk -join ' | ')
-    Check 'DESC deja en - las columnas que no son relaciones' (@($r.json.rows | Where-Object { $_[0] -eq 'titulo' -and $_[4] -eq '-' }).Count -eq 1) (($r.json.rows | Where-Object { $_[0] -eq 'titulo' }) -join ' | ')
     Check 'DESC respeta el orden de declaracion de la entidad' ($r.json.rows[0][2] -eq 'ID' -and $r.json.rows[1][2] -eq 'TITULO') "$($r.json.rows[0][2]),$($r.json.rows[1][2])"
-    Check 'DESC muestra la FK como CAMPO y la relacion como ATRIBUTO' ($fk[2] -match 'ID_AUTOR' -and $fk[1] -eq 'Autor') ($fk -join ' | ')
+    Check 'DESC muestra la FK como CAMPO y la relacion como TIPO JAVA' ($fk[2] -match 'ID_AUTOR' -and $fk[1] -eq 'Autor') ($fk -join ' | ')
     $fecha = $r.json.rows | Where-Object { $_[0] -eq 'fechaPublicacion' }
     Check 'DESC trae el TIPO SQL real de la base' ($fecha[3] -eq 'DATE' -and $fecha[1] -eq 'LocalDate') ($fecha -join ' | ')
     $titulo = $r.json.rows | Where-Object { $_[0] -eq 'titulo' }
@@ -206,7 +203,7 @@ try {
     $r = Exec 'DESC' $null 'sql'
     Check 'DESC SQL lista tablas sin catalogos del sistema' ($r.status -eq 200 -and ($r.json.headers -join ',') -eq 'TABLA,TIPO,ES_ENTIDAD' -and ($r.json.rows -join ',') -notmatch 'INFORMATION_SCHEMA') $r.raw
     $r = Exec 'DESC LIBROS' $null 'sql'
-    Check 'DESC SQL muestra campos, PK y FK' ($r.status -eq 200 -and ($r.json.headers -join ',') -eq 'CAMPO,TIPO SQL,NULO,PK,FK' -and @($r.json.rows | Where-Object { $_[3] -eq 'PK' -and $_[4] -eq '-' }).Count -gt 0 -and @($r.json.rows | Where-Object { $_[4] -match 'AUTORES\(ID\)' }).Count -gt 0) $r.raw
+    Check 'DESC SQL muestra campo, tipo y destino de FK' ($r.status -eq 200 -and ($r.json.headers -join ',') -eq 'CAMPO,TIPO SQL,RELACION' -and @($r.json.rows | Where-Object { $_[0] -match '\(FK\)$' -and $_[2] -match 'AUTORES \(ID\)' }).Count -gt 0) $r.raw
     $r = Exec 'DESC NoExiste'
     Check 'DESC de una entidad inexistente da 400 y lista las que hay' ($r.status -eq 400 -and $r.json.error -match 'Las que hay son') $r.raw
 
@@ -623,8 +620,8 @@ check('id: un atributo normal no', esAtributoId('titulo'), false);
 check('id: saca la marca', sinMarcaDeId('id*'), 'id');
 check('id: deja el nombre igual si no tiene marca', sinMarcaDeId('titulo'), 'titulo');
 
-// Las filas son las del DESC: [ATRIBUTO, TIPO JAVA, CAMPO, TIPO SQL, RELACION]
-var descLibro = [['id*','Long','ID','BIGINT','-'],['titulo','String','TITULO','VARCHAR','-'],['autor','Autor','ID_AUTOR','BIGINT','Autor#id (Long)'],['precio','BigDecimal','PRECIO','DECIMAL','-']];
+// Las filas son las del DESC: [ATRIBUTO, TIPO JAVA, CAMPO, TIPO SQL]
+var descLibro = [['id*','Long','ID','BIGINT'],['titulo','String','TITULO','VARCHAR'],['autor','Autor','ID_AUTOR','BIGINT'],['precio','BigDecimal','PRECIO','DECIMAL']];
 var ins = insertDeEntidad('Libro', descLibro);
 check('insert: lleva el comentario arriba', ins.indexOf('// Completa y ejecuta esta sentencia') === 0, true);
 check('insert: excluye el id', ins.indexOf('(titulo,autor,precio)') > 0, true);
@@ -632,25 +629,16 @@ check('insert: no escribe la columna id', ins.indexOf('id,') < 0, true);
 check('insert: el texto va entre comillas', ins.indexOf("'999'") > 0, true);
 check('insert: el numero va pelado', ins.indexOf(', 999') > 0 || ins.indexOf(',999') > 0, true);
 check('insert: termina en punto y coma', ins.slice(-2) === ');', true);
-check('insert: la entidad es la que se clickeo', insertDeEntidad('Autor', [['id*','Long','ID','BIGINT','-'],['nombre','String','NOMBRE','VARCHAR','-']]).indexOf('INSERT INTO Autor (nombre)') > 0, true);
+check('insert: la entidad es la que se clickeo', insertDeEntidad('Autor', [['id*','Long','ID','BIGINT'],['nombre','String','NOMBRE','VARCHAR']]).indexOf('INSERT INTO Autor (nombre)') > 0, true);
 check('insert: sin columnas no rompe', insertDeEntidad('X', []).indexOf('INSERT INTO X () VALUES ()') > 0, true);
-// El bug reportado: la FK salia entre comillas y el id es un numero.
-check('insert: una relacion con id numerico va SIN comillas', ins.indexOf('VALUES (\'999\',999,999)') > 0, true);
-check('insert: la relacion no queda entre comillas', ins.indexOf('999,999,999') > 0 || ins.indexOf("'999',999") > 0, true);
 
 // Los tipos tienen que dar valores que la consola entienda: fecha ISO, NOW, booleano
-check('valor: Long es numerico', valorDeEjemplo('Long', '-'), '999');
-check('valor: BigDecimal es numerico', valorDeEjemplo('BigDecimal', '-'), '999');
-check('valor: String va entre comillas', valorDeEjemplo('String', '-'), "'999'");
-check('valor: LocalDate es ISO', valorDeEjemplo('LocalDate', '-'), "'2024-01-01'");
-check('valor: LocalDateTime usa NOW', valorDeEjemplo('LocalDateTime', '-'), 'NOW');
-check('valor: Boolean es false', valorDeEjemplo('Boolean', '-'), 'false');
-// La relacion: el tipo Java es el nombre de la clase y no alcanza; manda la columna RELACION.
-check('valor: relacion con id Long va sin comillas', valorDeEjemplo('Departamento', 'Departamento#id (Long)'), '999');
-check('valor: relacion con id Integer va sin comillas', valorDeEjemplo('Autor', 'Autor#id (Integer)'), '999');
-check('valor: relacion con id String va con comillas', valorDeEjemplo('Pais', 'Pais#codigo (String)'), "'999'");
-check('valor: sin dato de relacion cae al tipo Java', valorDeEjemplo('Departamento', '-'), "'999'");
-check('valor: sin columna de relacion (DESC viejo)', valorDeEjemplo('Departamento'), "'999'");
+check('valor: Long es numerico', valorDeEjemplo('Long'), '999');
+check('valor: BigDecimal es numerico', valorDeEjemplo('BigDecimal'), '999');
+check('valor: String va entre comillas', valorDeEjemplo('String'), "'999'");
+check('valor: LocalDate es ISO', valorDeEjemplo('LocalDate'), "'2024-01-01'");
+check('valor: LocalDateTime usa NOW', valorDeEjemplo('LocalDateTime'), 'NOW');
+check('valor: Boolean es false', valorDeEjemplo('Boolean'), 'false');
 check('tipo numerico: Long si', esTipoNumerico('Long'), true);
 check('tipo numerico: int si', esTipoNumerico('int'), true);
 check('tipo numerico: String no', esTipoNumerico('String'), false);
@@ -760,6 +748,7 @@ check('insertar: en un editor vacio no agrega lineas de mas al principio', vacio
     Check 'el panel es angosto, solo para los nombres' ($page.Content -match '#panel-entidades \{ flex:0 0 auto; width:150px' -and $page.Content -match '\.entidad-item') 'no esta el ancho del panel'
     Check 'la lista de entidades sale del DESC sin argumentos' ($page.Content -match 'function pintarEntidades' -and $page.Content -match "pedir\('DESC', false\)") 'la lista no sale del DESC'
     Check 'el click de una entidad ejecuta su DESC' ($page.Content -match "ejecutarTexto\('DESC ' \+ nombre") 'el click no ejecuta el DESC'
+    Check 'el click de una tabla ejecuta el DESC SQL emulado' ($page.Content -match "ejecutarTextoSql\('DESC '\s*\+\s*tablaSql\.nombre") 'el click de SQL no ejecuta el DESC emulado'
     Check 'el click no pisa el editor' ($page.Content -notmatch "ta\.value = 'DESC '") 'el panel de entidades pisa el textarea'
     Check 'la entidad elegida se marca en el panel' ($page.Content -match 'function marcarEntidadElegida' -and $page.Content -match "classList\.toggle\('elegida'") 'no se marca la entidad elegida'
     Check 'la lista se pide sola al abrir la pagina' ($page.Content -match '(?s)function cabecerasDeFilas.*?asegurarEntidades\(\);') 'no se pide la lista al abrir'
@@ -817,7 +806,7 @@ check('insertar: en un editor vacio no agrega lineas de mas al principio', vacio
     Check 'con 0 filas el tipo es OTRO (no hay nada que mirar)' (($r.json.types -join ',') -eq 'OTRO') ($r.json.types -join ',')
 
     $r = Exec 'DESC Libro'
-    Check 'el DESC de una entidad trae todos los tipos TEXTO' (($r.json.types -join ',') -eq 'TEXTO,TEXTO,TEXTO,TEXTO,TEXTO') ($r.json.types -join ',')
+    Check 'el DESC de una entidad trae todos los tipos TEXTO' (($r.json.types -join ',') -eq 'TEXTO,TEXTO,TEXTO,TEXTO') ($r.json.types -join ',')
     $r = Exec 'DESC'
     Check 'la lista de entidades tipa CAMPOS como NUMERO' (($r.json.types -join ',') -eq 'TEXTO,TEXTO,NUMERO') ($r.json.types -join ',')
 

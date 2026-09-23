@@ -60,7 +60,7 @@ public class EntityDescriber
 {
 	private static final Logger log=LoggerFactory.getLogger(EntityDescriber.class);
 
-	private static final List<String> HEADERS=List.of("ATRIBUTO","TIPO JAVA","CAMPO","TIPO SQL","RELACION");
+	private static final List<String> HEADERS=List.of("ATRIBUTO","TIPO JAVA","CAMPO","TIPO SQL");
 	private static final List<String> LIST_HEADERS=List.of("ENTIDAD","TABLA","CAMPOS");
 
 	private final ObjectProvider<DataSource> dataSource;
@@ -115,43 +115,14 @@ public class EntityDescriber
 			// contrato que dice que los títulos de "from <Entidad>" son exactamente estos atributos.
 			String nombre=attribute.getName()+(attribute.equals(id)?"*":"");
 
-			// RELACION dice qué es lo que hay que escribir en esa columna cuando el atributo es una
-			// relación: el id de la entidad apuntada, con su tipo. Sin esto no hay forma de saber que
-			// "departamento" se llena con un número, porque el TIPO JAVA de una relación es el nombre
-			// de la clase (Departamento) y se ve igual que un String.
-			String relacion=_relacionDe(metamodel,attribute);
-
 			// El orden es el de la sentencia: ATRIBUTO y TIPO JAVA son lo que uno escribe, CAMPO y
 			// TIPO SQL son cómo se llama y qué es eso en la base.
-			rows.add(List.of(nombre,Mapping.javaTypeName(attribute),campo,sqlType,relacion));
+			rows.add(List.of(nombre,Mapping.javaTypeName(attribute),campo,sqlType));
 		}
 		// Todos los tipos de esta grilla son texto: son nombres. Ordenar por "TIPO JAVA" o por
 		// "CAMPO" es ordenar alfabéticamente, que es exactamente lo que se espera.
-		return HqlResult.query(HEADERS,_tipos(ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO),
+		return HqlResult.query(HEADERS,_tipos(ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO),
 				rows,false,_millis(t0));
-	}
-
-	/**
-	 * La descripción de una relación: {@code Entidad#id (TipoDelId)}, o {@code -} si el atributo no es
-	 * una relación.
-	 *
-	 * <p>Es lo que permite escribir un INSERT con la FK por número en vez de por texto: el
-	 * {@code TIPO JAVA} de una relación es el nombre de la clase y se ve igual que un String, así que
-	 * sin este dato no hay forma de saber que {@code departamento} espera un id.</p>
-	 */
-	private String _relacionDe(Metamodel metamodel,Attribute<?,?> attribute)
-	{
-		if( !Mapping.isToOne(attribute) )
-		{
-			return "-";
-		}
-		EntityType<?> related=Mapping.relatedEntity(metamodel,attribute);
-		if( related==null )
-		{
-			return "-";
-		}
-		Attribute<?,?> id=Mapping.idOf(related);
-		return related.getName()+"#"+id.getName()+" ("+Mapping.javaTypeName(id)+")";
 	}
 
 	/** Los tipos de una grilla, en el orden de sus columnas. */
@@ -233,17 +204,15 @@ public class EntityDescriber
 			{
 				throw new IllegalArgumentException("No conozco la tabla '"+table+"'.");
 			}
-			Set<String> primary=_primaryKeys(metadata,schema,actual);
 			Map<String,List<String>> foreign=_foreignKeys(metadata,schema,actual);
 			try( ResultSet columns=metadata.getColumns(null,schema,actual,null) )
 			{
 				while(columns.next())
 				{
 					String name=columns.getString("COLUMN_NAME");
-					boolean nullable=columns.getInt("NULLABLE")!=DatabaseMetaData.columnNoNulls;
 					List<String> destinations=foreign.getOrDefault(name.toLowerCase(Locale.ROOT),List.of());
-					rows.add(List.of(Mapping.physicalName(name),columns.getString("TYPE_NAME"),nullable?"SI":"NO",
-							primary.contains(name.toLowerCase(Locale.ROOT))?"PK":"-",
+					String field=Mapping.physicalName(name)+(destinations.isEmpty()?"":" (FK)");
+					rows.add(List.of(field,columns.getString("TYPE_NAME"),
 							destinations.isEmpty()?"-":String.join(",",destinations)));
 				}
 			}
@@ -257,8 +226,8 @@ public class EntityDescriber
 
 	private HqlResult _tableResult(List<List<Object>> rows,long t0)
 	{
-		return HqlResult.query(List.of("CAMPO","TIPO SQL","NULO","PK","FK"),
-				_tipos(ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO),
+		return HqlResult.query(List.of("CAMPO","TIPO SQL","RELACION"),
+				_tipos(ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO),
 				rows,false,_millis(t0));
 	}
 
@@ -288,16 +257,6 @@ public class EntityDescriber
 		return null;
 	}
 
-	private Set<String> _primaryKeys(DatabaseMetaData metadata,String schema,String table) throws SQLException
-	{
-		Set<String> keys=new LinkedHashSet<>();
-		try( ResultSet result=metadata.getPrimaryKeys(null,schema,table) )
-		{
-			while(result.next()) { keys.add(result.getString("COLUMN_NAME").toLowerCase(Locale.ROOT)); }
-		}
-		return keys;
-	}
-
 	private Map<String,List<String>> _foreignKeys(DatabaseMetaData metadata,String schema,String table) throws SQLException
 	{
 		Map<String,List<String>> keys=new LinkedHashMap<>();
@@ -306,7 +265,7 @@ public class EntityDescriber
 			while(result.next())
 			{
 				String column=result.getString("FKCOLUMN_NAME").toLowerCase(Locale.ROOT);
-				String target=Mapping.physicalName(result.getString("PKTABLE_NAME"))+"("
+				String target=Mapping.physicalName(result.getString("PKTABLE_NAME"))+" ("
 						+Mapping.physicalName(result.getString("PKCOLUMN_NAME"))+")";
 				keys.computeIfAbsent(column,ignored -> new ArrayList<>()).add(target);
 			}

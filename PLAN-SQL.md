@@ -43,8 +43,8 @@ tiene su propio `<textarea>`, su propia persistencia y su propio comportamiento.
 | C | Bloqueo de DDL/DML | Whitelist: la sentencia tiene que empezar con `select`. Todo lo demás se rechaza con 400. |
 | D | Panel de tablas | En modo SQL, el panel izquierdo lista tablas y vistas del **esquema de la conexión**. |
 | E | Filtro | Input de búsqueda por texto + combo de tipo (`Todas` \| `Tablas` \| `Vistas`). |
-| F | `DESC` de campos | En modo SQL, `DESC <tabla>` devuelve `CAMPO \| TIPO SQL \| NULO \| PK \| FK`, aclarando PK y FK donde corresponda, sin `ATRIBUTO` ni navegación. |
-| G | Menús deshabilitados | En modo SQL no hay menú de hover ni de botón derecho; el click de una tabla ejecuta `SELECT *`. |
+| F | `DESC` de campos | En modo SQL, `DESC <tabla>` devuelve `CAMPO \| TIPO SQL \| RELACION`; una FK se marca en el campo y muestra tabla y campo destino, sin `ATRIBUTO` ni navegación. |
+| G | Menús deshabilitados | En modo SQL no hay menú de hover ni de botón derecho; el click de una tabla ejecuta el `DESC` emulado por la consola. |
 | H | Comentarios | Se sigue parseando (`//`, `#`, `--`) igual que en HQL. |
 | I | Persistencia | Dos claves independientes en `localStorage`: la de HQL (existente) y la de SQL (nueva). |
 
@@ -121,15 +121,13 @@ En modo SQL el panel izquierdo lista **tablas y vistas del esquema de la conexi�
 
 `DESC <tabla>` en modo SQL devuelve una grilla distinta a la de HQL:
 
-- Headers: `CAMPO,TIPO SQL,NULO,PK,FK`.
-- **`NULO`**: `SI` / `NO`, desde `DatabaseMetaData.getColumns` (columna `NULLABLE`).
-- **`PK`**: `PK` en la columna (o columnas) que forman la clave primaria, `-` en el resto. Sale de
-  `DatabaseMetaData.getPrimaryKeys`. Si la PK es compuesta, **todas** sus columnas llevan `PK`.
-- **`FK`**: el destino de la clave foránea con el formato `TABLA(CAMPO)` (por ejemplo
-  `AUTORES(ID)`), o `-` si la columna no es FK. Sale de `DatabaseMetaData.getImportedKeys`
+- Headers: `CAMPO,TIPO SQL,RELACION`.
+- **`CAMPO`**: una clave foránea se marca con ` (FK)`; las demás columnas se muestran sin marca.
+- **`RELACION`**: el destino de la clave foránea con el formato `TABLA (CAMPO)` (por ejemplo
+  `AUTORES (ID)`), o `-` si la columna no es FK. Sale de `DatabaseMetaData.getImportedKeys`
   (`PKTABLE_NAME` + `PKCOLUMN_NAME`); si una columna participa de más de una FK, se listan
   separadas por coma.
-- **Sin** `ATRIBUTO`, `TIPO JAVA` ni `RELACION`; **sin** filas clickeables (no hay navegación).
+- **Sin** `ATRIBUTO` ni `TIPO JAVA`; **sin** filas clickeables (no hay navegación).
 - El `DESC` actual de entidades (modo HQL) **no se toca**: es otra rama.
 
 ### 3.6. Comentarios
@@ -229,9 +227,8 @@ un `SELECT` inválido devuelve 400 con `cause`.
 2. **Decisión a tomar** (una sola): `DESC` sin argumentos en modo SQL devuelve la lista de tablas.
    **Recomendado:** reutilizar la forma de `describeEntities` pero con header `TABLA,TIPO,ES_ENTIDAD`
    (o similar), para no inventar un endpoint nuevo.
-3. `descDeTabla(String tabla)`: `CAMPO,TIPO SQL,NULO,PK,FK` con `getColumns` (nombre, tipo y
-   nullable) + `getPrimaryKeys` (PK, compuesta incluida) + `getImportedKeys` (FK y su destino
-   `TABLA(CAMPO)`).
+3. `descDeTabla(String tabla)`: `CAMPO,TIPO SQL,RELACION` con `getColumns` (nombre y tipo) +
+   `getImportedKeys` (FK y su destino `TABLA (CAMPO)`).
 
 **Verificación (end-to-end):** la lista incluye una tabla conocida (ej. `LIBROS`); no incluye
 `INFORMATION_SCHEMA`; `DESC LIBROS` (modo SQL) trae `CAMPO`/`TIPO SQL` y no `ATRIBUTO`.
@@ -270,8 +267,8 @@ pasa; las claves nuevas aparecen en el HTML.
    - `filtrarTablas(tablas, filtro, tipo)` → devuelve la lista filtrada (no muta la original).
    - `claveDeTexto(language)` → la clave de `localStorage` según el idioma.
    - `esSoloLectura(primeraPalabra)` → whitelist (espejo de la del backend, para feedback inmediato).
-3. Click en una tabla: `SELECT * FROM <tabla> LIMIT 100` (constante `LIMITE_MENU` reutilizada) por el
-   camino de ejecución.
+3. Click en una tabla: `DESC <tabla>` por el camino de ejecución SQL emulado; no se manda un
+   `DESC` nativo al motor.
 4. CSS: en modo SQL el panel puede pasar a ~220 px **con una regla aparte**
    (`body.modo-sql #panel-entidades { width:220px; }`), **sin** tocar la regla base
    `#panel-entidades { flex:0 0 auto; width:150px ... }` (hay un test que la busca literal).
@@ -365,13 +362,8 @@ actuales. Casos nuevos:
 
 **Metadata en modo SQL**
 - `DESC` (modo SQL) lista tablas; **no** incluye `INFORMATION_SCHEMA` ni `PG_CATALOG`/`SYS`.
-- `DESC` (modo SQL) de una tabla mapeada marca `PK` en la columna del id (por ejemplo `ID`) y `-` en
-  el resto de las columnas.
-- `DESC` (modo SQL) de una tabla con FK (por ejemplo `LIBROS` con `ID_AUTOR`) marca `FK` con el
-  destino en formato `TABLA(CAMPO)` y `-` en las columnas que no son FK.
-- Si hubiera una PK compuesta, **todas** sus columnas deben salir marcadas `PK`.
-- La columna `NULO` sale `NO` en una columna NOT NULL y `SI` en una nullable (se elige un caso del
-  demo que se conozca).
+- `DESC` (modo SQL) de una tabla con FK (por ejemplo `LIBROS` con `ID_AUTOR`) marca el campo como
+  `ID_AUTOR (FK)` y muestra el destino en formato `TABLA (CAMPO)`; las columnas sin FK llevan `-`.
 - Incluye una tabla conocida del demo (ej. `LIBROS`) y una vista (si el demo tiene una; si no, se
   agrega una al seed **sólo si es barato**, o se omite y se documenta).
 - `DESC LIBROS` (modo SQL) trae headers de campos (`CAMPO`,`TIPO SQL`,...) y **no** `ATRIBUTO`.
@@ -430,8 +422,8 @@ Antes de escribir la Fase 4, revisar que estos checks actuales sigan pasando:
 2. Existe la solapa SQL, con su propio texto persistido y recordado.
 3. En modo SQL sólo se ejecuta `SELECT`; cualquier otra sentencia da 400 con mensaje claro.
 4. El panel izquierdo, en modo SQL, lista tablas/vistas del esquema con filtro por texto y por tipo.
-5. `DESC` en modo SQL muestra `CAMPO`/`TIPO SQL`/`NULO`/`PK`/`FK`, aclarando **PK** (incluida la
-   compuesta) y **FK con su tabla y campo destino**, sin `ATRIBUTO` ni navegación.
+5. `DESC` en modo SQL muestra `CAMPO`/`TIPO SQL`/`RELACION`, marca las FK en el campo y muestra su
+   tabla y campo destino, sin `ATRIBUTO` ni navegación.
 6. Los menús contextuales y "Generar INSERT" **no** aparecen en modo SQL.
 7. Los comentarios siguen parseándose en modo SQL.
 8. El tope `hql-console.max-rows` aplica al SQL nativo y avisa cuando trunca.

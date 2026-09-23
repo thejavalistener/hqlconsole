@@ -215,8 +215,7 @@ Detalles del párrafo, que están cubiertos por los tests:
     lo que hace evidente dónde apareció; la contra es que la próxima tecla la reemplaza, así que para
     completarla hay que hacer clic adentro. Excluye el `id` —lo genera la base— y pone un valor
     acorde al tipo de cada columna: `999` para los números, `'999'` para los textos, `'2024-01-01'`
-    para las fechas, `NOW` para los timestamps y `false` para los booleanos. Las relaciones van **por
-    el id, sin comillas** cuando ese id es numérico (lo dice la columna `RELACION` del `DESC`).
+    para las fechas, `NOW` para los timestamps y `false` para los booleanos.
   - El **clic sigue haciendo el `DESC`**, que es el atajo rápido: el menú es para lo demás. Al hacer
     clic el menú se **cierra y no vuelve** hasta que saques el mouse y vuelvas a entrar.
   - El menú se **cancela** si sacás el mouse antes del segundo, y **se cierra si alejás el mouse**:
@@ -320,9 +319,11 @@ antes de tocar la base. Los comentarios `//`, `#` y `--` funcionan igual que en 
 `hql-console.max-rows` también se aplica y avisa si el resultado quedó truncado.
 
 El panel izquierdo muestra las tablas y vistas del esquema, incluidas las que no tienen entidad
-mapeada; permite filtrarlas por nombre y tipo. Un clic ejecuta `SELECT * FROM <tabla> LIMIT 100`.
-En esta solapa, `DESC` lista `TABLA | TIPO | ES_ENTIDAD` y `DESC <tabla>` muestra
-`CAMPO | TIPO SQL | NULO | PK | FK`. No hay navegación de relaciones ni generación de INSERT.
+mapeada; permite filtrarlas por nombre y tipo. Un clic ejecuta el `DESC <tabla>` emulado por la
+consola, nunca una sentencia enviada al motor como `DESC` nativo. En esta solapa, `DESC` lista
+`TABLA | TIPO | ES_ENTIDAD` y `DESC <tabla>` muestra `CAMPO | TIPO SQL | RELACION`: una clave
+foránea se marca como `CAMPO (FK)` y su destino como `TABLA (CAMPO)`. No hay navegación de
+relaciones ni generación de INSERT.
 
 ### Las tres sentencias propias de la consola
 
@@ -693,8 +694,8 @@ Verificado end-to-end con `verify-demo.ps1`, que compila, levanta el fat jar del
 comprobaciones contra una H2 en memoria (Spring Boot 3.2.5, Hibernate 6.4.4, Java 21):
 
 ```
-.\verify-demo.ps1                                  # 233 PASS / 0 FAIL
-.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 241 PASS / 0 FAIL
+.\verify-demo.ps1                                  # 232 PASS / 0 FAIL
+.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 240 PASS / 0 FAIL
 ```
 
 Cubre: descubrimiento de la auto-configuración por el `.imports` del jar, la página servida desde

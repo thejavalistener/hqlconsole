@@ -541,30 +541,16 @@ public final class HqlConsolePage
 		  (filasDesc || []).forEach(function(fila) {
 		    const atributo = fila[0];
 		    const tipoJava = String(fila[1] || '');
-		    const relacion = String(fila[4] || '-');
 		    if (esAtributoId(atributo)) { return; }
 		    columnas.push(sinMarcaDeId(atributo));
-		    valores.push(valorDeEjemplo(tipoJava, relacion));
+		    valores.push(valorDeEjemplo(tipoJava));
 		  });
 		  return '// Completa y ejecuta esta sentencia\\n'
 		       + 'INSERT INTO ' + entidad + ' (' + columnas.join(',') + ') VALUES (' + valores.join(',') + ');';
 		}
 
-		/**
-		 * Un valor de ejemplo acorde a la columna del DESC.
-		 *
-		 * <p>El caso que importa es la <b>relación</b>: su TIPO JAVA es el nombre de una clase
-		 * (`Departamento`), que se ve igual que un String, así que no alcanza con mirarlo. La columna
-		 * RELACION del DESC dice cuál es el id de la entidad apuntada y de qué tipo, y con eso el
-		 * valor sale sin comillas cuando el id es numérico. Sin ese dato (un DESC viejo, o una consulta
-		 * a mano) se cae al tipo Java, que para una relación da texto entre comillas.</p>
-		 */
-		function valorDeEjemplo(tipoJava, relacion) {
-		  if (relacion && relacion !== '-') {
-		    // "Entidad#id (Tipo)" -> el tipo del id decide si lleva comillas.
-		    const tipoId = /\\(([^)]*)\\)\\s*$/.exec(relacion);
-		    return tipoId && esTipoNumerico(tipoId[1]) ? '999' : "'999'";
-		  }
+		/** Un valor de ejemplo acorde al tipo Java de la columna del DESC. */
+		function valorDeEjemplo(tipoJava) {
 		  if (esTipoNumerico(tipoJava)) {
 		    return '999';
 		  }
@@ -1574,7 +1560,7 @@ public final class HqlConsolePage
 		function refrescarSeleccionActiva() {}
 		function ejecutarSql() { guardarTextoActivo(); const rango=rangoSql(); if(rango.pintar){sqlEditor.focus();sqlEditor.setSelectionRange(rango.inicio,rango.fin);} ejecutarTextoSql(rango.hql.split('\\r').join('').trim(),rango.etiqueta); }
 		async function ejecutarTextoSql(sql,etiqueta) { if(!sql){mostrarError({error:'No hay nada que ejecutar.'});return;}if(btn){btn.disabled=true;}cajaError.style.display='none';estado.textContent='Ejecutando '+etiqueta+'...';try{const respuesta=await pedir(sql,false);if(!respuesta.ok){mostrarError(respuesta.datos);return;}resetPanelDerecho();mostrarResultado(respuesta.datos,sql);}catch(e){mostrarError({error:'No se pudo contactar la consola: '+e});}finally{if(btn){btn.disabled=false;}} }
-		function pintarTablas() { const visibles=filtrarTablas(tablasConocidas,filtroTablas.value,tipoTablas.value);listaEntidades.textContent='';visibles.forEach(function(tablaSql){const boton=document.createElement('button');boton.type='button';boton.className='entidad-item';boton.appendChild(document.createTextNode(tablaSql.nombre));if(tablaSql.entidad){const marca=document.createElement('span');marca.className='marca-mapeada';marca.textContent='[M]';boton.appendChild(marca);}boton.addEventListener('click',function(){ejecutarTextoSql('SELECT * FROM '+tablaSql.nombre+' LIMIT '+LIMITE_MENU,'la tabla '+tablaSql.nombre);});listaEntidades.appendChild(boton);}); }
+		function pintarTablas() { const visibles=filtrarTablas(tablasConocidas,filtroTablas.value,tipoTablas.value);listaEntidades.textContent='';visibles.forEach(function(tablaSql){const boton=document.createElement('button');boton.type='button';boton.className='entidad-item';boton.appendChild(document.createTextNode(tablaSql.nombre));if(tablaSql.entidad){const marca=document.createElement('span');marca.className='marca-mapeada';marca.textContent='[M]';boton.appendChild(marca);}boton.addEventListener('click',function(){ejecutarTextoSql('DESC '+tablaSql.nombre,'la tabla '+tablaSql.nombre);});listaEntidades.appendChild(boton);}); }
 		async function asegurarTablas() { if(tablasConocidas.length){pintarTablas();return;}const respuesta=await pedir('DESC',false);if(!respuesta.ok){tablasConocidas=[];pintarTablas();return;}const h=respuesta.datos.headers||[],n=h.indexOf('TABLA'),t=h.indexOf('TIPO'),e=h.indexOf('ES_ENTIDAD');tablasConocidas=(respuesta.datos.rows||[]).map(function(fila){return {nombre:String(fila[n]),tipo:String(fila[t]),entidad:e>=0&&fila[e]==='SI'};});pintarTablas(); }
 		filtroTablas.addEventListener('input',function(){if(languageActiva==='sql'){pintarTablas();}else{pintarEntidades();}});tipoTablas.addEventListener('change',pintarTablas);
 		sqlEditor.addEventListener('input',function(){clearTimeout(temporizador);temporizador=setTimeout(guardarTextoActivo,400);refrescarSeleccionActiva();});sqlEditor.addEventListener('keydown',function(ev){if(ev.key==='Enter'&&(ev.ctrlKey||ev.metaKey)){ev.preventDefault();ejecutarSql();}});['keyup','mouseup','select','click'].forEach(function(evento){sqlEditor.addEventListener(evento,refrescarSeleccionActiva);});window.addEventListener('pagehide',guardarTextoActivo);
