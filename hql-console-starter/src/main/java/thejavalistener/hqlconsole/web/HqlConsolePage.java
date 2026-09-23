@@ -1208,7 +1208,7 @@ public final class HqlConsolePage
 		    // antes del dry-run) para que cancelar la confirmación no borre el resultado que ya
 		    // estabas mirando.
 		    resetPanelDerecho();
-		    const cabeceras = mostrarResultado(respuesta.datos);
+		    const cabeceras = mostrarResultado(respuesta.datos, hql);
 		    // DML es una escritura sola; BATCH, varias en una transacción. Las dos avisan si son INSERT.
 		    if (esInsercion && (respuesta.datos.type === 'DML' || respuesta.datos.type === 'BATCH')) {
 		      alert(mensajeInsercion(respuesta.datos.affectedRows, respuesta.datos.statementCount));
@@ -1254,6 +1254,7 @@ public final class HqlConsolePage
 		  cajaError.style.display = 'block';
 		  resetPanelDerecho();
 		  estado.textContent = '';
+		  estado.removeAttribute('title');
 		  pie.textContent = '';
 		}
 
@@ -1347,7 +1348,14 @@ public final class HqlConsolePage
 		}
 
 		// Devuelve las cabeceras dibujadas, o nada si el resultado no era una grilla.
-		function mostrarResultado(datos) {
+		function etiquetaDeResultado(sentencia) {
+		  return String(sentencia || '').replace(/\\s+/g, ' ').trim();
+		}
+
+		function mostrarResultado(datos, sentencia) {
+		  const etiqueta = etiquetaDeResultado(sentencia);
+		  estado.textContent = etiqueta;
+		  estado.title = etiqueta;
 		  crudoPre.textContent = JSON.stringify(datos, null, 2);
 		  crudo.hidden = false;
 		  vacio.hidden = true;
@@ -1355,7 +1363,6 @@ public final class HqlConsolePage
 		  if (datos.type === 'DML' || datos.type === 'BATCH') {
 		    cajaTabla.hidden = true;
 		    const detalle = datos.message ? datos.message : (datos.affectedRows + ' fila(s) afectada(s)');
-		    estado.textContent = '';
 		    pie.textContent = detalle + ' en ' + datos.elapsedMs + ' ms';
 		    return null;
 		  }
@@ -1365,7 +1372,6 @@ public final class HqlConsolePage
 		  let resumen = datos.rowCount + ' fila' + (datos.rowCount === 1 ? '' : 's') + ' en ' + datos.elapsedMs + ' ms';
 		  if (datos.truncated) { resumen = resumen + ' - truncado a ' + MAX_ROWS + ' filas'; }
 		  if (datos.message) { resumen = resumen + ' - ' + datos.message; }
-		  estado.textContent = '';
 		  pie.textContent = resumen;
 		  return cabeceras;
 		}
@@ -1534,7 +1540,7 @@ public final class HqlConsolePage
 		estiloIntegrado.textContent = '.barra{justify-content:center}.barra h1{font-size:17px}#panel-entidades{margin-right:0;border:1px solid var(--borde);border-top:0;border-right:0;border-radius:0 0 0 6px;background:#eef4ff}#panel-editor{border:1px solid var(--borde);border-top:0;border-left:0;border-radius:0 0 6px 0;background:#fff;padding:0;gap:0}#hql,#sql{border:0;border-radius:0;background:transparent;outline:0}#hql:focus,#sql:focus{outline:0}#panel-editor .pie-editor{padding:0 8px 8px}#entidades-cabecera{background:transparent}#toggle-entidades{opacity:.55}#toggle-entidades:hover{opacity:1}#panel-entidades.contraido .filtros-tablas{display:none}body.modo-hql #panel-entidades.contraido,body.modo-sql #panel-entidades.contraido{width:30px}#split.entidades-contraidas #solapas{width:calc(var(--ancho-editor) + 38px)}@media(max-width:720px){#panel-entidades{border:1px solid var(--borde);border-radius:6px}#panel-editor{border:1px solid var(--borde);border-radius:6px}}';
 		document.head.appendChild(estiloIntegrado);
 		const estiloResultados = document.createElement('style');
-		estiloResultados.textContent = '#panel-resultado{margin-top:31px}@media(max-width:720px){#panel-resultado{margin-top:0}}';
+		estiloResultados.textContent = '#panel-resultado{margin-top:31px}#divisor{margin-top:31px}#estado{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:20px;font-family:ui-monospace,Consolas,monospace;font-size:12px}@media(max-width:720px){#panel-resultado,#divisor{margin-top:0}}';
 		document.head.appendChild(estiloResultados);
 		const filtros = document.createElement('div');
 		filtros.className = 'filtros-tablas';
@@ -1562,7 +1568,7 @@ public final class HqlConsolePage
 		function rangoSql() { const inicio=sqlEditor.selectionStart, fin=sqlEditor.selectionEnd, recorte=textoAejecutar(sqlEditor.value,inicio,fin); if(fin>inicio&&recorte.trim()){return {hql:recorte,etiqueta:'selecciÃ³n',inicio:inicio,fin:fin,pintar:false};} const p=rangoParrafo(sqlEditor.value,inicio); return {hql:sqlEditor.value.substring(p.inicio,p.fin),etiqueta:'pÃ¡rrafo del cursor',inicio:p.inicio,fin:p.fin,pintar:true}; }
 		function refrescarSeleccionActiva() { const editor=editorActivo(),inicio=editor.selectionStart,fin=editor.selectionEnd,seleccionado=fin>inicio&&editor.value.substring(inicio,fin).trim(),p=rangoParrafo(editor.value,inicio),cantidad=seleccionado?fin-inicio:editor.value.substring(p.inicio,p.fin).trim().length; seleccion.textContent=(seleccionado?'se ejecutarÃ¡ sÃ³lo la selecciÃ³n':'se ejecutarÃ¡ el pÃ¡rrafo del cursor')+' ('+cantidad+' caracteres)'; }
 		function ejecutarSql() { guardarTextoActivo(); const rango=rangoSql(); if(rango.pintar){sqlEditor.focus();sqlEditor.setSelectionRange(rango.inicio,rango.fin);} ejecutarTextoSql(rango.hql.split('\\r').join('').trim(),rango.etiqueta); }
-		async function ejecutarTextoSql(sql,etiqueta) { if(!sql){mostrarError({error:'No hay nada que ejecutar.'});return;} btn.disabled=true;cajaError.style.display='none';estado.textContent='Ejecutando '+etiqueta+'...';try{const respuesta=await pedir(sql,false);if(!respuesta.ok){mostrarError(respuesta.datos);return;}resetPanelDerecho();mostrarResultado(respuesta.datos);}catch(e){mostrarError({error:'No se pudo contactar la consola: '+e});}finally{btn.disabled=false;} }
+		async function ejecutarTextoSql(sql,etiqueta) { if(!sql){mostrarError({error:'No hay nada que ejecutar.'});return;} btn.disabled=true;cajaError.style.display='none';estado.textContent='Ejecutando '+etiqueta+'...';try{const respuesta=await pedir(sql,false);if(!respuesta.ok){mostrarError(respuesta.datos);return;}resetPanelDerecho();mostrarResultado(respuesta.datos,sql);}catch(e){mostrarError({error:'No se pudo contactar la consola: '+e});}finally{btn.disabled=false;} }
 		function pintarTablas() { const visibles=filtrarTablas(tablasConocidas,filtroTablas.value,tipoTablas.value);listaEntidades.textContent='';visibles.forEach(function(tablaSql){const boton=document.createElement('button');boton.type='button';boton.className='entidad-item';boton.textContent=tablaSql.nombre;boton.title=tablaSql.tipo+(tablaSql.entidad?' (entidad mapeada)':'');boton.addEventListener('click',function(){ejecutarTextoSql('SELECT * FROM '+tablaSql.nombre+' LIMIT '+LIMITE_MENU,'la tabla '+tablaSql.nombre);});listaEntidades.appendChild(boton);}); }
 		async function asegurarTablas() { if(tablasConocidas.length){pintarTablas();return;}const respuesta=await pedir('DESC',false);if(!respuesta.ok){tablasConocidas=[];pintarTablas();return;}const h=respuesta.datos.headers||[],n=h.indexOf('TABLA'),t=h.indexOf('TIPO'),e=h.indexOf('ES_ENTIDAD');tablasConocidas=(respuesta.datos.rows||[]).map(function(fila){return {nombre:String(fila[n]),tipo:String(fila[t]),entidad:e>=0&&fila[e]==='SI'};});pintarTablas(); }
 		filtroTablas.addEventListener('input',function(){if(languageActiva==='sql'){pintarTablas();}else{pintarEntidades();}});tipoTablas.addEventListener('change',pintarTablas);
