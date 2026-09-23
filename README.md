@@ -158,7 +158,7 @@ poner el jar en ese entorno.
 
 ### Qué se ejecuta
 
-- **Con texto pintado**, `Ctrl+Enter` (o el botón) ejecuta **sólo la selección** y el resto se
+- **Con texto pintado**, `Ctrl+Enter` ejecuta **sólo la selección** y el resto se
   ignora. La página lo avisa al pie del editor: *"se ejecutará sólo la selección (N caracteres)"*.
 - **Sin nada seleccionado**, ejecuta el **párrafo donde está el cursor**: desde la línea en blanco
   de arriba hasta la de abajo. Un párrafo es un bloque de líneas no vacías; lo que separa párrafos
@@ -192,8 +192,7 @@ Detalles del párrafo, que están cubiertos por los tests:
 
 - **Tres paneles.** A la izquierda del todo está la **lista de entidades** (angosta: sólo los
   nombres), después el **editor** y después los **resultados** (la grilla, el resumen y el JSON
-  crudo). El botón **Ejecutar** vive dentro del panel del editor, debajo del textarea y alineado a la
-  derecha; al lado está el aviso de qué se va a ejecutar. El divisor del medio se arrastra con el
+  crudo). El editor ocupa todo su panel y se ejecuta con `Ctrl+Enter`. El divisor del medio se arrastra con el
   mouse; con el foco puesto en él, las flechas lo mueven de a 2% (con `Shift`, de a 10%),
   `Inicio`/`Fin` van a los extremos y el doble clic vuelve a 50/50. El ancho elegido se recuerda. Por
   debajo de 720 px de ancho los paneles se apilan, el divisor desaparece y la lista de entidades se

@@ -98,7 +98,7 @@ try {
     }
 
     Check 'GET /hqlconsole responde 200 HTML' ($page.StatusCode -eq 200 -and "$($page.Headers['Content-Type'])" -like 'text/html*') $page.StatusCode
-    Check 'la pagina trae el textarea y el boton' ($page.Content -match '<textarea' -and $page.Content -match 'id="run"')
+    Check 'la pagina trae el textarea sin boton Ejecutar' ($page.Content -match '<textarea' -and $page.Content -notmatch 'id="run"')
     Check 'la pagina trae las dos solapas y los dos editores' ($page.Content -match 'id="tab-hql"' -and $page.Content -match 'id="tab-sql"' -and $page.Content -match 'id="sql"') 'falta HQL o SQL'
     Check 'la pagina persiste SQL y la solapa activa' ($page.Content -match 'hql-console.consulta-sql' -and $page.Content -match 'hql-console.solapa') 'faltan claves SQL'
     $barra = [regex]::Match($page.Content, '(?s)<div class="barra">(.*?)</div>')
@@ -468,17 +468,13 @@ try {
     Check 'y con el case correcto funciona' ($r.status -eq 200 -and $r.json.rowCount -ge 1) $r.status
 
     # --- que se ejecuta: la seleccion, o el parrafo del cursor ---
-    Check 'la pagina trae el ejecutar-por-seleccion' ($page.Content -match 'id="seleccion"' -and $page.Content -match 'ta\.selectionStart' -and $page.Content -match 'function textoAejecutar') 'falta el codigo de seleccion'
-    Check 'el boton no le roba la seleccion al textarea' ($page.Content -match "btn\.addEventListener\('mousedown'") 'falta el preventDefault del mousedown'
+    Check 'la pagina trae el ejecutar-por-seleccion' ($page.Content -match 'ta\.selectionStart' -and $page.Content -match 'function textoAejecutar') 'falta el codigo de seleccion'
+    Check 'Ctrl+Enter ejecuta desde el textarea' ($page.Content -match "ta\.addEventListener\('keydown'" -and $page.Content -match "ev\.key === 'Enter'") 'falta el atajo'
     Check 'la pagina trae el ejecutar-por-parrafo' ($page.Content -match 'function rangoParrafo' -and $page.Content -match 'function lineasDe' -and $page.Content -match 'INICIO funciones puras') 'falta el calculo del parrafo'
     Check 'una seleccion en blanco cae en el parrafo' ($page.Content -match 'recorte\.trim\(\)') 'no esta el fallback de seleccion vacia'
 
-    # --- el boton, dentro del panel izquierdo y debajo del textarea ---
-    $panelIzq = [regex]::Match($page.Content, '(?s)id="panel-editor"(.*?)id="divisor"')
-    Check 'el boton esta dentro del panel izquierdo' ($panelIzq.Success -and $panelIzq.Groups[1].Value -match 'id="run"') 'el boton no esta en el panel izquierdo'
-    Check 'el boton va despues del textarea' ($panelIzq.Success -and $panelIzq.Groups[1].Value -match '(?s)<textarea.*id="run"') 'el boton no esta debajo del textarea'
-    Check 'el boton se alinea a la derecha' ($page.Content -match '\.pie-editor #run' -and $page.Content -match 'margin-left:auto') 'no esta el margin-left:auto'
-    Check 'el alcance se avisa al pie del editor' ($page.Content -match 'id="pista"' -and $page.Content -match 'seleccion\.textContent') 'no esta el aviso de alcance'
+    # --- el editor ocupa todo el alto: se ejecuta exclusivamente con Ctrl+Enter ---
+    Check 'el editor no tiene pie ni boton Ejecutar' ($page.Content -notmatch 'pie-editor' -and $page.Content -notmatch 'id="pista"') 'quedo el pie del editor'
 
     if (Get-Command node -ErrorAction SilentlyContinue) {
         # Las funciones puras se extraen de la pagina que sirve el jar y se corren de verdad, en Node.

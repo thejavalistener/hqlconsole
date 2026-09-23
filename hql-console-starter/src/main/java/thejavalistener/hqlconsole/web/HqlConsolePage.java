@@ -72,10 +72,6 @@ public final class HqlConsolePage
 		            del HTML es el que manda (el atributo gana sobre el CSS en algunos navegadores), pero
 		            se declara también acá para que la regla se lea sola. */
 		         wrap:off; white-space:pre; overflow-x:auto; overflow-y:auto; }
-		  /* La barra del pie del editor: el aviso de alcance a la izquierda, el botón a la derecha. */
-		  .pie-editor { flex:0 0 auto; display:flex; align-items:center; gap:8px; min-width:0; }
-		  .pie-editor .alcance { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-		  .pie-editor #run { margin-left:auto; flex:0 0 auto; }
 		  #divisor { flex:0 0 10px; display:flex; align-items:center; justify-content:center;
 		             cursor:col-resize; touch-action:none; background:none; border:0; padding:0; }
 		  #divisor::before { content:''; width:3px; height:100%; border-radius:2px; background:var(--borde);
@@ -183,7 +179,9 @@ public final class HqlConsolePage
 		</head>
 		<body>
 		<div class="barra">
-		  <h1>HQL Console</h1>
+		  <span class="icono-consola" aria-hidden="true">&#9678;</span>
+		  <h1>Consola <span class="separador-titulo">/</span> <span id="idioma-titulo">HQL</span></h1>
+		  <span id="atajo-ejecutar">Ejecutar (Ctrl+Enter)</span>
 		</div>
 		<div id="error"><div id="error-msg"></div><pre id="error-sql"></pre></div>
 		<div id="split">
@@ -202,11 +200,6 @@ public final class HqlConsolePage
 		  <div id="panel-editor">
 		    <textarea id="hql" spellcheck="false" wrap="off" placeholder="SELECT e.id, e.nombre FROM Empleado e"></textarea>
 		    <textarea id="sql" spellcheck="false" wrap="off" placeholder="SELECT ID, TITULO FROM LIBROS" hidden></textarea>
-		    <div class="pie-editor">
-		      <span class="estado" id="pista">Ctrl+Enter:</span>
-		      <span class="estado sel alcance" id="seleccion"></span>
-		      <button id="run" title="Ctrl+Enter">Ejecutar</button>
-		    </div>
 		  </div>
 		  <div id="divisor" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Redimensionar el editor"
 		       title="Arrastra para redimensionar. Flechas: de a 2%. Inicio/Fin: extremos. Doble clic: 50/50."></div>
@@ -756,13 +749,13 @@ public final class HqlConsolePage
 		    cantidad = ta.value.substring(parrafo.inicio, parrafo.fin).trim().length;
 		    leyenda = 'se ejecutará el párrafo del cursor';
 		  }
-		  seleccion.textContent = leyenda + ' (' + cantidad + ' caracteres)';
+		  if (seleccion) { seleccion.textContent = leyenda + ' (' + cantidad + ' caracteres)'; }
 		}
 
-		btn.addEventListener('click', ejecutar);
+		if (btn) { btn.addEventListener('click', ejecutar); }
 		// Sin esto, el mousedown del botón le roba el foco al textarea y el navegador colapsa la
 		// selección: el botón terminaba ejecutando todo en vez de lo pintado.
-		btn.addEventListener('mousedown', function(ev) { ev.preventDefault(); });
+		if (btn) { btn.addEventListener('mousedown', function(ev) { ev.preventDefault(); }); }
 		ta.addEventListener('keydown', function(ev) {
 		  if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); ejecutar(); }
 		});
@@ -949,7 +942,7 @@ public final class HqlConsolePage
 		      ev.preventDefault();
 		      cancelarMenuProgramado();
 		      const caja = boton.getBoundingClientRect();
-		      abrirMenu(caja.right, caja.top, nombre);
+		      abrirMenu(posicionHorizontalDelMenu(boton), caja.top, nombre);
 		    });
 		    listaEntidades.appendChild(boton);
 		  });
@@ -975,7 +968,7 @@ public final class HqlConsolePage
 		    // El menú nace pegado al borde derecho de la entidad, a la altura del renglón. Pegado y no
 		    // separado: si hubiera un hueco, el mouse tendría que atravesarlo para llegar al menú, y
 		    // en ese hueco no está ni en el ítem ni en el menú (y el menú se cerraría solo).
-		    abrirMenu(caja.right, caja.top, entidad);
+		    abrirMenu(posicionHorizontalDelMenu(boton), caja.top, entidad);
 		  }, ESPERA_MENU);
 		}
 
@@ -1186,7 +1179,7 @@ public final class HqlConsolePage
 		  // único que importa es qué se pidió ejecutar.
 		  const esInsercion = hql.toLowerCase().indexOf('insert') === 0;
 		  const confirmar = pideConfirmacion(hql);
-		  btn.disabled = true;
+		  if (btn) { btn.disabled = true; }
 		  cajaError.style.display = 'none';
 		  try {
 		    // En UPDATE y DELETE, primero un dry-run: el servidor ejecuta, cuenta y tira atrás. Con
@@ -1227,7 +1220,7 @@ public final class HqlConsolePage
 		  } catch (e) {
 		    mostrarError({ error: 'No se pudo contactar la consola: ' + e });
 		  } finally {
-		    btn.disabled = false;
+		    if (btn) { btn.disabled = false; }
 		  }
 		}
 
@@ -1528,7 +1521,7 @@ public final class HqlConsolePage
 		const sqlEditor = document.getElementById('sql');
 		const tabHql = document.getElementById('tab-hql');
 		const tabSql = document.getElementById('tab-sql');
-		const tituloConsola = document.querySelector('.barra h1');
+		const tituloConsola = document.getElementById('idioma-titulo');
 		const CLAVE_TEXTO_SQL = 'hql-console.consulta-sql';
 		const CLAVE_SOLAPA = 'hql-console.solapa';
 		let languageActiva = ALMACEN.getItem(CLAVE_SOLAPA) === 'sql' ? 'sql' : 'hql';
@@ -1537,10 +1530,10 @@ public final class HqlConsolePage
 		estiloSql.textContent = '#split{position:relative}#solapas{position:absolute;z-index:1;top:0;left:0;width:calc(var(--ancho-editor) + 228px);height:31px;display:flex;align-items:end;gap:3px;border-bottom:1px solid var(--borde)}#solapas button{height:28px;padding:4px 13px;color:inherit;background:transparent;border:1px solid transparent;border-radius:6px 6px 0 0;font-size:12px;font-weight:600}#solapas button:hover{background:#eef4ff}#solapas .solapa-activa{color:var(--acento);background:#fff;border-color:var(--borde);border-bottom-color:#fff;margin-bottom:-1px}#alcance-solapa{margin-left:auto;margin-bottom:6px;font-size:11px;opacity:.62;white-space:nowrap}#panel-entidades,#panel-editor{margin-top:31px}#sql{flex:1 1 auto;width:100%;min-height:0;margin:0;padding:10px;background:#fff;font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:1.5;border:1px solid var(--borde);border-radius:6px;resize:none;tab-size:2;wrap:off;white-space:pre;overflow:auto}body.modo-hql #panel-entidades,body.modo-sql #panel-entidades{width:220px}body.modo-sql #menu{display:none!important}.filtros-tablas{display:flex;gap:3px;padding:4px}.filtros-tablas input{width:100%;min-width:0}.filtros-tablas select{max-width:70px}@media(max-width:720px){#solapas{position:static;width:auto}#panel-entidades,#panel-editor{margin-top:0}#alcance-solapa{display:none}}';
 		document.head.appendChild(estiloSql);
 		const estiloIntegrado = document.createElement('style');
-		estiloIntegrado.textContent = '.barra{justify-content:center}.barra h1{font-size:17px}#panel-entidades{margin-right:0;border:1px solid var(--borde);border-top:0;border-right:0;border-radius:0 0 0 6px;background:#eef4ff}#panel-editor{border:1px solid var(--borde);border-top:0;border-left:0;border-radius:0 0 6px 0;background:#fff;padding:0;gap:0}#hql,#sql{border:0;border-radius:0;background:transparent;outline:0}#hql:focus,#sql:focus{outline:0}#panel-editor .pie-editor{padding:0 8px 8px}#entidades-cabecera{background:transparent}#toggle-entidades{opacity:.55}#toggle-entidades:hover{opacity:1}#panel-entidades.contraido .filtros-tablas{display:none}body.modo-hql #panel-entidades.contraido,body.modo-sql #panel-entidades.contraido{width:30px}#split.entidades-contraidas #solapas{width:calc(var(--ancho-editor) + 38px)}@media(max-width:720px){#panel-entidades{border:1px solid var(--borde);border-radius:6px}#panel-editor{border:1px solid var(--borde);border-radius:6px}}';
+		estiloIntegrado.textContent = '.barra{justify-content:flex-start;background:#fff;border:1px solid var(--borde);border-radius:6px;padding:7px 10px;gap:8px}.barra h1{font-size:17px}.icono-consola{font-size:21px;line-height:1;color:var(--acento)}.separador-titulo{opacity:.45;font-weight:400}.barra #idioma-titulo{display:inline-block;padding:1px 6px;border-radius:4px;background:#dce8ff;color:#174f96}.barra #atajo-ejecutar{margin-left:8px;padding:4px 9px;border-radius:4px;background:#2f6fbd;color:#fff;font-size:12px;font-weight:600}#panel-entidades{margin-right:0;border:1px solid var(--borde);border-top:0;border-right:0;border-radius:0 0 0 6px;background:#eef4ff}#panel-editor{border:1px solid var(--borde);border-top:0;border-left:0;border-radius:0 0 6px 0;background:#fff;padding:0;gap:0}#hql,#sql{border:0;border-radius:0;background:transparent;outline:0}#hql:focus,#sql:focus{outline:0}#entidades-cabecera{background:transparent}#toggle-entidades{opacity:.55}#toggle-entidades:hover{opacity:1}.marca-mapeada{margin-left:5px;color:#1769aa;font-weight:700}#panel-entidades.contraido .filtros-tablas{display:none}body.modo-hql #panel-entidades.contraido,body.modo-sql #panel-entidades.contraido{width:30px}#split.entidades-contraidas #solapas{width:calc(var(--ancho-editor) + 38px)}@media(max-width:720px){#panel-entidades{border:1px solid var(--borde);border-radius:6px}#panel-editor{border:1px solid var(--borde);border-radius:6px}.barra #atajo-ejecutar{margin-left:auto}}';
 		document.head.appendChild(estiloIntegrado);
 		const estiloResultados = document.createElement('style');
-		estiloResultados.textContent = '#panel-resultado{margin-top:31px}#divisor{margin-top:31px}#estado{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:20px;font-family:ui-monospace,Consolas,monospace;font-size:12px}@media(max-width:720px){#panel-resultado,#divisor{margin-top:0}}';
+		estiloResultados.textContent = '#panel-resultado{margin-top:31px}#divisor{margin-top:31px}#estado{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:20px;font-family:ui-monospace,Consolas,monospace;font-size:12px}#estado:empty{display:none}@media(max-width:720px){#panel-resultado,#divisor{margin-top:0}}';
 		document.head.appendChild(estiloResultados);
 		const filtros = document.createElement('div');
 		filtros.className = 'filtros-tablas';
@@ -1556,8 +1549,8 @@ public final class HqlConsolePage
 		  ta.hidden = languageActiva === 'sql'; sqlEditor.hidden = languageActiva !== 'sql';
 		  tabHql.classList.toggle('solapa-activa', languageActiva === 'hql'); tabSql.classList.toggle('solapa-activa', languageActiva === 'sql');
 		  tabHql.setAttribute('aria-selected', languageActiva === 'hql' ? 'true' : 'false'); tabSql.setAttribute('aria-selected', languageActiva === 'sql' ? 'true' : 'false');
-		  tituloConsola.textContent = languageActiva === 'sql' ? 'SQL Console' : 'HQL Console';
-		  filtros.hidden = false; tipoTablas.hidden = languageActiva !== 'sql'; filtroTablas.placeholder = languageActiva === 'sql' ? 'Filtrar tablas' : 'Filtrar entidades'; panelEntidades.querySelector('.entidades-titulo').textContent = languageActiva === 'sql' ? 'Tablas (SQL)' : 'Entidades (HQL)';
+		  tituloConsola.textContent = languageActiva === 'sql' ? 'SQL' : 'HQL';
+		  filtros.hidden = false; tipoTablas.hidden = languageActiva !== 'sql'; filtroTablas.placeholder = languageActiva === 'sql' ? 'Filtrar tablas' : 'Filtrar entidades'; panelEntidades.querySelector('.entidades-titulo').textContent = languageActiva === 'sql' ? 'Tablas' : 'Entidades';
 		  ALMACEN.setItem(CLAVE_SOLAPA, languageActiva); if (languageActiva === 'sql') { asegurarTablas(); } else { pintarEntidades(); asegurarEntidades(); }
 		  editorActivo().focus(); refrescarSeleccionActiva();
 		}
@@ -1566,10 +1559,10 @@ public final class HqlConsolePage
 		sqlEditor.value = sqlGuardado === null || sqlGuardado === undefined ? '' : sqlGuardado;
 		tabHql.addEventListener('click', function() { cambiarSolapa('hql'); }); tabSql.addEventListener('click', function() { cambiarSolapa('sql'); });
 		function rangoSql() { const inicio=sqlEditor.selectionStart, fin=sqlEditor.selectionEnd, recorte=textoAejecutar(sqlEditor.value,inicio,fin); if(fin>inicio&&recorte.trim()){return {hql:recorte,etiqueta:'selecciÃ³n',inicio:inicio,fin:fin,pintar:false};} const p=rangoParrafo(sqlEditor.value,inicio); return {hql:sqlEditor.value.substring(p.inicio,p.fin),etiqueta:'pÃ¡rrafo del cursor',inicio:p.inicio,fin:p.fin,pintar:true}; }
-		function refrescarSeleccionActiva() { const editor=editorActivo(),inicio=editor.selectionStart,fin=editor.selectionEnd,seleccionado=fin>inicio&&editor.value.substring(inicio,fin).trim(),p=rangoParrafo(editor.value,inicio),cantidad=seleccionado?fin-inicio:editor.value.substring(p.inicio,p.fin).trim().length; seleccion.textContent=(seleccionado?'se ejecutarÃ¡ sÃ³lo la selecciÃ³n':'se ejecutarÃ¡ el pÃ¡rrafo del cursor')+' ('+cantidad+' caracteres)'; }
+		function refrescarSeleccionActiva() {}
 		function ejecutarSql() { guardarTextoActivo(); const rango=rangoSql(); if(rango.pintar){sqlEditor.focus();sqlEditor.setSelectionRange(rango.inicio,rango.fin);} ejecutarTextoSql(rango.hql.split('\\r').join('').trim(),rango.etiqueta); }
-		async function ejecutarTextoSql(sql,etiqueta) { if(!sql){mostrarError({error:'No hay nada que ejecutar.'});return;} btn.disabled=true;cajaError.style.display='none';estado.textContent='Ejecutando '+etiqueta+'...';try{const respuesta=await pedir(sql,false);if(!respuesta.ok){mostrarError(respuesta.datos);return;}resetPanelDerecho();mostrarResultado(respuesta.datos,sql);}catch(e){mostrarError({error:'No se pudo contactar la consola: '+e});}finally{btn.disabled=false;} }
-		function pintarTablas() { const visibles=filtrarTablas(tablasConocidas,filtroTablas.value,tipoTablas.value);listaEntidades.textContent='';visibles.forEach(function(tablaSql){const boton=document.createElement('button');boton.type='button';boton.className='entidad-item';boton.textContent=tablaSql.nombre;boton.title=tablaSql.tipo+(tablaSql.entidad?' (entidad mapeada)':'');boton.addEventListener('click',function(){ejecutarTextoSql('SELECT * FROM '+tablaSql.nombre+' LIMIT '+LIMITE_MENU,'la tabla '+tablaSql.nombre);});listaEntidades.appendChild(boton);}); }
+		async function ejecutarTextoSql(sql,etiqueta) { if(!sql){mostrarError({error:'No hay nada que ejecutar.'});return;}if(btn){btn.disabled=true;}cajaError.style.display='none';estado.textContent='Ejecutando '+etiqueta+'...';try{const respuesta=await pedir(sql,false);if(!respuesta.ok){mostrarError(respuesta.datos);return;}resetPanelDerecho();mostrarResultado(respuesta.datos,sql);}catch(e){mostrarError({error:'No se pudo contactar la consola: '+e});}finally{if(btn){btn.disabled=false;}} }
+		function pintarTablas() { const visibles=filtrarTablas(tablasConocidas,filtroTablas.value,tipoTablas.value);listaEntidades.textContent='';visibles.forEach(function(tablaSql){const boton=document.createElement('button');boton.type='button';boton.className='entidad-item';boton.appendChild(document.createTextNode(tablaSql.nombre));if(tablaSql.entidad){const marca=document.createElement('span');marca.className='marca-mapeada';marca.textContent='[M]';boton.appendChild(marca);}boton.addEventListener('click',function(){ejecutarTextoSql('SELECT * FROM '+tablaSql.nombre+' LIMIT '+LIMITE_MENU,'la tabla '+tablaSql.nombre);});listaEntidades.appendChild(boton);}); }
 		async function asegurarTablas() { if(tablasConocidas.length){pintarTablas();return;}const respuesta=await pedir('DESC',false);if(!respuesta.ok){tablasConocidas=[];pintarTablas();return;}const h=respuesta.datos.headers||[],n=h.indexOf('TABLA'),t=h.indexOf('TIPO'),e=h.indexOf('ES_ENTIDAD');tablasConocidas=(respuesta.datos.rows||[]).map(function(fila){return {nombre:String(fila[n]),tipo:String(fila[t]),entidad:e>=0&&fila[e]==='SI'};});pintarTablas(); }
 		filtroTablas.addEventListener('input',function(){if(languageActiva==='sql'){pintarTablas();}else{pintarEntidades();}});tipoTablas.addEventListener('change',pintarTablas);
 		sqlEditor.addEventListener('input',function(){clearTimeout(temporizador);temporizador=setTimeout(guardarTextoActivo,400);refrescarSeleccionActiva();});sqlEditor.addEventListener('keydown',function(ev){if(ev.key==='Enter'&&(ev.ctrlKey||ev.metaKey)){ev.preventDefault();ejecutarSql();}});['keyup','mouseup','select','click'].forEach(function(evento){sqlEditor.addEventListener(evento,refrescarSeleccionActiva);});window.addEventListener('pagehide',guardarTextoActivo);
