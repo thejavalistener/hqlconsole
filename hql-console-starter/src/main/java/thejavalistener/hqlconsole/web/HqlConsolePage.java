@@ -612,12 +612,12 @@ public final class HqlConsolePage
 		 * que había escrito.
 		 *
 		 * <p>Se deja una línea en blanco antes y después, así el bloque nuevo queda separado de lo que
-		 * había (y sigue siendo su propio párrafo para el Ctrl+Enter). Y el cursor queda adentro del
-		 * paréntesis de {@code VALUES}, listo para escribir el primer valor.</p>
+		 * había (y sigue siendo su propio párrafo para el Ctrl+Enter).</p>
 		 *
-		 * <p>Devuelve el texto nuevo y la posición donde tiene que quedar el cursor. El scroll del
-		 * editor no se toca acá: de eso se encarga el que llama, que es el único que sabe si había
-		 * que conservarlo.</p>
+		 * <p>Devuelve el texto nuevo, el rango exacto de <b>la línea insertada</b> (para poder
+		 * seleccionarla y que se vea dónde apareció) y la posición del cursor adentro del paréntesis
+		 * de {@code VALUES}. El scroll del editor no se toca acá: de eso se encarga el que llama, que
+		 * es el único que sabe si había que conservarlo.</p>
 		 */
 		function insertarEnParrafo(texto, cursor, sentencia) {
 		  const parrafo = rangoParrafo(texto, cursor);
@@ -635,7 +635,8 @@ public final class HqlConsolePage
 		  const inicio = parrafo.fin + sepAntes.length - _espaciosAlFinal(antes);
 		  const nuevo = antes + sepAntes + sentencia + sepDespues + despues;
 
-		  return { texto: nuevo, cursor: inicio + posicionDeValores(sentencia) };
+		  return { texto: nuevo, cursor: inicio + posicionDeValores(sentencia),
+		           seleccion: { inicio: inicio, fin: inicio + sentencia.length } };
 		}
 
 		// Cuántos saltos hay que agregar para dejar UNA línea en blanco de ese lado. Si ya hay dos o
@@ -1044,15 +1045,18 @@ public final class HqlConsolePage
 		});
 
 		/**
-		 * Poner el INSERT generado en el editor, en el párrafo del cursor: lo que había escrito no se
-		 * pierde.
+		 * Poner el INSERT generado en el editor, en el párrafo del cursor, y dejarlo
+		 * <b>seleccionado</b>: así se ve de un vistazo dónde apareció, que es lo que no se encontraba
+		 * cuando sólo se movía el cursor.
 		 *
-		 * <p><b>El scroll se conserva.</b> Reemplazar {@code ta.value} y darle el foco hacía que el
-		 * navegador saltara al final para mostrar la selección, y el usuario perdía de vista dónde
-		 * había quedado el bloque. Se guardan las dos posiciones de scroll antes de tocar nada y se
-		 * restauran después de dejar el cursor en su lugar. El {@code setSelectionRange(pos, pos)} —
-		 * con la posición dos veces— es el que además le dice al navegador que no haga scroll por su
-		 * cuenta.</p>
+		 * <p>Se pierde el cursor listo para escribir en {@code VALUES (}, y es a propósito: se eligió
+		 * la visibilidad. La sentencia queda seleccionada, así que la próxima tecla que se toque la
+		 * reemplaza; para completarla hay que hacer clic adentro.</p>
+		 *
+		 * <p><b>El scroll se conserva.</b> Seleccionar con {@code setSelectionRange} hace que el
+		 * navegador scrollee para mostrar la selección (fue la causa del salto al final que tuvimos
+		 * antes), así que se guardan las dos posiciones antes de tocar nada y se restauran después de
+		 * seleccionar, que es cuando el navegador salta.</p>
 		 */
 		function insertarEnEditor(sentencia) {
 		  const scrollArriba = ta.scrollTop;
@@ -1062,9 +1066,9 @@ public final class HqlConsolePage
 		  ta.value = puesto.texto;
 
 		  ta.focus();
-		  ta.setSelectionRange(puesto.cursor, puesto.cursor);
+		  ta.setSelectionRange(puesto.seleccion.inicio, puesto.seleccion.fin);
 
-		  // Después de asignar el valor y de mover el cursor, que es cuando el navegador scrollea.
+		  // Después de asignar el valor y de seleccionar, que es cuando el navegador scrollea.
 		  ta.scrollTop = scrollArriba;
 		  ta.scrollLeft = scrollIzquierda;
 

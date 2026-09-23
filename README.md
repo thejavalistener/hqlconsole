@@ -211,11 +211,12 @@ Detalles del párrafo, que están cubiertos por los tests:
     menor, gana ese y el resultado se marca como truncado.
   - **`INSERT INTO Entidad`**: arma un `INSERT` de ejemplo y lo **escribe en el editor** (no lo
     ejecuta), **abajo del párrafo donde está el cursor**, sin pisar lo que tenías escrito y **sin
-    mover el scroll**: quedás mirando donde estabas, con el cursor adentro del paréntesis de
-    `VALUES (`, listo para completar los valores. Excluye el `id` —lo genera la base— y pone un
-    valor acorde al tipo de cada columna: `999` para los números, `'999'` para los textos,
-    `'2024-01-01'` para las fechas, `NOW` para los timestamps y `false` para los booleanos. Las
-    relaciones van **por el id, sin comillas** cuando ese id es numérico (lo dice la columna
+    mover el scroll**, así quedás mirando donde estabas. La sentencia insertada queda
+    **seleccionada**, que es lo que hace evidente dónde apareció; la contra es que la próxima tecla
+    la reemplaza, así que para completarla hay que hacer clic adentro. Excluye el `id` —lo genera la
+    base— y pone un valor acorde al tipo de cada columna: `999` para los números, `'999'` para los
+    textos, `'2024-01-01'` para las fechas, `NOW` para los timestamps y `false` para los booleanos.
+    Las relaciones van **por el id, sin comillas** cuando ese id es numérico (lo dice la columna
     `RELACION` del `DESC`).
   - El **clic sigue haciendo el `DESC`**, que es el atajo rápido: el menú es para lo demás. Al hacer
     clic el menú se **cierra y no vuelve** hasta que saques el mouse y vuelvas a entrar.

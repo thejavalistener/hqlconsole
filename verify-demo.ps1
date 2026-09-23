@@ -662,6 +662,12 @@ check('posicion: una sentencia sin VALUES cae al primer parentesis', posicionDeV
 check('posicion: sin parentesis va al final', posicionDeValores('DESC Libro'), 'DESC Libro'.length);
 check('posicion: no se confunde con un VALUES en minusculas', posicionDeValores('insert into x (a) values (1)'), 'insert into x (a) values ('.length);
 check('insertar: la sentencia queda entera y en su lugar', puesto.texto.indexOf('INSERT INTO X (a) VALUES (1);') > 0, true);
+// La seleccion cubre EXACTAMENTE la sentencia: es lo que hace visible donde quedo el INSERT.
+check('insertar: lo insertado queda seleccionado', puesto.texto.substring(puesto.seleccion.inicio, puesto.seleccion.fin), 'INSERT INTO X (a) VALUES (1);');
+check('insertar: la seleccion empieza donde empieza la sentencia', puesto.seleccion.inicio, puesto.texto.indexOf('INSERT INTO X'));
+check('insertar: la seleccion no se lleva los saltos de linea', /^[^\n]*$/.test(puesto.texto.substring(puesto.seleccion.inicio, puesto.seleccion.fin)), true);
+// El cursor queda adentro de VALUES, que es donde se completa el primer valor.
+check('insertar: el cursor queda dentro de la sentencia seleccionada', puesto.cursor > puesto.seleccion.inicio && puesto.cursor < puesto.seleccion.fin, true);
 // Con el cursor al final del documento, el insert va al final y no al principio.
 var alFinal = insertarEnParrafo('SELECT 1\n\n', 10, 'INSERT INTO Y (b) VALUES (2);');
 check('insertar: con el cursor al final agrega al final', alFinal.texto.indexOf('INSERT INTO Y') > alFinal.texto.indexOf('SELECT 1'), true);
@@ -858,9 +864,10 @@ check('insertar: en un editor vacio no agrega lineas de mas al principio', vacio
           ($page.Content -match 'function insertarEnEditor' -and $page.Content -match "menuInsert\.addEventListener\('click'") 'el INSERT del menu no escribe'
     Check 'el INSERT se inserta sin borrar lo escrito' `
           ($page.Content -match 'function insertarEnParrafo' -and $page.Content -notmatch 'ta\.value = sentencia') 'el INSERT pisa el editor'
-    Check 'el cursor queda en el parentesis de columnas' ($page.Content -match 'puesto\.cursor, puesto\.cursor') 'el cursor no se posiciona'
-    # Sin esto, el navegador saltaba al final al insertar el INSERT y el usuario perdia de vista donde
-    # habia quedado el bloque.
+    # El INSERT queda seleccionado (para ver donde aparecio) y el scroll no se mueve. Las dos cosas
+    # juntas: seleccionar con setSelectionRange hace saltar el scroll, asi que hay que restaurarlo.
+    Check 'el INSERT queda seleccionado al insertarlo' `
+          ($page.Content -match 'ta\.setSelectionRange\(puesto\.seleccion\.inicio, puesto\.seleccion\.fin\)') 'no se selecciona lo insertado'
     Check 'el INSERT conserva el scroll del editor' `
           ($page.Content -match 'const scrollArriba = ta\.scrollTop' -and $page.Content -match 'ta\.scrollTop = scrollArriba' -and $page.Content -match 'ta\.scrollLeft = scrollIzquierda') 'el scroll del editor salta al final'
     Check 'SELECT * del menu usa LIMIT' ($page.Content -match 'function selectDeEntidad' -and $page.Content -match 'LIMITE_MENU = 100' -and $page.Content -match "ejecutarTexto\(selectDeEntidad") 'el SELECT del menu no limita'

@@ -120,6 +120,28 @@ trabajo (una sesión nueva, otro modelo) no tenga que adivinar: la documentació
    rango de selección que no se usaba (`insertarEnParrafo` ya no devuelve `seleccion`), con lo que
    además la función pura quedó más chica y sin estado de más.
 
+9. **Se dejó de mover el cursor y ahora se selecciona el INSERT.** Con el cursor solo, era difícil
+   darse cuenta de dónde había quedado el bloque (sobre todo si el párrafo estaba lejos de la vista).
+   Ahora la sentencia insertada queda **seleccionada**, y eso se ve.
+
+   **Se pierde el cursor listo para escribir en `VALUES (`**, y es una decisión consciente: se priorizó
+   la visibilidad. Consecuencia a tener en cuenta: la próxima tecla que se toque **reemplaza** la
+   selección, así que para completar la sentencia hay que hacer clic adentro.
+
+   **Ojo con el scroll**: `setSelectionRange` hace que el navegador scrollee para mostrar la
+   selección —fue exactamente la causa del salto al final que arreglamos en el punto 8—, así que la
+   restauración de `scrollTop`/`scrollLeft` tiene que ir **después** de seleccionar. Las dos cosas van
+   juntas: si en algún momento se saca una, la otra deja de tener sentido.
+
+   El rango que devuelve `insertarEnParrafo` (`seleccion`) volvió a existir para esto: es el rango
+   exacto de lo insertado, calculado con la misma cuenta que el texto, así que no puede quedar
+   corrido.
+
+   **Detalle a decidir**: la selección cubre **la sentencia entera**, comentario incluido (el
+   `// Completa y ejecuta esta sentencia`), porque el comentario y el INSERT se insertan como una
+   sola unidad. Si alguna vez molesta que una tecla se lleve también el comentario, hay que
+   seleccionar sólo desde el `INSERT` (una línea de cambio).
+
 ### La trampa del template: `constant string too long`
 
 Al agregar el último arreglo, el build falló con **`constant string too long`**: el límite de un
