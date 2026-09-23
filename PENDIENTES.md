@@ -64,8 +64,8 @@ trabajo (una sesión nueva, otro modelo) no tenga que adivinar: la documentació
   la metadata JDBC para headers y tipos, con degradación segura si el driver no la expone.
 - En modo SQL se ocultan el menú de entidades y la generación de INSERT. El panel lista tablas y
   vistas, permite filtrar por texto/tipo y ejecuta el `DESC` emulado al hacer clic.
-- Verificación vigente: `verify-demo.ps1` da **233 PASS / 0 FAIL**; con
-  `-ContextPath /demo -MaxRows 3`, **241 PASS / 0 FAIL**.
+- Verificación vigente: `verify-demo.ps1` da **234 PASS / 0 FAIL**; con
+  `-ContextPath /demo -MaxRows 3`, **242 PASS / 0 FAIL**.
 
 ## #12 — El menú por hover, y el bug del header
 

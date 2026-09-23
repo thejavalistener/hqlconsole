@@ -326,6 +326,9 @@ primaria se marca como `CAMPO (PK)`, una foránea como `CAMPO (FK)` y su destino
 `TABLA (CAMPO)`. Las filas FK abren debajo el `DESC` emulado de la tabla destino. No hay generación
 de INSERT.
 
+Las columnas PK se muestran primero; las restantes conservan el orden que entrega la metadata de la
+base.
+
 ### Las tres sentencias propias de la consola
 
 Hibernate no las conoce. Son éstas:
@@ -695,8 +698,8 @@ Verificado end-to-end con `verify-demo.ps1`, que compila, levanta el fat jar del
 comprobaciones contra una H2 en memoria (Spring Boot 3.2.5, Hibernate 6.4.4, Java 21):
 
 ```
-.\verify-demo.ps1                                  # 233 PASS / 0 FAIL
-.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 241 PASS / 0 FAIL
+.\verify-demo.ps1                                  # 234 PASS / 0 FAIL
+.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 242 PASS / 0 FAIL
 ```
 
 Cubre: descubrimiento de la auto-configuración por el `.imports` del jar, la página servida desde

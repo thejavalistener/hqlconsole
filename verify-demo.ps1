@@ -204,6 +204,7 @@ try {
     Check 'DESC SQL lista tablas sin catalogos del sistema' ($r.status -eq 200 -and ($r.json.headers -join ',') -eq 'TABLA,TIPO,ES_ENTIDAD' -and ($r.json.rows -join ',') -notmatch 'INFORMATION_SCHEMA') $r.raw
     $r = Exec 'DESC LIBROS' $null 'sql'
     Check 'DESC SQL marca PK y muestra el destino de FK' ($r.status -eq 200 -and ($r.json.headers -join ',') -eq 'CAMPO,TIPO SQL,RELACION' -and @($r.json.rows | Where-Object { $_[0] -match 'ID \(PK\)' }).Count -gt 0 -and @($r.json.rows | Where-Object { $_[0] -match '\(FK\)$' -and $_[2] -match 'AUTORES \(ID\)' }).Count -gt 0) $r.raw
+    Check 'DESC SQL muestra primero las columnas PK' ($r.json.rows.Count -gt 0 -and $r.json.rows[0][0] -match '\(PK\)') ($r.json.rows[0] -join ' | ')
     $r = Exec 'DESC NoExiste'
     Check 'DESC de una entidad inexistente da 400 y lista las que hay' ($r.status -eq 400 -and $r.json.error -match 'Las que hay son') $r.raw
 

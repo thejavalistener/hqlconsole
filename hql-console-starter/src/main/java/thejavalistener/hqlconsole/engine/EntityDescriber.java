@@ -206,6 +206,7 @@ public class EntityDescriber
 			}
 			Set<String> primary=_primaryKeys(metadata,schema,actual);
 			Map<String,List<String>> foreign=_foreignKeys(metadata,schema,actual);
+			List<List<Object>> primaryRows=new ArrayList<>();
 			try( ResultSet columns=metadata.getColumns(null,schema,actual,null) )
 			{
 				while(columns.next())
@@ -215,10 +216,14 @@ public class EntityDescriber
 					String field=Mapping.physicalName(name)
 							+(primary.contains(name.toLowerCase(Locale.ROOT))?" (PK)":"")
 							+(destinations.isEmpty()?"":" (FK)");
-					rows.add(List.of(field,columns.getString("TYPE_NAME"),
-							destinations.isEmpty()?"-":String.join(",",destinations)));
+					List<Object> row=List.of(field,columns.getString("TYPE_NAME"),
+							destinations.isEmpty()?"-":String.join(",",destinations));
+					if( primary.contains(name.toLowerCase(Locale.ROOT)) ) { primaryRows.add(row); }
+					else { rows.add(row); }
 				}
 			}
+			primaryRows.addAll(rows);
+			rows=primaryRows;
 		}
 		catch(SQLException e)
 		{
