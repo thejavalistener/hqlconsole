@@ -185,12 +185,12 @@ public final class HqlConsolePage
 		<div class="barra">
 		  <h1>HQL Console</h1>
 		</div>
-		<div id="solapas" role="tablist" aria-label="Lenguaje de consulta">
-		  <button type="button" id="tab-hql" role="tab" aria-selected="true">HQL</button>
-		  <button type="button" id="tab-sql" role="tab" aria-selected="false">SQL</button>
-		</div>
 		<div id="error"><div id="error-msg"></div><pre id="error-sql"></pre></div>
 		<div id="split">
+		  <div id="solapas" role="tablist" aria-label="Lenguaje de consulta">
+		    <button type="button" id="tab-hql" role="tab" aria-selected="true">HQL</button>
+		    <button type="button" id="tab-sql" role="tab" aria-selected="false">SQL</button>
+		  </div>
 		  <aside id="panel-entidades">
 		    <div id="entidades-cabecera">
 		      <span class="entidades-titulo">Entidades</span>
@@ -1523,12 +1523,13 @@ public final class HqlConsolePage
 		const sqlEditor = document.getElementById('sql');
 		const tabHql = document.getElementById('tab-hql');
 		const tabSql = document.getElementById('tab-sql');
+		const tituloConsola = document.querySelector('.barra h1');
 		const CLAVE_TEXTO_SQL = 'hql-console.consulta-sql';
 		const CLAVE_SOLAPA = 'hql-console.solapa';
 		let languageActiva = ALMACEN.getItem(CLAVE_SOLAPA) === 'sql' ? 'sql' : 'hql';
 		let tablasConocidas = [];
 		const estiloSql = document.createElement('style');
-		estiloSql.textContent = '#solapas{display:flex;gap:4px}.solapa-activa{background:#174f96}#sql{flex:1 1 auto;width:100%;min-height:0;margin:0;padding:10px;background:#fff;font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:1.5;border:1px solid var(--borde);border-radius:6px;resize:none;tab-size:2;wrap:off;white-space:pre;overflow:auto}body.modo-hql #panel-entidades,body.modo-sql #panel-entidades{width:220px}body.modo-sql #menu{display:none!important}.filtros-tablas{display:flex;gap:3px;padding:4px}.filtros-tablas input{width:100%;min-width:0}.filtros-tablas select{max-width:70px}';
+		estiloSql.textContent = '#split{position:relative}#solapas{position:absolute;z-index:1;top:0;left:0;width:calc(var(--ancho-editor) + 228px);height:31px;display:flex;align-items:end;gap:3px;border-bottom:1px solid var(--borde)}#solapas button{height:28px;padding:4px 13px;color:inherit;background:transparent;border:1px solid transparent;border-radius:6px 6px 0 0;font-size:12px;font-weight:600}#solapas button:hover{background:#eef4ff}#solapas .solapa-activa{color:var(--acento);background:#fff;border-color:var(--borde);border-bottom-color:#fff;margin-bottom:-1px}#panel-entidades,#panel-editor{margin-top:31px}#sql{flex:1 1 auto;width:100%;min-height:0;margin:0;padding:10px;background:#fff;font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:1.5;border:1px solid var(--borde);border-radius:6px;resize:none;tab-size:2;wrap:off;white-space:pre;overflow:auto}body.modo-hql #panel-entidades,body.modo-sql #panel-entidades{width:220px}body.modo-sql #menu{display:none!important}.filtros-tablas{display:flex;gap:3px;padding:4px}.filtros-tablas input{width:100%;min-width:0}.filtros-tablas select{max-width:70px}@media(max-width:720px){#solapas{position:static;width:auto}#panel-entidades,#panel-editor{margin-top:0}}';
 		document.head.appendChild(estiloSql);
 		const filtros = document.createElement('div');
 		filtros.className = 'filtros-tablas';
@@ -1544,8 +1545,9 @@ public final class HqlConsolePage
 		  ta.hidden = languageActiva === 'sql'; sqlEditor.hidden = languageActiva !== 'sql';
 		  tabHql.classList.toggle('solapa-activa', languageActiva === 'hql'); tabSql.classList.toggle('solapa-activa', languageActiva === 'sql');
 		  tabHql.setAttribute('aria-selected', languageActiva === 'hql' ? 'true' : 'false'); tabSql.setAttribute('aria-selected', languageActiva === 'sql' ? 'true' : 'false');
+		  tituloConsola.textContent = languageActiva === 'sql' ? 'Consola SQL' : 'HQL Console';
 		  filtros.hidden = false; tipoTablas.hidden = languageActiva !== 'sql'; filtroTablas.placeholder = languageActiva === 'sql' ? 'Filtrar tablas' : 'Filtrar entidades'; panelEntidades.querySelector('.entidades-titulo').textContent = languageActiva === 'sql' ? 'Tablas' : 'Entidades';
-		  ALMACEN.setItem(CLAVE_SOLAPA, languageActiva); if (languageActiva === 'sql') { asegurarTablas(); } else { asegurarEntidades(); }
+		  ALMACEN.setItem(CLAVE_SOLAPA, languageActiva); if (languageActiva === 'sql') { asegurarTablas(); } else { pintarEntidades(); asegurarEntidades(); }
 		  editorActivo().focus(); refrescarSeleccionActiva();
 		}
 		function guardarTextoActivo() { try { ALMACEN.setItem(claveDeTexto(languageActiva), editorActivo().value); } catch (e) {} }
