@@ -210,9 +210,9 @@ Detalles del párrafo, que están cubiertos por los tests:
     `100` es porque un clic no debería traerte una tabla entera; si el tope global `max-rows` es
     menor, gana ese y el resultado se marca como truncado.
   - **`INSERT INTO Entidad`**: arma un `INSERT` de ejemplo y lo **escribe en el editor** (no lo
-    ejecuta), **abajo del párrafo donde está el cursor**, sin pisar lo que tenías escrito. El bloque
-    queda seleccionado para que se vea qué se agregó, y el cursor termina **adentro del paréntesis de
-    las columnas**, listo para completar los valores. Excluye el `id` —lo genera la base— y pone un
+    ejecuta), **abajo del párrafo donde está el cursor**, sin pisar lo que tenías escrito y **sin
+    mover el scroll**: quedás mirando donde estabas, con el cursor adentro del paréntesis de
+    `VALUES (`, listo para completar los valores. Excluye el `id` —lo genera la base— y pone un
     valor acorde al tipo de cada columna: `999` para los números, `'999'` para los textos,
     `'2024-01-01'` para las fechas, `NOW` para los timestamps y `false` para los booleanos. Las
     relaciones van **por el id, sin comillas** cuando ese id es numérico (lo dice la columna
@@ -679,8 +679,8 @@ Verificado end-to-end con `verify-demo.ps1`, que compila, levanta el fat jar del
 comprobaciones contra una H2 en memoria (Spring Boot 3.2.5, Hibernate 6.4.4, Java 21):
 
 ```
-.\verify-demo.ps1                                  # 226 PASS / 0 FAIL
-.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 233 PASS / 0 FAIL
+.\verify-demo.ps1                                  # 227 PASS / 0 FAIL
+.\verify-demo.ps1 -ContextPath /demo -MaxRows 3    # 234 PASS / 0 FAIL
 ```
 
 Cubre: descubrimiento de la auto-configuración por el `.imports` del jar, la página servida desde

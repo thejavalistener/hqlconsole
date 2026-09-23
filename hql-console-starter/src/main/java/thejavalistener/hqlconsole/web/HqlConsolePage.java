@@ -32,7 +32,7 @@ public final class HqlConsolePage
 		return value.replace("\\","\\\\").replace("'","\\'");
 	}
 
-	private static final String TEMPLATE =
+	private static String TEMPLATE_PARTE_1 =
 		"""
 		<!DOCTYPE html>
 		<html lang="es">
@@ -592,16 +592,32 @@ public final class HqlConsolePage
 		const MARGEN_MENU = 24;
 
 		/**
+		 * La posición donde tiene que quedar el cursor dentro de un INSERT: adentro del paréntesis de
+		 * {@code VALUES}, que es donde se completan los valores.
+		 *
+		 * <p>Ojo con usar el primer paréntesis de la sentencia: el primero es el de la <b>lista de
+		 * columnas</b>, donde están los nombres de los campos, no los valores. Si no aparece
+		 * {@code VALUES (} (una sentencia armada a mano, por ejemplo) se cae al primer paréntesis, y
+		 * si no hay ninguno, al final.</p>
+		 */
+		function posicionDeValores(sentencia) {
+		  const values = sentencia.toUpperCase().indexOf('VALUES (');
+		  if (values >= 0) { return values + 'VALUES ('.length; }
+		  const abre = sentencia.indexOf('(');
+		  return abre < 0 ? sentencia.length : abre + 1;
+		}
+
+		/**
 		 * Dónde meter el INSERT generado: en el párrafo donde está el cursor, no encima de todo lo
 		 * que había escrito.
 		 *
 		 * <p>Se deja una línea en blanco antes y después, así el bloque nuevo queda separado de lo que
 		 * había (y sigue siendo su propio párrafo para el Ctrl+Enter). Y el cursor queda adentro del
-		 * <b>primer paréntesis</b> de la sentencia, que en un INSERT es el de las columnas: ahí es
-		 * donde se completan los valores.</p>
+		 * paréntesis de {@code VALUES}, listo para escribir el primer valor.</p>
 		 *
-		 * <p>Devuelve el texto nuevo, la posición del cursor y el rango del bloque insertado (que es
-		 * lo que se selecciona después, para que se vea qué se agregó).</p>
+		 * <p>Devuelve el texto nuevo y la posición donde tiene que quedar el cursor. El scroll del
+		 * editor no se toca acá: de eso se encarga el que llama, que es el único que sabe si había
+		 * que conservarlo.</p>
 		 */
 		function insertarEnParrafo(texto, cursor, sentencia) {
 		  const parrafo = rangoParrafo(texto, cursor);
@@ -614,16 +630,12 @@ public final class HqlConsolePage
 		  const sepAntes = antes.trim().length > 0 ? _saltosQueFaltan(antes, 'antes') : '';
 		  const sepDespues = despues.trim().length > 0 ? _saltosQueFaltan(despues, 'despues') : '';
 
-		  // Con el separador ya calculado, la sentencia arranca después de los espacios que se
-		  // descartan: si no, el rango seleccionado incluiría saltos de línea de más.
+		  // Los espacios del final del texto de arriba se descartan: el separador se pega después de
+		  // ellos, así que el inicio real de la sentencia los saltea.
 		  const inicio = parrafo.fin + sepAntes.length - _espaciosAlFinal(antes);
 		  const nuevo = antes + sepAntes + sentencia + sepDespues + despues;
-		  // El cursor va justo después del primer paréntesis de la sentencia, que en un INSERT es el
-		  // de las columnas: ahí es donde se completan los valores.
-		  const abre = sentencia.indexOf('(');
-		  const posicion = inicio + (abre < 0 ? sentencia.length : abre + 1);
 
-		  return { texto: nuevo, cursor: posicion, seleccion: { inicio: inicio, fin: inicio + sentencia.length } };
+		  return { texto: nuevo, cursor: inicio + posicionDeValores(sentencia) };
 		}
 
 		// Cuántos saltos hay que agregar para dejar UNA línea en blanco de ese lado. Si ya hay dos o
@@ -1031,15 +1043,31 @@ public final class HqlConsolePage
 		  estado.textContent = 'INSERT de ' + entidad + ' escrito abajo del párrafo del cursor: completá los valores y ejecutá.';
 		});
 
-		// Poner el INSERT generado en el editor, en el párrafo del cursor: lo que había escrito no se
-		// pierde. Después queda seleccionado el bloque insertado, para ver de un vistazo qué se agregó.
+		/**
+		 * Poner el INSERT generado en el editor, en el párrafo del cursor: lo que había escrito no se
+		 * pierde.
+		 *
+		 * <p><b>El scroll se conserva.</b> Reemplazar {@code ta.value} y darle el foco hacía que el
+		 * navegador saltara al final para mostrar la selección, y el usuario perdía de vista dónde
+		 * había quedado el bloque. Se guardan las dos posiciones de scroll antes de tocar nada y se
+		 * restauran después de dejar el cursor en su lugar. El {@code setSelectionRange(pos, pos)} —
+		 * con la posición dos veces— es el que además le dice al navegador que no haga scroll por su
+		 * cuenta.</p>
+		 */
 		function insertarEnEditor(sentencia) {
+		  const scrollArriba = ta.scrollTop;
+		  const scrollIzquierda = ta.scrollLeft;
+
 		  const puesto = insertarEnParrafo(ta.value, ta.selectionStart, sentencia);
 		  ta.value = puesto.texto;
+
 		  ta.focus();
-		  ta.setSelectionRange(puesto.seleccion.inicio, puesto.seleccion.fin);
-		  // El cursor, en cambio, queda listo para escribir: adentro del primer paréntesis.
 		  ta.setSelectionRange(puesto.cursor, puesto.cursor);
+
+		  // Después de asignar el valor y de mover el cursor, que es cuando el navegador scrollea.
+		  ta.scrollTop = scrollArriba;
+		  ta.scrollLeft = scrollIzquierda;
+
 		  guardarTexto();
 		  refrescarSeleccion();
 		}
@@ -1278,7 +1306,10 @@ public final class HqlConsolePage
 		    : 'solo lectura (hql-console.allow-writes=false)';
 		  return cabeceras;
 		}
+		""";
 
+	private static String TEMPLATE_PARTE_2 =
+		"""
 		// ==================== el detalle de una entidad ====================
 
 		// La grilla de "DESC" a secas es la lista de entidades. Se busca la columna ENTIDAD (no la
@@ -1430,4 +1461,20 @@ public final class HqlConsolePage
 		</body>
 		</html>
 		""";
+
+	/**
+	 * El HTML completo, armado con las dos mitades.
+	 *
+	 * <p>Va partido porque una sola constante no compila: el límite de un String en el class file es
+	 * de <b>65535 bytes en UTF-8</b>, y la página lo pasa (el error es {@code constant string too
+	 * long}).</p>
+	 *
+	 * <p><b>Ojo:</b> no alcanza con partir el texto en dos constantes y sumarlas en una tercera. Si
+	 * las dos mitades son {@code static final} con inicializador constante, el compilador <b>pliega
+	 * la suma</b> en una única constante y el error vuelve igual. Por eso las dos mitades se
+	 * declaran {@code static String} (sin {@code final}): al no ser constantes de compilación, la
+	 * concatenación se resuelve en el arranque y cada parte conserva su propio margen.
+	 * {@link #html} sigue viendo un solo texto.</p>
+	 */
+	private static final String TEMPLATE = TEMPLATE_PARTE_1 + TEMPLATE_PARTE_2;
 }

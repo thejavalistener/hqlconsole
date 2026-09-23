@@ -99,6 +99,51 @@ trabajo (una sesión nueva, otro modelo) no tenga que adivinar: la documentació
    que el panel se desplace y el ítem se mueva mientras el mouse viaja.
 6. **Volvió el botón derecho**, que ahora **abre el mismo menú de inmediato**, sin esperar el
    segundo. El hover sigue siendo el atajo y el clic sigue haciendo el `DESC`.
+7. **El cursor del INSERT generado quedaba en el paréntesis equivocado.** Se usaba
+   `sentencia.indexOf('(')`, o sea el **primer** paréntesis, que en un `INSERT` es el de la **lista de
+   columnas** (los nombres de los campos) y no el de `VALUES` (los valores). Ahora la posición la
+   calcula `posicionDeValores`, que busca `VALUES (` y cae al primer paréntesis sólo si no aparece.
+
+8. **El INSERT generado tiraba el scroll del editor al final.** El texto quedaba bien, pero el
+   usuario perdía de vista dónde había quedado el bloque. La causa: reemplazar `ta.value` y darle el
+   foco hace que el navegador **scrollee para mostrar la selección**, y encima había un
+   `setSelectionRange(seleccion.inicio, seleccion.fin)` que apuntaba al bloque recién insertado y
+   llevaba la vista al **final** de ese rango.
+
+   **Y ese `setSelectionRange` era código muerto**: la línea siguiente lo pisaba con
+   `setSelectionRange(cursor, cursor)`, así que la sentencia "quedaba seleccionada" durante
+   microsegundos y nunca se veía. El comentario decía que servía para mostrar qué se agregó, pero no
+   cumplía ninguna función.
+
+   **El arreglo:** se guardan `ta.scrollTop` y `ta.scrollLeft` antes de tocar nada y se restauran
+   **después** de mover el cursor, que es el momento en que el navegador scrollea. Se eliminó el
+   rango de selección que no se usaba (`insertarEnParrafo` ya no devuelve `seleccion`), con lo que
+   además la función pura quedó más chica y sin estado de más.
+
+### La trampa del template: `constant string too long`
+
+Al agregar el último arreglo, el build falló con **`constant string too long`**: el límite de un
+String en el class file es de **65535 bytes en UTF-8**, y la página (un solo text block) lo pasó. La
+página mide **65522 bytes**: estábamos a **13 bytes** del límite.
+
+Se partió el template en dos y aparecieron **dos trampas más**, que conviene tener anotadas:
+
+1. **No alcanza con partir el texto en dos constantes y sumarlas en una tercera.** Si las dos mitades
+   son `static final` con inicializador constante, el compilador **pliega la suma** en una única
+   constante y el error vuelve igual. Las mitades se declaran `static String` (sin `final`), así no
+   son constantes de compilación y cada una conserva su propio margen.
+2. **Java resuelve las constantes en orden textual**, no en dos pasadas: `TEMPLATE` tiene que estar
+   declarado **después** de las dos mitades.
+
+Y un tercer detalle del corte: al partir el text block justo antes de `// ===== el detalle de una
+entidad` se me coló un **`<script>` de más** en la segunda mitad (ya venía abierto desde la primera).
+Lo cazó `node --check` sobre el JS extraído de la página servida, que es exactamente para lo que
+está. **Al partir el template hay que verificar que la etiqueta `<script>` quede abierta una sola
+vez**, y que el HTML cierre.
+
+Con eso, `HqlConsolePage.TEMPLATE` es `TEMPLATE_PARTE_1 + TEMPLATE_PARTE_2` y no queda margen para
+seguir agregando: **el próximo crecimiento de la página va a volver a chocar**. Cuando pase, hay que
+partir en tres (o mover el CSS a un archivo aparte).
 
 ### #13 — El header se agrandaba al pasar el mouse
 

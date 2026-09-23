@@ -651,10 +651,17 @@ check('insertar: el parrafo de abajo queda intacto', puesto.texto.indexOf('SELEC
 check('insertar: deja una linea en blanco antes', puesto.texto.indexOf('\n\nINSERT') > 0, true);
 check('insertar: deja una linea en blanco despues', puesto.texto.indexOf(');\n\nSELECT 2') > 0, true);
 check('insertar: no duplica los saltos que ya habia', puesto.texto.indexOf(');\n\n\n') < 0, true);
-// El cursor queda adentro del primer parentesis: el de las COLUMNAS (no el de VALUES).
-var esperadoCursor = puesto.texto.indexOf('INSERT INTO X (') + 'INSERT INTO X ('.length;
-check('insertar: el cursor queda despues del parentesis de columnas', puesto.cursor, esperadoCursor);
-check('insertar: lo insertado queda seleccionado', puesto.texto.substring(puesto.seleccion.inicio, puesto.seleccion.fin), 'INSERT INTO X (a) VALUES (1);');
+// El cursor queda adentro del parentesis de VALUES, que es donde se completan los valores. OJO: el
+// primer parentesis de la sentencia es el de la LISTA DE COLUMNAS, que es donde NO va.
+var esperadoCursor = puesto.texto.indexOf('VALUES (') + 'VALUES ('.length;
+check('insertar: el cursor queda despues del parentesis de VALUES', puesto.cursor, esperadoCursor);
+check('insertar: el cursor NO queda en el parentesis de las columnas', puesto.cursor !== puesto.texto.indexOf('(') + 1, true);
+check('insertar: lo que sigue al cursor son los valores', puesto.texto.substring(puesto.cursor, puesto.cursor + 3), '1);');
+check('posicion: con VALUES', posicionDeValores("INSERT INTO X (a,b) VALUES (1,2);"), "INSERT INTO X (a,b) VALUES (".length);
+check('posicion: una sentencia sin VALUES cae al primer parentesis', posicionDeValores('SELECT count(e)'), 'SELECT count('.length);
+check('posicion: sin parentesis va al final', posicionDeValores('DESC Libro'), 'DESC Libro'.length);
+check('posicion: no se confunde con un VALUES en minusculas', posicionDeValores('insert into x (a) values (1)'), 'insert into x (a) values ('.length);
+check('insertar: la sentencia queda entera y en su lugar', puesto.texto.indexOf('INSERT INTO X (a) VALUES (1);') > 0, true);
 // Con el cursor al final del documento, el insert va al final y no al principio.
 var alFinal = insertarEnParrafo('SELECT 1\n\n', 10, 'INSERT INTO Y (b) VALUES (2);');
 check('insertar: con el cursor al final agrega al final', alFinal.texto.indexOf('INSERT INTO Y') > alFinal.texto.indexOf('SELECT 1'), true);
@@ -852,6 +859,10 @@ check('insertar: en un editor vacio no agrega lineas de mas al principio', vacio
     Check 'el INSERT se inserta sin borrar lo escrito' `
           ($page.Content -match 'function insertarEnParrafo' -and $page.Content -notmatch 'ta\.value = sentencia') 'el INSERT pisa el editor'
     Check 'el cursor queda en el parentesis de columnas' ($page.Content -match 'puesto\.cursor, puesto\.cursor') 'el cursor no se posiciona'
+    # Sin esto, el navegador saltaba al final al insertar el INSERT y el usuario perdia de vista donde
+    # habia quedado el bloque.
+    Check 'el INSERT conserva el scroll del editor' `
+          ($page.Content -match 'const scrollArriba = ta\.scrollTop' -and $page.Content -match 'ta\.scrollTop = scrollArriba' -and $page.Content -match 'ta\.scrollLeft = scrollIzquierda') 'el scroll del editor salta al final'
     Check 'SELECT * del menu usa LIMIT' ($page.Content -match 'function selectDeEntidad' -and $page.Content -match 'LIMITE_MENU = 100' -and $page.Content -match "ejecutarTexto\(selectDeEntidad") 'el SELECT del menu no limita'
     # El header no puede cambiar de tamano al pasar el mouse NI al cambiar de glyph: el indicador se
     # reserva siempre y con ancho fijo (⇅ no mide lo mismo que ↑ ni que ↓ en monoespaciada).
