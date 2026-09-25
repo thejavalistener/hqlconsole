@@ -167,10 +167,7 @@ public class HqlConsoleController
 
 		out.put("exception",e.getClass().getSimpleName());
 		out.put("statement",hql.trim());
-		if( properties.isShowStacktrace() )
-		{
-			out.put("stacktrace",_stacktrace(e));
-		}
+		out.put("stacktrace",_stacktrace(e));
 		return out;
 	}
 

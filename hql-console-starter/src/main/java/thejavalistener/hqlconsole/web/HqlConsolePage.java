@@ -57,10 +57,6 @@ public final class HqlConsolePage
 		  button:disabled { opacity:.5; cursor:progress; }
 		  .estado { font-size:12px; opacity:.75; }
 		  .sel { color:var(--acento); opacity:1; font-weight:600; }
-		  #error { display:none; flex:0 0 auto; max-height:30vh; overflow:auto; padding:10px;
-		           border:1px solid var(--error); border-left-width:4px; border-radius:6px;
-		           background:#fff5f4; color:var(--error); font-size:13px; }
-		  #error pre { margin:6px 0 0; font-family: ui-monospace, Consolas, monospace; font-size:12px; white-space:pre-wrap; }
 
 		  /* --- el área partida: editor a la izquierda, resultados a la derecha --- */
 		  #split { flex:1 1 auto; min-height:0; display:flex; align-items:stretch; --ancho-editor:48%; }
@@ -183,7 +179,7 @@ public final class HqlConsolePage
 		  <h1>Consola <span class="separador-titulo">/</span> <span id="idioma-titulo">HQL</span></h1>
 		  <span id="atajo-ejecutar">Ejecutar (Ctrl+Enter)</span>
 		</div>
-		<div id="error"><div id="error-msg"></div><pre id="error-sql"></pre></div>
+		<dialog id="error"><div id="error-titlebar"><span id="error-icon">!</span><span>Error de ejecución</span><button type="button" id="error-close">Cerrar</button></div><div id="error-body"><div id="error-msg"></div><pre id="error-sql"></pre></div></dialog>
 		<div id="split">
 		  <div id="solapas" role="tablist" aria-label="Lenguaje de consulta">
 		    <button type="button" id="tab-hql" role="tab" aria-selected="true">HQL</button>
@@ -204,6 +200,7 @@ public final class HqlConsolePage
 		  <div id="divisor" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Redimensionar el editor"
 		       title="Arrastra para redimensionar. Flechas: de a 2%. Inicio/Fin: extremos. Doble clic: 50/50."></div>
 		  <div id="panel-resultado">
+		    <div id="error-panel" hidden style="max-height:70vh;overflow:auto"><button type="button" id="error-panel-close">Cerrar</button><div id="error-panel-msg"></div><pre id="error-panel-detail" style="overflow:auto;white-space:pre"></pre></div>
 		    <span class="estado" id="estado"></span>
 		    <div class="vacio" id="vacio">Los resultados aparecen acá.</div>
 		    <div class="tabla" id="tabla" hidden><table id="t"></table></div>
@@ -233,9 +230,11 @@ public final class HqlConsolePage
 		const btn = document.getElementById('run');
 		const estado = document.getElementById('estado');
 		const seleccion = document.getElementById('seleccion');
-		const cajaError = document.getElementById('error');
-		const errorMsg = document.getElementById('error-msg');
-		const errorSql = document.getElementById('error-sql');
+		const cajaError = document.getElementById('error-panel');
+		const errorMsg = document.getElementById('error-panel-msg');
+		const errorSql = document.getElementById('error-panel-detail');
+		const errorClose = document.getElementById('error-panel-close');
+		errorClose.addEventListener('click', function() { cajaError.hidden=true; });
 		const cajaTabla = document.getElementById('tabla');
 		const tabla = document.getElementById('t');
 		const vacio = document.getElementById('vacio');
@@ -1209,7 +1208,7 @@ public final class HqlConsolePage
 		  const esLote = loteDeEscrituras(hql);
 		  const confirmar = !esLote && pideConfirmacion(hql);
 		  if (btn) { btn.disabled = true; }
-		  cajaError.style.display = 'none';
+		  cajaError.hidden=true;
 		  try {
 		    if (esLote && !loteConAutocommit(hql)
 		        && !confirm('Las sentencias en lote se ejecutan con commit automático. No habrá vuelta atrás. ¿Continuar?')) {
@@ -1277,9 +1276,8 @@ public final class HqlConsolePage
 
 		function mostrarError(datos) {
 		  errorMsg.textContent = datos.error || 'Error desconocido.';
-		  errorSql.textContent = datos.cause ? ('causa: ' + datos.cause) : (datos.statement || '');
-		  cajaError.style.display = 'block';
-		  resetPanelDerecho();
+		  errorSql.textContent = datos.stacktrace || datos.exception || datos.cause || datos.statement || '';
+		  cajaError.hidden=false;
 		  estado.textContent = '';
 		  estado.removeAttribute('title');
 		  pie.textContent = '';
@@ -1644,7 +1642,7 @@ public final class HqlConsolePage
 		function rangoSql() { const inicio=sqlEditor.selectionStart, fin=sqlEditor.selectionEnd, recorte=textoAejecutar(sqlEditor.value,inicio,fin); if(fin>inicio&&recorte.trim()){return {hql:recorte,etiqueta:'selecciÃ³n',inicio:inicio,fin:fin,pintar:false};} const p=rangoParrafo(sqlEditor.value,inicio); return {hql:sqlEditor.value.substring(p.inicio,p.fin),etiqueta:'pÃ¡rrafo del cursor',inicio:p.inicio,fin:p.fin,pintar:true}; }
 		function refrescarSeleccionActiva() {}
 		function ejecutarSql() { guardarTextoActivo(); const rango=rangoSql(); if(rango.pintar){sqlEditor.focus();sqlEditor.setSelectionRange(rango.inicio,rango.fin);} ejecutarTextoSql(rango.hql.split('\\r').join('').trim(),rango.etiqueta); }
-		async function ejecutarTextoSql(sql,etiqueta) { if(!sql){mostrarError({error:'No hay nada que ejecutar.'});return;}if(btn){btn.disabled=true;}cajaError.style.display='none';estado.textContent='Ejecutando '+etiqueta+'...';try{const respuesta=await pedir(sql,false);if(!respuesta.ok){mostrarError(respuesta.datos);return;}resetPanelDerecho();const cabeceras=mostrarResultado(respuesta.datos,sql);if(esDescDeTablaSql(sql)&&cabeceras){hacerRelacionesSqlClickeables(cabeceras,tabla);}}catch(e){mostrarError({error:'No se pudo contactar la consola: '+e});}finally{if(btn){btn.disabled=false;}} }
+		async function ejecutarTextoSql(sql,etiqueta) { if(!sql){mostrarError({error:'No hay nada que ejecutar.'});return;}if(btn){btn.disabled=true;}if(cajaError.open){cajaError.close();}estado.textContent='Ejecutando '+etiqueta+'...';try{const respuesta=await pedir(sql,false);if(!respuesta.ok){mostrarError(respuesta.datos);return;}resetPanelDerecho();const cabeceras=mostrarResultado(respuesta.datos,sql);if(esDescDeTablaSql(sql)&&cabeceras){hacerRelacionesSqlClickeables(cabeceras,tabla);}}catch(e){mostrarError({error:'No se pudo contactar la consola: '+e});}finally{if(btn){btn.disabled=false;}} }
 		function pintarTablas() { const visibles=filtrarTablas(tablasConocidas,filtroTablas.value,tipoTablas.value);listaEntidades.textContent='';visibles.forEach(function(tablaSql){const boton=document.createElement('button');boton.type='button';boton.className='entidad-item';boton.appendChild(document.createTextNode(tablaSql.nombre));if(tablaSql.entidad){const marca=document.createElement('span');marca.className='marca-mapeada';marca.textContent='[M]';boton.appendChild(marca);}boton.addEventListener('click',function(){ejecutarTextoSql('DESC '+tablaSql.nombre,'la tabla '+tablaSql.nombre);});listaEntidades.appendChild(boton);}); }
 		async function asegurarTablas() { if(tablasConocidas.length){pintarTablas();return;}const respuesta=await pedir('DESC',false);if(!respuesta.ok){tablasConocidas=[];pintarTablas();return;}const h=respuesta.datos.headers||[],n=h.indexOf('TABLA'),t=h.indexOf('TIPO'),e=h.indexOf('ES_ENTIDAD');tablasConocidas=(respuesta.datos.rows||[]).map(function(fila){return {nombre:String(fila[n]),tipo:String(fila[t]),entidad:e>=0&&fila[e]==='SI'};});pintarTablas(); }
 		filtroTablas.addEventListener('input',function(){if(languageActiva==='sql'){pintarTablas();}else{pintarEntidades();}});tipoTablas.addEventListener('change',pintarTablas);

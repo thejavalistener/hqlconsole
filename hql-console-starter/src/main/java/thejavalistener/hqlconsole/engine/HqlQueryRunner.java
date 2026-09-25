@@ -1285,9 +1285,7 @@ public class HqlQueryRunner
 			}
 			names.append(entityType.getName());
 		}
-		throw new IllegalArgumentException("No conozco la entidad '"+name+"'."
-				+(suggestion==null?"":" ¿Quisiste decir '"+suggestion+"'?")
-				+" Las que hay son: "+names);
+		throw new IllegalArgumentException("Entidad no encontrada: "+name);
 	}
 
 	private Object _instantiate(EntityType<?> entityType)
