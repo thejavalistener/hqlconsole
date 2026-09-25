@@ -867,11 +867,14 @@ check('insertar: en un editor vacio no agrega lineas de mas al principio', vacio
 
     # --- acciones visibles en cada entidad HQL ---
     Check 'la pagina no conserva el menu flotante' ($page.Content -notmatch 'id="menu"' -and $page.Content -notmatch 'function abrirMenu') 'quedo codigo del menu'
-    Check 'cada entidad tiene acciones query e insert a la derecha' `
-          ($page.Content -match "query\.className = 'entidad-accion'" -and $page.Content -match "query\.textContent = 'query'" `
-           -and $page.Content -match "insert\.className = 'entidad-accion'" -and $page.Content -match "insert\.textContent = 'insert'") 'faltan acciones visibles'
+    Check 'cada entidad tiene dos acciones visibles a la derecha' `
+          ($page.Content -match "query\.className = 'entidad-accion'" -and $page.Content -match "insert\.className = 'entidad-accion'" `
+           -and $page.Content -match 'function ejecutarConsultaEntidad' -and $page.Content -match 'async function generarInsertEntidad') 'faltan acciones visibles'
+    Check 'SQL limpia las acciones HQL y no las vuelve a pintar' `
+          ($page.Content -match "if \(languageActiva === 'sql'\) \{ return; \}" -and $page.Content -match "languageActiva === 'sql'\) \{ listaEntidades\.textContent = ''; asegurarTablas\(\); \}" `
+           -and $page.Content -match "function pintarTablas\(\) \{ if\(languageActiva!=='sql'\)\{return;\}") 'SQL puede mostrar acciones HQL'
     Check 'los corchetes no forman parte de los links de entidad' `
-          ($page.Content -match "acciones\.append\(document\.createTextNode\('\['\), query, document\.createTextNode\('\] \['\), insert, document\.createTextNode\('\]'\)\)" `
+          ($page.Content -match "acciones\.append\(document\.createTextNode\('\['\), query, document\.createTextNode\('\]\s*\['\), insert, document\.createTextNode\('\]'\)\)" `
            -and $page.Content -match 'text-decoration:none') 'los corchetes o el subrayado no son correctos'
     Check 'el click en el nombre de la entidad sigue haciendo el DESC' `
           ($page.Content -match "boton\.addEventListener\('click', function\(\) \{ abrirEntidad\(nombre\)") 'el click dejo de hacer el DESC'

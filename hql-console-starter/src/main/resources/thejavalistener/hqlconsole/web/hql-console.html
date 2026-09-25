@@ -863,6 +863,7 @@ toggleEntidades.addEventListener('click', function() {
 
 // Dibuja (o redibuja) la lista con los nombres que ya conocemos. Se puede llamar varias veces.
 function pintarEntidades() {
+  if (languageActiva === 'sql') { return; }
   const filtro = normalizarFiltro(typeof filtroTablas === 'undefined' ? '' : filtroTablas.value);
   const nombres = (entidadesConocidas ? Array.from(entidadesConocidas) : []).filter(function(nombre) {
     return normalizarFiltro(nombre).indexOf(filtro) >= 0;
@@ -1418,7 +1419,7 @@ function cambiarSolapa(language) {
   tabHql.setAttribute('aria-selected', languageActiva === 'hql' ? 'true' : 'false'); tabSql.setAttribute('aria-selected', languageActiva === 'sql' ? 'true' : 'false');
   tituloConsola.textContent = languageActiva === 'sql' ? 'SQL' : 'HQL';
   filtros.hidden = false; tipoTablas.hidden = languageActiva !== 'sql'; filtroTablas.placeholder = languageActiva === 'sql' ? 'Filtrar tablas' : 'Filtrar entidades'; panelEntidades.querySelector('.entidades-titulo').textContent = languageActiva === 'sql' ? 'Tablas' : 'Entidades';
-  ALMACEN.setItem(CLAVE_SOLAPA, languageActiva); if (languageActiva === 'sql') { asegurarTablas(); } else { pintarEntidades(); asegurarEntidades(); }
+  ALMACEN.setItem(CLAVE_SOLAPA, languageActiva); if (languageActiva === 'sql') { listaEntidades.textContent = ''; asegurarTablas(); } else { pintarEntidades(); asegurarEntidades(); }
   editorActivo().focus(); refrescarSeleccionActiva();
 }
 function guardarTextoActivo() { try { ALMACEN.setItem(claveDeTexto(languageActiva), editorActivo().value); } catch (e) {} }
@@ -1429,7 +1430,7 @@ function rangoSql() { const inicio=sqlEditor.selectionStart, fin=sqlEditor.selec
 function refrescarSeleccionActiva() {}
 function ejecutarSql() { guardarTextoActivo(); const rango=rangoSql(); if(rango.pintar){sqlEditor.focus();sqlEditor.setSelectionRange(rango.inicio,rango.fin);} ejecutarTextoSql(rango.hql.split('\r').join('').trim(),rango.etiqueta); }
 async function ejecutarTextoSql(sql,etiqueta) { if(!sql){mostrarError({error:'No hay nada que ejecutar.'});return;}if(btn){btn.disabled=true;}if(cajaError.open){cajaError.close();}estado.textContent='Ejecutando '+etiqueta+'...';try{const respuesta=await pedir(sql,false);if(!respuesta.ok){mostrarError(respuesta.datos);return;}resetPanelDerecho();const cabeceras=mostrarResultado(respuesta.datos,sql);if(esDescDeTablaSql(sql)&&cabeceras){hacerRelacionesSqlClickeables(cabeceras,tabla);}}catch(e){mostrarError({error:'No se pudo contactar la consola: '+e});}finally{if(btn){btn.disabled=false;}} }
-function pintarTablas() { const visibles=filtrarTablas(tablasConocidas,filtroTablas.value,tipoTablas.value);listaEntidades.textContent='';visibles.forEach(function(tablaSql){const boton=document.createElement('button');boton.type='button';boton.className='entidad-item';boton.appendChild(document.createTextNode(tablaSql.nombre));if(tablaSql.entidad){const marca=document.createElement('span');marca.className='marca-mapeada';marca.textContent='[M]';boton.appendChild(marca);}boton.addEventListener('click',function(){ejecutarTextoSql('DESC '+tablaSql.nombre,'la tabla '+tablaSql.nombre);});listaEntidades.appendChild(boton);}); }
+function pintarTablas() { if(languageActiva!=='sql'){return;}const visibles=filtrarTablas(tablasConocidas,filtroTablas.value,tipoTablas.value);listaEntidades.textContent='';visibles.forEach(function(tablaSql){const boton=document.createElement('button');boton.type='button';boton.className='entidad-item';boton.appendChild(document.createTextNode(tablaSql.nombre));if(tablaSql.entidad){const marca=document.createElement('span');marca.className='marca-mapeada';marca.textContent='[M]';boton.appendChild(marca);}boton.addEventListener('click',function(){ejecutarTextoSql('DESC '+tablaSql.nombre,'la tabla '+tablaSql.nombre);});listaEntidades.appendChild(boton);}); }
 async function asegurarTablas() { if(tablasConocidas.length){pintarTablas();return;}const respuesta=await pedir('DESC',false);if(!respuesta.ok){tablasConocidas=[];pintarTablas();return;}const h=respuesta.datos.headers||[],n=h.indexOf('TABLA'),t=h.indexOf('TIPO'),e=h.indexOf('ES_ENTIDAD');tablasConocidas=(respuesta.datos.rows||[]).map(function(fila){return {nombre:String(fila[n]),tipo:String(fila[t]),entidad:e>=0&&fila[e]==='SI'};});pintarTablas(); }
 filtroTablas.addEventListener('input',function(){if(languageActiva==='sql'){pintarTablas();}else{pintarEntidades();}});tipoTablas.addEventListener('change',pintarTablas);
 sqlEditor.addEventListener('input',function(){clearTimeout(temporizador);temporizador=setTimeout(guardarTextoActivo,400);refrescarSeleccionActiva();});sqlEditor.addEventListener('keydown',function(ev){if(ev.key==='Enter'&&(ev.ctrlKey||ev.metaKey)){ev.preventDefault();ejecutarSql();}});['keyup','mouseup','select','click'].forEach(function(evento){sqlEditor.addEventListener(evento,refrescarSeleccionActiva);});window.addEventListener('pagehide',guardarTextoActivo);
