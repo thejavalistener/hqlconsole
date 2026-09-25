@@ -867,15 +867,16 @@ check('insertar: en un editor vacio no agrega lineas de mas al principio', vacio
 
     # --- acciones visibles en cada entidad HQL ---
     Check 'la pagina no conserva el menu flotante' ($page.Content -notmatch 'id="menu"' -and $page.Content -notmatch 'function abrirMenu') 'quedo codigo del menu'
-    Check 'cada entidad tiene dos acciones visibles a la derecha' `
-          ($page.Content -match "query\.className = 'entidad-accion'" -and $page.Content -match "insert\.className = 'entidad-accion'" `
-           -and $page.Content -match 'function ejecutarConsultaEntidad' -and $page.Content -match 'async function generarInsertEntidad') 'faltan acciones visibles'
+    Check 'cada entidad tiene iconos SVG de query e insert a la derecha' `
+          ($page.Content -match 'const ICONO_QUERY = .+<svg' -and $page.Content -match 'const ICONO_INSERT = .+<svg' `
+           -and $page.Content -match "query\.innerHTML = ICONO_QUERY" -and $page.Content -match "insert\.innerHTML = ICONO_INSERT" `
+           -and $page.Content -match 'entidad-accion-query \{ color:#2196F3' -and $page.Content -match 'entidad-accion-insert \{ color:#4CAF50') 'faltan iconos SVG'
     Check 'SQL limpia las acciones HQL y no las vuelve a pintar' `
           ($page.Content -match "if \(languageActiva === 'sql'\) \{ return; \}" -and $page.Content -match "languageActiva === 'sql'\) \{ listaEntidades\.textContent = ''; asegurarTablas\(\); \}" `
            -and $page.Content -match "function pintarTablas\(\) \{ if\(languageActiva!=='sql'\)\{return;\}") 'SQL puede mostrar acciones HQL'
-    Check 'los corchetes no forman parte de los links de entidad' `
-          ($page.Content -match "acciones\.append\(document\.createTextNode\('\['\), query, document\.createTextNode\('\]\s*\['\), insert, document\.createTextNode\('\]'\)\)" `
-           -and $page.Content -match 'text-decoration:none') 'los corchetes o el subrayado no son correctos'
+    Check 'los iconos tienen tamaño uniforme y etiqueta accesible' `
+          ($page.Content -match 'width:20px; height:20px' -and $page.Content -match 'svg \{ width:18px; height:18px' `
+           -and $page.Content -match "query\.setAttribute\('aria-label'" -and $page.Content -match "insert\.setAttribute\('aria-label'") 'los iconos no son accesibles o uniformes'
     Check 'el click en el nombre de la entidad sigue haciendo el DESC' `
           ($page.Content -match "boton\.addEventListener\('click', function\(\) \{ abrirEntidad\(nombre\)") 'el click dejo de hacer el DESC'
     Check 'query ejecuta SELECT limitado sin pisar el editor' `
