@@ -877,6 +877,8 @@ check('insertar: en un editor vacio no agrega lineas de mas al principio', vacio
     Check 'los iconos tienen tamaño uniforme y etiqueta accesible' `
           ($page.Content -match 'width:20px; height:20px' -and $page.Content -match 'svg \{ width:18px; height:18px' `
            -and $page.Content -match "query\.setAttribute\('aria-label'" -and $page.Content -match "insert\.setAttribute\('aria-label'") 'los iconos no son accesibles o uniformes'
+    Check 'nombres HQL y tablas SQL tienen el mismo hover visual' `
+          ($page.Content -match 'entidad-nombre:hover, \.entidad-nombre:focus-visible,' -and $page.Content -match 'button\.entidad-item:hover, button\.entidad-item:focus-visible \{ background:#fff; filter:brightness\(\.82\); \}') 'falta el hover de nombres'
     Check 'el click en el nombre de la entidad sigue haciendo el DESC' `
           ($page.Content -match "boton\.addEventListener\('click', function\(\) \{ abrirEntidad\(nombre\)") 'el click dejo de hacer el DESC'
     Check 'query ejecuta SELECT limitado sin pisar el editor' `
