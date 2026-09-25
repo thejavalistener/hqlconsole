@@ -102,23 +102,19 @@
   #lista-entidades { flex:1 1 auto; min-height:0; overflow:auto; padding:4px;
                      display:flex; flex-direction:column; gap:2px; }
   #panel-entidades.contraido #lista-entidades { display:none; }
-  .entidad-item { text-align:left; padding:4px 6px; font-size:12px; font-weight:400; color:inherit;
-                  font-family: ui-monospace, Consolas, monospace; background:none; border:0;
-                  border-radius:4px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .entidad-item { display:flex; align-items:center; gap:4px; min-width:0; padding:2px;
+                  font-size:12px; font-weight:400; color:inherit; font-family:ui-monospace, Consolas, monospace;
+                  border-radius:4px; }
+  button.entidad-item { width:100%; text-align:left; background:none; border:0; cursor:pointer; }
   .entidad-item:hover { background:#eef4ff; }
   .entidad-item.elegida { background:#dce8ff; font-weight:600; }
-
-  /* --- el menú de la entidad: sale solo al pasar el mouse un segundo --- */
-  #menu { position:fixed; z-index:50; min-width:230px; padding:4px;
-          background:#fff; border:1px solid var(--borde); border-radius:6px;
-          box-shadow:0 6px 20px rgba(0,0,0,.18); }
-  .menu-item { display:block; width:100%; text-align:left; padding:6px 10px;
-               font-size:13px; font-weight:400; color:inherit; background:none; border:0;
-               border-radius:4px; cursor:pointer; white-space:nowrap; }
-  .menu-item:hover { background:#eef4ff; }
-  .menu-titulo { padding:4px 10px 6px; font-size:11px; opacity:.6;
-                 border-bottom:1px solid var(--borde); margin-bottom:4px;
-                 white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .entidad-nombre { flex:1 1 auto; min-width:0; text-align:left; padding:2px 4px; font:inherit; color:inherit;
+                    background:none; border:0; border-radius:3px; cursor:pointer; white-space:nowrap;
+                    overflow:hidden; text-overflow:ellipsis; }
+  .entidad-acciones { flex:0 0 auto; display:flex; gap:0px; padding-right:0px; }
+  .entidad-accion { padding:1px 0; font:inherit; font-size:11px; color:var(--acento); background:none;
+                    border:0; border-radius:0; cursor:pointer; text-decoration:none; }
+  .entidad-accion:hover, .entidad-accion:focus-visible { color:#174f96; }
 
   /* En pantallas angostas el divisor no tiene sentido: se apilan. */
   @media (max-width: 720px) {
@@ -180,11 +176,6 @@
     <details id="crudo" hidden><summary>JSON crudo</summary><pre id="crudo-pre"></pre></details>
   </div>
 </div>
-<div id="menu" hidden>
-  <button type="button" class="menu-item" id="menu-desc"></button>
-  <button type="button" class="menu-item" id="menu-select"></button>
-  <button type="button" class="menu-item" id="menu-insert"></button>
-</div>
 <script id="hql-console-config" type="application/json">__HQL_CONSOLE_CONFIG__</script>
 <script>
 const CONFIG = JSON.parse(document.getElementById('hql-console-config').textContent);
@@ -219,10 +210,6 @@ const tablaDetalle = document.getElementById('t-detalle');
 const panelEntidades = document.getElementById('panel-entidades');
 const toggleEntidades = document.getElementById('toggle-entidades');
 const listaEntidades = document.getElementById('lista-entidades');
-const menu = document.getElementById('menu');
-const menuDesc = document.getElementById('menu-desc');
-const menuInsert = document.getElementById('menu-insert');
-const menuSelect = document.getElementById('menu-select');
 
 const EJEMPLO = 'SELECT e.id, e.nombre, e.salario FROM Empleado e';
 const CLAVE_TEXTO = 'hql-console.consulta';
@@ -509,7 +496,7 @@ function direccionSiguiente(direccionActual) {
 //
 // Va acá adentro, con las funciones puras, a propósito: es una constante que usan, y el bloque
 // marcado es lo que verify-demo.ps1 extrae para correr en Node.
-const LIMITE_MENU = 100;
+const LIMITE_QUERY = 100;
 
 // El atributo del id lleva un "*" pegado (lo pone el DESC), así que hay que sacarlo para
 // escribir nombres de columna de verdad.
@@ -566,32 +553,10 @@ function esTipoNumerico(tipo) {
 }
 
 
-// El "SELECT *" del menú: siempre con límite, para que un click no traiga una tabla entera.
+// El "SELECT *" de la acción query: siempre con límite, para que un click no traiga una tabla entera.
 function selectDeEntidad(entidad) {
-  return 'SELECT * FROM ' + entidad + ' LIMIT ' + LIMITE_MENU;
+  return 'SELECT * FROM ' + entidad + ' LIMIT ' + LIMITE_QUERY;
 }
-
-// Los rótulos del menú: cada uno muestra la sentencia que va a generar, con el nombre de la
-// entidad adentro. Es lo que hace que no haga falta adivinar qué hace cada opción.
-function rotuloDesc(entidad) {
-  return 'DESC ' + entidad;
-}
-
-function rotuloSelect(entidad) {
-  return 'SELECT * FROM ' + entidad;
-}
-
-function rotuloInsert(entidad) {
-  return 'INSERT INTO ' + entidad;
-}
-
-// Cuánto hay que esperar con el mouse encima antes de que salga el menú. Un segundo: si fuera
-// instantáneo, pasar el mouse por la lista sería una ametralladora de menús.
-const ESPERA_MENU = 750;
-
-// Cuántos píxeles se tolera que el mouse esté lejos del ítem o del menú antes de cerrarlo.
-// Es lo que permite cruzar del ítem al menú sin que se cierre en el camino.
-const MARGEN_MENU = 24;
 
 /**
  * La posición donde tiene que quedar el cursor dentro de un INSERT: adentro del paréntesis de
@@ -904,181 +869,45 @@ function pintarEntidades() {
   }).sort();
   listaEntidades.textContent = '';
   nombres.forEach(function(nombre) {
+    const fila = document.createElement('div');
+    fila.className = 'entidad-item';
+    fila.dataset.entidad = nombre;
+
     const boton = document.createElement('button');
     boton.type = 'button';
-    boton.className = 'entidad-item';
+    boton.className = 'entidad-nombre';
     boton.textContent = nombre;
-    // Sin title: el menú que sale solo ya muestra las tres acciones, y un tooltip encima
-    // tapa justo el menú y confunde.
     boton.addEventListener('click', function() { abrirEntidad(nombre); });
-    // El menú sale solo: se programa al entrar y se cancela al salir.
-    boton.addEventListener('mouseenter', function() {
-      programarMenu(boton, nombre);
-    });
-    boton.addEventListener('mouseleave', cancelarMenuProgramado);
-    // Y con el botón derecho sale de una, sin esperar el segundo: el hover es para el atajo
-    // rápido, el botón derecho para cuando ya sabés que lo querés.
-    boton.addEventListener('contextmenu', function(ev) {
-      ev.preventDefault();
-      cancelarMenuProgramado();
-      const caja = boton.getBoundingClientRect();
-      abrirMenu(posicionHorizontalDelMenu(boton), caja.top, nombre);
-    });
-    listaEntidades.appendChild(boton);
+
+    const acciones = document.createElement('span');
+    acciones.className = 'entidad-acciones';
+    const query = document.createElement('button');
+    query.type = 'button';
+    query.className = 'entidad-accion';
+    query.textContent = 'Q';
+    query.title = 'Ejecutar ' + selectDeEntidad(nombre);
+    query.addEventListener('click', function() { ejecutarConsultaEntidad(nombre); });
+
+    const insert = document.createElement('button');
+    insert.type = 'button';
+    insert.className = 'entidad-accion';
+    insert.textContent = 'I';
+    insert.title = 'Generar INSERT INTO ' + nombre;
+    insert.addEventListener('click', function() { generarInsertEntidad(nombre); });
+
+    acciones.append(document.createTextNode('['), query, document.createTextNode(']['), insert, document.createTextNode(']'));
+    fila.append(boton, acciones);
+    listaEntidades.appendChild(fila);
   });
   marcarEntidadElegida(entidadElegida);
 }
 
-// ==================== el menú de la entidad (hover) ====================
-// Sale solo después de dejar el mouse quieto sobre una entidad. Tiene las tres acciones y cada
-// rótulo muestra la sentencia que genera, así no hay que adivinar qué hace cada opción.
-// El clic sigue haciendo el DESC, que es el atajo rápido.
-let entidadDelMenu = null;
-let temporizadorMenu = null;
-// La entidad cuyo menú ya se usó (o se descartó): no vuelve a salir hasta que el mouse salga y
-// entre de nuevo. Sin esto, después de un clic el menú reaparecía solo y molestaba.
-let entidadSinMenu = null;
-
-function programarMenu(boton, entidad) {
-  cancelarMenuProgramado();
-  if (entidad === entidadSinMenu) { return; } // ya se usó: espera a un mouseenter nuevo
-  temporizadorMenu = setTimeout(function() {
-    temporizadorMenu = null;
-    const caja = boton.getBoundingClientRect();
-    // El menú nace pegado al borde derecho de la entidad, a la altura del renglón. Pegado y no
-    // separado: si hubiera un hueco, el mouse tendría que atravesarlo para llegar al menú, y
-    // en ese hueco no está ni en el ítem ni en el menú (y el menú se cerraría solo).
-    abrirMenu(posicionHorizontalDelMenu(boton), caja.top, entidad);
-  }, ESPERA_MENU);
-}
-
-function cancelarMenuProgramado() {
-  if (temporizadorMenu) { clearTimeout(temporizadorMenu); temporizadorMenu = null; }
-  // Al salir del ítem se rearma la posibilidad de que el menú vuelva: es lo que hace que
-  // "salir y volver a entrar" lo muestre de nuevo.
-  entidadSinMenu = null;
-}
-
-/** Ubica el menÃº junto al nombre mÃ¡s largo, no al borde ancho del panel. */
-function posicionHorizontalDelMenu(boton) {
-  const caja = boton.getBoundingClientRect();
-  const medidor = document.createElement('canvas').getContext('2d');
-  medidor.font = getComputedStyle(boton).font;
-  let ancho = 0;
-  listaEntidades.querySelectorAll('.entidad-item').forEach(function(item) {
-    ancho = Math.max(ancho, medidor.measureText(item.textContent).width);
-  });
-  return Math.min(caja.right, caja.left + Math.ceil(ancho) + 16);
-}
-
-function abrirMenu(x, y, entidad) {
-  entidadDelMenu = entidad;
-  menuDesc.textContent = rotuloDesc(entidad);
-  menuSelect.textContent = rotuloSelect(entidad);
-  menuInsert.textContent = rotuloInsert(entidad);
-  menu.hidden = false;
-
-  // Si el menú no entra en la pantalla, se corre hacia adentro: si no, aparece cortado.
-  const caja = menu.getBoundingClientRect();
-  const ancho = caja.width, alto = caja.height;
-  const x2 = Math.max(4, Math.min(x, window.innerWidth - ancho - 4));
-  const y2 = Math.max(4, Math.min(y, window.innerHeight - alto - 4));
-  menu.style.left = x2 + 'px';
-  menu.style.top = y2 + 'px';
-}
-
-// Cerrar el menú también cancela el temporizador: si no, un menú programado podría aparecer
-// después de que el mouse ya se fue. Y marca la entidad para que el menú no vuelva a salir
-// hasta el próximo mouseenter (si no, después de un clic reaparecía solo).
-function cerrarMenu() {
-  cancelarMenuProgramado();
-  if (entidadDelMenu !== null) { entidadSinMenu = entidadDelMenu; }
-  menu.hidden = true;
-  entidadDelMenu = null;
-}
-
-// El menú se mantiene mientras el mouse esté adentro: da tiempo a llegar y elegir.
-menu.addEventListener('mouseleave', cerrarMenu);
-
-/**
- * Cierra el menú si el mouse se alejó de la entidad.
- *
- * <p>Hace falta porque el menú aparece <b>al lado</b> del ítem: en cuanto sale, el mouse ya no
- * está ni sobre el ítem ni sobre el menú, así que ningún {@code mouseleave} se dispara y el
- * menú quedaba colgado para siempre.</p>
- *
- * <p>La distancia se mide <b>a los rectángulos</b> (el del ítem y el del menú) con una
- * tolerancia, y no celda por celda. Esa tolerancia es lo que hace que el menú no se cierre
- * cuando el mouse va lento y tarda en cruzar del ítem al menú —y menos mal que la hay, porque
- * el panel se puede desplazar y el ítem cambia de lugar mientras el mouse viaja—. Con el menú
- * pegado al ítem y unos píxeles de margen, el trayecto nunca queda en tierra de nadie.</p>
- */
-function cerrarSiSeAlejo(ev) {
-  if (menu.hidden) { return; }
-  const dentroDelMenu = menu.contains(ev.target);
-  const duenio = _botonDeEntidad(entidadDelMenu);
-  const sobreElDuenio = duenio !== null && duenio.contains(ev.target);
-  if (dentroDelMenu || sobreElDuenio) { return; }
-
-  // Ni en el ítem ni en el menú: se mide la distancia a los dos y se tolera un margen.
-  const cajaMenu = menu.getBoundingClientRect();
-  const cajaItem = duenio === null ? null : duenio.getBoundingClientRect();
-  const lejos = _distancia(cajaMenu, ev.clientX, ev.clientY) > MARGEN_MENU
-		     && (cajaItem === null || _distancia(cajaItem, ev.clientX, ev.clientY) > MARGEN_MENU);
-  if (lejos) { cerrarMenu(); }
-}
-
-/** Distancia de un punto al rectángulo: 0 si está adentro. */
-function _distancia(caja, x, y) {
-  const dx = Math.max(caja.left - x, 0, x - caja.right);
-  const dy = Math.max(caja.top - y, 0, y - caja.bottom);
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-function _botonDeEntidad(nombre) {
-  if (nombre === null) { return null; }
-  const items = listaEntidades.querySelectorAll('.entidad-item');
-  for (let i = 0; i < items.length; i++) {
-    if (items[i].textContent === nombre) { return items[i]; }
-  }
-  return null;
-}
-
-document.addEventListener('mousemove', cerrarSiSeAlejo);
-// Si el mouse se va de la ventana, tampoco hay mousemove que valga: se cierra igual.
-document.addEventListener('mouseleave', function() { cerrarMenu(); });
-
-document.addEventListener('keydown', function(ev) {
-  if (ev.key === 'Escape') { cerrarMenu(); }
-});
-// El scroll de la lista o de la grilla dejaría el menú flotando lejos de su entidad.
-window.addEventListener('scroll', cerrarMenu, true);
-window.addEventListener('resize', cerrarMenu);
-
-// [DESC Entidad]: el mismo atajo que el clic. abrirEntidad ya cierra el menú y lo deja marcado
-// para que no vuelva a salir hasta el próximo mouseenter, así que no hay que cerrarlo antes.
-menuDesc.addEventListener('click', function() {
-  const entidad = entidadDelMenu;
-  if (entidad) { abrirEntidad(entidad); } else { cerrarMenu(); }
-});
-
-// [SELECT * FROM Entidad]: se ejecuta sin pasar por el editor. El LIMIT va en la sentencia,
-// así que el número que se ve en el pie es el que se usó de verdad.
-menuSelect.addEventListener('click', function() {
-  const entidad = entidadDelMenu;
-  cerrarMenu();
-  if (!entidad) { return; }
+function ejecutarConsultaEntidad(entidad) {
   marcarEntidadElegida(entidad);
-  ejecutarTexto(selectDeEntidad(entidad), 'el menú de ' + entidad);
-});
+  ejecutarTexto(selectDeEntidad(entidad), 'query de ' + entidad);
+}
 
-// [INSERT INTO Entidad]: NO ejecuta. Escribe la sentencia en el editor para que la completes y
-// la corras vos. Necesita el DESC de la entidad para saber sus columnas y sus tipos, así que se
-// pide al backend (es la misma lectura que hace el panel de detalle).
-menuInsert.addEventListener('click', async function() {
-  const entidad = entidadDelMenu;
-  cerrarMenu();
-  if (!entidad) { return; }
+async function generarInsertEntidad(entidad) {
   estado.textContent = 'Armando el INSERT de ' + entidad + '...';
   const respuesta = await pedir('DESC ' + entidad, false);
   if (!respuesta.ok || !respuesta.datos.rows) {
@@ -1087,7 +916,7 @@ menuInsert.addEventListener('click', async function() {
   }
   insertarEnEditor(insertDeEntidad(entidad, respuesta.datos.rows));
   estado.textContent = 'INSERT de ' + entidad + ' escrito abajo del párrafo del cursor: completá los valores y ejecutá.';
-});
+}
 
 /**
  * Poner el INSERT generado en el editor, en el párrafo del cursor, y dejarlo
@@ -1123,12 +952,7 @@ function insertarEnEditor(sentencia) {
 
 // Click en una entidad: equivale a escribir "DESC <Entidad>" y ejecutar. No se toca el editor
 // a propósito: el panel es un atajo para mirar, no para pisar lo que estabas escribiendo.
-// El menú se cierra y no vuelve hasta que el mouse salga y entre de nuevo: si no, después del
-// clic quedaba tapando la grilla que se acababa de abrir.
 function abrirEntidad(nombre) {
-  cancelarMenuProgramado();
-  cerrarMenu();
-  entidadSinMenu = nombre;
   marcarEntidadElegida(nombre);
   ejecutarTexto('DESC ' + nombre, 'el panel de entidades');
 }
@@ -1137,7 +961,7 @@ function marcarEntidadElegida(nombre) {
   entidadElegida = nombre;
   const items = listaEntidades.querySelectorAll('.entidad-item');
   items.forEach(function(item) {
-    item.classList.toggle('elegida', item.textContent === nombre);
+    item.classList.toggle('elegida', item.dataset.entidad === nombre);
   });
 }
 
@@ -1570,7 +1394,7 @@ const CLAVE_SOLAPA = 'hql-console.solapa';
 let languageActiva = ALMACEN.getItem(CLAVE_SOLAPA) === 'sql' ? 'sql' : 'hql';
 let tablasConocidas = [];
 const estiloSql = document.createElement('style');
-estiloSql.textContent = '#split{position:relative}#solapas{position:absolute;z-index:1;top:0;left:0;width:calc(var(--ancho-editor) + 228px);height:31px;display:flex;align-items:end;gap:3px;border-bottom:1px solid var(--borde)}#solapas button{height:28px;padding:4px 13px;color:inherit;background:transparent;border:1px solid transparent;border-radius:6px 6px 0 0;font-size:12px;font-weight:600}#solapas button:hover{background:#eef4ff}#solapas .solapa-activa{color:var(--acento);background:#fff;border-color:var(--borde);border-bottom-color:#fff;margin-bottom:-1px}#alcance-solapa{margin-left:auto;margin-bottom:6px;font-size:11px;opacity:.62;white-space:nowrap}#panel-entidades,#panel-editor{margin-top:31px}#sql{flex:1 1 auto;width:100%;min-height:0;margin:0;padding:10px;background:#fff;font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:1.5;border:1px solid var(--borde);border-radius:6px;resize:none;tab-size:2;wrap:off;white-space:pre;overflow:auto}body.modo-hql #panel-entidades,body.modo-sql #panel-entidades{width:220px}body.modo-sql #menu{display:none!important}.filtros-tablas{display:flex;gap:3px;padding:4px}.filtros-tablas input{width:100%;min-width:0}.filtros-tablas select{max-width:70px}@media(max-width:720px){#solapas{position:static;width:auto}#panel-entidades,#panel-editor{margin-top:0}#alcance-solapa{display:none}}';
+estiloSql.textContent = '#split{position:relative}#solapas{position:absolute;z-index:1;top:0;left:0;width:calc(var(--ancho-editor) + 228px);height:31px;display:flex;align-items:end;gap:3px;border-bottom:1px solid var(--borde)}#solapas button{height:28px;padding:4px 13px;color:inherit;background:transparent;border:1px solid transparent;border-radius:6px 6px 0 0;font-size:12px;font-weight:600}#solapas button:hover{background:#eef4ff}#solapas .solapa-activa{color:var(--acento);background:#fff;border-color:var(--borde);border-bottom-color:#fff;margin-bottom:-1px}#alcance-solapa{margin-left:auto;margin-bottom:6px;font-size:11px;opacity:.62;white-space:nowrap}#panel-entidades,#panel-editor{margin-top:31px}#sql{flex:1 1 auto;width:100%;min-height:0;margin:0;padding:10px;background:#fff;font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:1.5;border:1px solid var(--borde);border-radius:6px;resize:none;tab-size:2;wrap:off;white-space:pre;overflow:auto}body.modo-hql #panel-entidades,body.modo-sql #panel-entidades{width:220px}.filtros-tablas{display:flex;gap:3px;padding:4px}.filtros-tablas input{width:100%;min-width:0}.filtros-tablas select{max-width:70px}@media(max-width:720px){#solapas{position:static;width:auto}#panel-entidades,#panel-editor{margin-top:0}#alcance-solapa{display:none}}';
 document.head.appendChild(estiloSql);
 const estiloIntegrado = document.createElement('style');
 estiloIntegrado.textContent = 'body{padding:0}.barra{justify-content:flex-start;align-items:center;flex-wrap:nowrap;width:100%;min-height:58px;background:#fff;border:0;border-bottom:1px solid var(--borde);border-radius:0;padding:12px 20px;gap:8px}.barra h1{display:flex;align-items:center;gap:5px;white-space:nowrap;font-size:17px}.icono-consola{font-size:21px;line-height:1;color:var(--acento)}.separador-titulo{opacity:.45;font-weight:400}.barra #idioma-titulo{box-sizing:border-box;width:3em;text-align:center;padding:1px 6px;border-radius:4px;background:#dce8ff;color:#174f96}.barra #atajo-ejecutar{margin-left:8px;display:inline-flex;align-items:center;min-height:26px;padding:4px 9px;border-radius:4px;background:#2f6fbd;color:#fff;font-size:12px;font-weight:600;white-space:nowrap}#split,#error{margin-left:12px;margin-right:12px}#panel-entidades{margin-right:0;border:1px solid var(--borde);border-top:0;border-right:0;border-radius:0 0 0 6px;background:#eef4ff}#panel-editor{border:1px solid var(--borde);border-top:0;border-left:0;border-radius:0 0 6px 0;background:#fff;padding:0;gap:0}#hql,#sql{border:0;border-radius:0;background:transparent;outline:0}#hql:focus,#sql:focus{outline:0}#entidades-cabecera{background:transparent}#toggle-entidades{opacity:.55}#toggle-entidades:hover{opacity:1}.marca-mapeada{margin-left:5px;color:#1769aa;font-weight:700}#panel-entidades.contraido .filtros-tablas{display:none}body.modo-hql #panel-entidades.contraido,body.modo-sql #panel-entidades.contraido{width:30px}#split.entidades-contraidas #solapas{width:calc(var(--ancho-editor) + 38px)}@media(max-width:720px){.barra{padding:10px 12px}.barra #atajo-ejecutar{margin-left:auto}#panel-entidades{border:1px solid var(--borde);border-radius:6px}#panel-editor{border:1px solid var(--borde);border-radius:6px}}';
