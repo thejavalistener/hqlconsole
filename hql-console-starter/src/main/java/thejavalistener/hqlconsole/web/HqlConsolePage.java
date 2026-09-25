@@ -200,7 +200,7 @@ public final class HqlConsolePage
 		  <div id="divisor" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Redimensionar el editor"
 		       title="Arrastra para redimensionar. Flechas: de a 2%. Inicio/Fin: extremos. Doble clic: 50/50."></div>
 		  <div id="panel-resultado" style="position:relative">
-		    <div id="error-panel" hidden style="position:absolute;inset:0;z-index:10;box-sizing:border-box;overflow:scroll;padding:16px;background:var(--fondo,#fff)"><button type="button" id="error-panel-close">Cerrar</button><div id="error-panel-msg"></div><pre id="error-panel-detail" style="white-space:pre"></pre></div>
+		    <div id="error-panel" hidden style="position:absolute;inset:0;z-index:10;box-sizing:border-box;overflow:scroll;padding:16px;background:var(--fondo,#fff)"><div id="error-panel-msg"></div><button type="button" id="error-panel-close" style="margin-top:12px">Cerrar</button><pre id="error-panel-detail" style="white-space:pre"></pre></div>
 		    <span class="estado" id="estado"></span>
 		    <div class="vacio" id="vacio">Los resultados aparecen acá.</div>
 		    <div class="tabla" id="tabla" hidden><table id="t"></table></div>
