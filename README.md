@@ -464,6 +464,23 @@ UPDATE Producto SET flgDiscontinuo=1 WHERE unidadesStock=0;
 
 `SET AUTOCOMMIT ON` solo, después de una escritura, o mezclado con consultas es inválido.
 
+### IDs generados dentro de un lote
+
+Un `INSERT ... VALUES` de la consola puede guardar su ID generado en una variable efÃ­mera para usarlo
+en las sentencias siguientes del mismo lote. Esto evita depender de que el contador identity tenga un
+valor conocido:
+
+```sql
+$autor = INSERT INTO Autor (nombre) VALUES ('Ursula K. Le Guin');
+INSERT INTO Libro (titulo, autor) VALUES ('Los desposeÃ­dos', $autor);
+```
+
+La declaraciÃ³n es siempre `$nombre = INSERT ... VALUES`; no existe `LET`. La referencia `$nombre`
+ocupa un literal normal, asÃ­ que la consola la convierte al tipo esperado, incluido el ID de una
+relaciÃ³n. Las variables se validan antes de ejecutar: no pueden usarse antes de declararlas ni
+declararse dos veces. No existen fuera de ese lote y se descartan tambiÃ©n si la transacciÃ³n hace
+rollback. Los `INSERT ... SELECT` bulk de HQL no pueden declarar variables.
+
 ### Comentarios
 
 Las líneas que empiezan con `//`, `#` o `--` son comentarios, y **se excluyen antes de ejecutar**:

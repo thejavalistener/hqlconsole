@@ -14,7 +14,10 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.Base64;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.metamodel.Attribute;
@@ -35,6 +38,7 @@ import jakarta.persistence.metamodel.PluralAttribute;
  */
 public class AttributeBinder
 {
+	private static final Pattern GENERATED_ID_VARIABLE=Pattern.compile("\\$([A-Za-z_][A-Za-z0-9_]*)");
 	private final EntityManager em;
 
 	public AttributeBinder(EntityManager em)
@@ -169,6 +173,25 @@ public class AttributeBinder
 	 */
 	public Object value(Target target,String literal)
 	{
+		return value(target,literal,null);
+	}
+
+	/** Resuelve una variable efÃ­mera de lote antes de aplicar la conversiÃ³n normal del literal. */
+	public Object value(Target target,String literal,Map<String,Object> variables)
+	{
+		String variable=generatedIdVariable(literal);
+		if( variable!=null )
+		{
+			if( variables==null )
+			{
+				throw new IllegalArgumentException("La variable $"+variable+" sÃ³lo es vÃ¡lida dentro de un lote.");
+			}
+			if( !variables.containsKey(variable) )
+			{
+				throw new IllegalArgumentException("La variable $"+variable+" no estÃ¡ definida en este lote.");
+			}
+			literal=String.valueOf(variables.get(variable));
+		}
 		String typeLabel=target.relatedEntity()!=null
 				?"id de "+target.relatedEntity().getSimpleName()
 				:target.javaType().getSimpleName();
@@ -185,6 +208,13 @@ public class AttributeBinder
 		{
 			throw new IllegalArgumentException("No pude asignar "+literal+" a '"+target.path()+"' ("+typeLabel+"): "+e.getMessage(),e);
 		}
+	}
+
+	/** Devuelve el nombre sÃ³lo cuando el literal entero es una referencia ($nombre). */
+	public static String generatedIdVariable(String literal)
+	{
+		Matcher matcher=GENERATED_ID_VARIABLE.matcher(literal.trim());
+		return matcher.matches()?matcher.group(1):null;
 	}
 
 	private Object _convert(String literal,Class<?> javaType)

@@ -44,4 +44,41 @@ class BatchPlanTest
 				() -> BatchPlan.parse(List.of("DELETE FROM Empleado", "SET AUTOCOMMIT ON")));
 		assertTrue(misplaced.getMessage().contains("primera sentencia"));
 	}
+
+	@Test
+	void keepsGeneratedIdDeclarationsAndAllowsTheirLaterReferences()
+	{
+		BatchPlan plan=BatchPlan.parse(List.of(
+				"$departamento = INSERT INTO Departamento (nombre) VALUES ('Sistemas')",
+				"INSERT INTO Empleado (nombre, departamento) VALUES ('Ana', $departamento)"));
+
+		assertEquals(List.of("INSERT INTO Departamento (nombre) VALUES ('Sistemas')",
+				"INSERT INTO Empleado (nombre, departamento) VALUES ('Ana', $departamento)"),plan.statements());
+		assertEquals(List.of("departamento"),List.copyOf(plan.variables().keySet()));
+		assertEquals("departamento",plan.entries().get(0).generatedIdVariable());
+	}
+
+	@Test
+	void rejectsUndefinedOrRedefinedGeneratedIdVariables()
+	{
+		IllegalArgumentException undefined=assertThrows(IllegalArgumentException.class,() -> BatchPlan.parse(List.of(
+				"INSERT INTO Empleado (nombre, departamento) VALUES ('Ana', $departamento)",
+				"DELETE FROM Empleado")));
+		assertTrue(undefined.getMessage().contains("$departamento")&&undefined.getMessage().contains("definida"));
+
+		IllegalArgumentException redefined=assertThrows(IllegalArgumentException.class,() -> BatchPlan.parse(List.of(
+				"$departamento = INSERT INTO Departamento (nombre) VALUES ('Sistemas')",
+				"$departamento = INSERT INTO Departamento (nombre) VALUES ('Ventas')")));
+		assertTrue(redefined.getMessage().contains("$departamento")&&redefined.getMessage().contains("declarada"));
+	}
+
+	@Test
+	void acceptsOnlyConsoleInsertValuesAsGeneratedIdDeclaration()
+	{
+		IllegalArgumentException error=assertThrows(IllegalArgumentException.class,() -> BatchPlan.parse(List.of(
+				"$departamento = INSERT INTO Departamento (nombre) SELECT nombre FROM Departamento",
+				"DELETE FROM Empleado")));
+		assertTrue(error.getMessage().contains("INSERT ... VALUES"));
+		assertTrue(BatchPlan.isGeneratedIdDeclaration("$departamento = INSERT INTO Departamento VALUES nombre='Sistemas'"));
+	}
 }

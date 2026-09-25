@@ -20,6 +20,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import thejavalistener.hqlconsole.autoconfigure.HqlConsoleProperties;
 import thejavalistener.hqlconsole.engine.HqlQueryRunner;
+import thejavalistener.hqlconsole.engine.BatchPlan;
 import thejavalistener.hqlconsole.engine.Text;
 
 /**
@@ -202,6 +203,10 @@ public class HqlConsoleController
 		{
 			String first=_firstWord(statement);
 			if( "insert".equalsIgnoreCase(first)||"update".equalsIgnoreCase(first)||"delete".equalsIgnoreCase(first) )
+			{
+				return true;
+			}
+			if( BatchPlan.isGeneratedIdDeclaration(statement) )
 			{
 				return true;
 			}

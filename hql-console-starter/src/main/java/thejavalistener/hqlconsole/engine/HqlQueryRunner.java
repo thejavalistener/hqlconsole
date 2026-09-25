@@ -12,6 +12,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -109,6 +110,10 @@ public class HqlQueryRunner
 		if( BatchPlan.isAutoCommitOn(statement) )
 		{
 			throw new IllegalArgumentException("SET AUTOCOMMIT ON sólo es válido como primera sentencia de un lote.");
+		}
+		if( BatchPlan.isGeneratedIdDeclaration(statement) )
+		{
+			throw new IllegalArgumentException("Las variables de IDs generados sÃ³lo son vÃ¡lidas dentro de un lote.");
 		}
 
 		if( "desc".equalsIgnoreCase(first)||"describe".equalsIgnoreCase(first) )
@@ -314,6 +319,12 @@ public class HqlQueryRunner
 	/** {@code INSERT INTO Libro li VALUES li.titulo='...', li.fechaAlta=NOW} */
 	private HqlResult _insert(EntityManager em,EntityManagerFactory emf,EntityType<?> entityType,Statement parsed,long t0)
 	{
+		return _insert(em,emf,entityType,parsed,t0,null,null);
+	}
+
+	private HqlResult _insert(EntityManager em,EntityManagerFactory emf,EntityType<?> entityType,Statement parsed,long t0,
+			Map<String,Object> variables,String generatedIdVariable)
+	{
 		AttributeBinder binder=new AttributeBinder(em);
 		Object entity=_instantiate(entityType);
 
@@ -322,13 +333,21 @@ public class HqlQueryRunner
 		for(Statement.Assignment assignment:parsed.assignments())
 		{
 			AttributeBinder.Target target=binder.resolve(entityType,parsed.alias(),assignment.path());
-			binder.apply(entity,target,binder.value(target,assignment.literal()));
+			binder.apply(entity,target,binder.value(target,assignment.literal(),variables));
 		}
 
 		em.persist(entity);
 		em.flush(); // con IDENTITY el insert sale acá; con SEQUENCE deja el id ya asignado
 
 		Object id=emf.getPersistenceUnitUtil().getIdentifier(entity);
+		if( generatedIdVariable!=null )
+		{
+			if( id==null )
+			{
+				throw new IllegalArgumentException("INSERT de "+entityType.getName()+" no devolviÃ³ un ID para $"+generatedIdVariable+".");
+			}
+			variables.put(generatedIdVariable,id);
+		}
 		return HqlResult.dml("INSERT",1,_millis(t0),"Insertado "+entityType.getName()+(id==null?"":"#"+id));
 	}
 
@@ -341,6 +360,12 @@ public class HqlQueryRunner
 	 * {@code @PreUpdate} y {@code @Version} incluidos).</p>
 	 */
 	private HqlResult _update(EntityManager em,EntityType<?> entityType,Statement parsed,long t0)
+	{
+		return _update(em,entityType,parsed,t0,null);
+	}
+
+	private HqlResult _update(EntityManager em,EntityType<?> entityType,Statement parsed,long t0,
+			Map<String,Object> variables)
 	{
 		String alias=parsed.alias()==null?"e":parsed.alias();
 
@@ -364,7 +389,7 @@ public class HqlQueryRunner
 			for(Statement.Assignment assignment:parsed.assignments())
 			{
 				AttributeBinder.Target target=binder.resolve(entityType,parsed.alias(),assignment.path());
-				binder.apply(entity,target,binder.value(target,assignment.literal()));
+				binder.apply(entity,target,binder.value(target,assignment.literal(),variables));
 			}
 		}
 
@@ -643,7 +668,9 @@ public class HqlQueryRunner
 		long t0=System.nanoTime();
 
 		BatchPlan plan=BatchPlan.parse(statements);
-		List<String> writes=plan.statements();
+		List<BatchPlan.Entry> writes=plan.entries();
+		// Vive solamente en esta llamada: ni la sesiÃ³n ni el runner conservan IDs entre lotes.
+		Map<String,Object> generatedIds=new LinkedHashMap<>();
 
 		EntityManager em=emf.createEntityManager();
 		try
@@ -654,10 +681,10 @@ public class HqlQueryRunner
 				int filas=0;
 				for(int i=0;i<writes.size();i++)
 				{
-					String statement=writes.get(i);
+					BatchPlan.Entry entry=writes.get(i);
 					try
 					{
-						filas+=_runBatchStatement(em,emf,statement,t0).affectedRows();
+						filas+=_runBatchStatement(em,emf,entry,t0,generatedIds).affectedRows();
 					}
 					catch(RuntimeException e)
 					{
@@ -683,8 +710,10 @@ public class HqlQueryRunner
 	}
 
 	/** Ejecuta una escritura usando la transacción que ya abrió el lote. */
-	private HqlResult _runBatchStatement(EntityManager em,EntityManagerFactory emf,String text,long t0)
+	private HqlResult _runBatchStatement(EntityManager em,EntityManagerFactory emf,BatchPlan.Entry entry,long t0,
+			Map<String,Object> generatedIds)
 	{
+		String text=entry.statement();
 		Statement parsed=null;
 		IllegalArgumentException parseFailure=null;
 		try
@@ -700,8 +729,8 @@ public class HqlQueryRunner
 		{
 			EntityType<?> entityType=_entityType(emf,parsed.entity());
 			return parsed.kind()==Statement.Kind.INSERT
-					?_insert(em,emf,entityType,parsed,t0)
-					:_update(em,entityType,parsed,t0);
+					?_insert(em,emf,entityType,parsed,t0,generatedIds,entry.generatedIdVariable())
+					:_update(em,entityType,parsed,t0,generatedIds);
 		}
 
 		try

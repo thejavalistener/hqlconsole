@@ -450,7 +450,7 @@ public final class HqlConsolePage
 		function loteDeEscrituras(hql) {
 		  const sentencias = sentenciasDeLote(hql);
 		  return sentencias.length > 1 && sentencias.some(function(s) {
-		    return /^(?:insert|update|delete)\b/i.test(s);
+		    return /^(?:\\$[A-Za-z_][A-Za-z0-9_]*\\s*=\\s*)?(?:insert|update|delete)\\b/i.test(s);
 		  });
 		}
 
@@ -1205,7 +1205,7 @@ public final class HqlConsolePage
 		  }
 		  // Se decide acá si hay que avisar al terminar, sin depender de que el backend lo diga: lo
 		  // único que importa es qué se pidió ejecutar.
-		  const esInsercion = hql.toLowerCase().indexOf('insert') === 0;
+		  const esInsercion = /^(?:\\s*\\$[A-Za-z_][A-Za-z0-9_]*\\s*=\\s*)?\\s*insert\\b/i.test(hql);
 		  const esLote = loteDeEscrituras(hql);
 		  const confirmar = !esLote && pideConfirmacion(hql);
 		  if (btn) { btn.disabled = true; }
