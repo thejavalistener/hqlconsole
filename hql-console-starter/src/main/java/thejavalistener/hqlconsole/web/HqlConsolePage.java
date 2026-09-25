@@ -429,6 +429,36 @@ public final class HqlConsolePage
 		  return t.indexOf('update') === 0 || t.indexOf('delete') === 0;
 		}
 
+		function sentenciasDeLote(hql) {
+		  const salida = [], texto = String(hql || '');
+		  let inicio = 0, comilla = false;
+		  for (let i = 0; i < texto.length; i++) {
+		    if (texto[i] === "'") {
+		      if (comilla && texto[i + 1] === "'") { i++; continue; }
+		      comilla = !comilla;
+		    } else if (texto[i] === ';' && !comilla) {
+		      const parte = texto.substring(inicio, i).trim();
+		      if (parte) { salida.push(parte); }
+		      inicio = i + 1;
+		    }
+		  }
+		  const ultima = texto.substring(inicio).trim();
+		  if (ultima) { salida.push(ultima); }
+		  return salida;
+		}
+
+		function loteDeEscrituras(hql) {
+		  const sentencias = sentenciasDeLote(hql);
+		  return sentencias.length > 1 && sentencias.some(function(s) {
+		    return /^(?:insert|update|delete)\b/i.test(s);
+		  });
+		}
+
+		function loteConAutocommit(hql) {
+		  const sentencias = sentenciasDeLote(hql);
+		  return sentencias.length > 1 && /^set\s+autocommit\s+on$/i.test(sentencias[0] || '');
+		}
+
 		// --- el orden de la grilla (click en un header) ---
 		// El tipo lo dice el backend, columna por columna: sin eso habría que adivinar mirando el
 		// texto, y un número ordenado como texto da 10 antes que 9. Si no viene (o no coincide con la
@@ -1176,10 +1206,16 @@ public final class HqlConsolePage
 		  // Se decide acá si hay que avisar al terminar, sin depender de que el backend lo diga: lo
 		  // único que importa es qué se pidió ejecutar.
 		  const esInsercion = hql.toLowerCase().indexOf('insert') === 0;
-		  const confirmar = pideConfirmacion(hql);
+		  const esLote = loteDeEscrituras(hql);
+		  const confirmar = !esLote && pideConfirmacion(hql);
 		  if (btn) { btn.disabled = true; }
 		  cajaError.style.display = 'none';
 		  try {
+		    if (esLote && !loteConAutocommit(hql)
+		        && !confirm('Las sentencias en lote se ejecutan con commit automático. No habrá vuelta atrás. ¿Continuar?')) {
+		      estado.textContent = 'Cancelado: no se ejecutó el lote.';
+		      return;
+		    }
 		    // En UPDATE y DELETE, primero un dry-run: el servidor ejecuta, cuenta y tira atrás. Con
 		    // ese número se pregunta; recién si se confirma se manda la sentencia de verdad.
 		    if (confirmar) {

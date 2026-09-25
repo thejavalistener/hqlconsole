@@ -126,7 +126,7 @@ public class HqlConsoleController
 
 		// allow-writes se mira ANTES de cualquier cosa: con la consola en solo-lectura, un dry-run
 		// tampoco ejecuta (no tiene sentido correr y tirar atrás una escritura prohibida).
-		if( _isWrite(texto)&&!properties.isAllowWrites() )
+		if( _hasWrite(statements)&&!properties.isAllowWrites() )
 		{
 			return ResponseEntity.status(HttpStatus.FORBIDDEN)
 					.body(Map.of("error","Las sentencias de escritura están bloqueadas (hql-console.allow-writes=false).",
@@ -196,10 +196,17 @@ public class HqlConsoleController
 		return writer.toString();
 	}
 
-	private boolean _isWrite(String hql)
+	private boolean _hasWrite(List<String> statements)
 	{
-		String first=_firstWord(hql.trim());
-		return "insert".equalsIgnoreCase(first)||"update".equalsIgnoreCase(first)||"delete".equalsIgnoreCase(first);
+		for(String statement:statements)
+		{
+			String first=_firstWord(statement);
+			if( "insert".equalsIgnoreCase(first)||"update".equalsIgnoreCase(first)||"delete".equalsIgnoreCase(first) )
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private String _firstWord(String statement)

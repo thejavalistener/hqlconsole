@@ -441,6 +441,29 @@ lo dice.
   escribir una auditoría en otra conexión— lo hacen dos veces.
 - Con `allow-writes=false` no hay dry-run que valga: la sentencia se rechaza antes de ejecutarse.
 
+### Lotes DML y `SET AUTOCOMMIT ON`
+
+Un lote puede mezclar `INSERT`, `UPDATE` y `DELETE`, siempre separado por `;`. Se ejecuta en una sola
+transacción: si una sentencia falla, se revierte el lote completo. Antes de ejecutar un lote de
+escrituras, la consola muestra una única advertencia y no hace *dry-run* por cada sentencia.
+
+```sql
+DELETE FROM DetalleOrden;
+UPDATE Producto SET flgDiscontinuo=1 WHERE unidadesStock=0;
+INSERT INTO Categoria (descripcion) VALUES ('Accesorios');
+```
+
+Si ya revisaste el lote y querés omitir esa advertencia única, usá la directiva solamente como su
+primera sentencia. No modifica una configuración persistente de la conexión: vale sólo para ese lote.
+
+```sql
+SET AUTOCOMMIT ON;
+DELETE FROM DetalleOrden;
+UPDATE Producto SET flgDiscontinuo=1 WHERE unidadesStock=0;
+```
+
+`SET AUTOCOMMIT ON` solo, después de una escritura, o mezclado con consultas es inválido.
+
 ### Comentarios
 
 Las líneas que empiezan con `//`, `#` o `--` son comentarios, y **se excluyen antes de ejecutar**:

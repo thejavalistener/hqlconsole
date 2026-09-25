@@ -106,6 +106,10 @@ public class HqlQueryRunner
 		String statement=Text.withoutComments(hql).trim();
 		String first=Text.firstWord(statement);
 		long t0=System.nanoTime();
+		if( BatchPlan.isAutoCommitOn(statement) )
+		{
+			throw new IllegalArgumentException("SET AUTOCOMMIT ON sólo es válido como primera sentencia de un lote.");
+		}
 
 		if( "desc".equalsIgnoreCase(first)||"describe".equalsIgnoreCase(first) )
 		{
@@ -629,18 +633,17 @@ public class HqlQueryRunner
 	 * Ejecuta varias sentencias de la consola en <b>una sola transacción</b>: o entran todas o no
 	 * entra ninguna. Es para dar de alta datos de prueba de un saque.
 	 *
-	 * <p>Sólo INSERT. Cada sentencia entra por el mismo camino que una suelta, así que los tres
-	 * formatos de INSERT funcionan igual adentro del lote y se conservan las conversiones
-	 * ({@code NOW}, enums, relaciones por id). Lo que no entra en la gramática de la consola se
-	 * rechaza con la posición, en vez de mandarlo a Hibernate: un bulk de HQL se maneja su propia
-	 * transacción y rompería la promesa de "todo o nada".</p>
+	 * <p>Acepta INSERT, UPDATE y DELETE mezclados. Las formas propias de la consola conservan sus
+	 * conversiones ({@code NOW}, enums, relaciones por id); los DML que sean HQL bulk se ejecutan
+	 * con el mismo {@code EntityManager}. Por eso el lote sigue siendo atómico.</p>
 	 */
 	public HqlResult executeBatch(List<String> statements)
 	{
 		EntityManagerFactory emf=_entityManagerFactory();
 		long t0=System.nanoTime();
 
-		List<Statement> parsed=_parseBatch(statements);
+		BatchPlan plan=BatchPlan.parse(statements);
+		List<String> writes=plan.statements();
 
 		EntityManager em=emf.createEntityManager();
 		try
@@ -649,24 +652,23 @@ public class HqlQueryRunner
 			try
 			{
 				int filas=0;
-				for(int i=0;i<parsed.size();i++)
+				for(int i=0;i<writes.size();i++)
 				{
-					Statement statement=parsed.get(i);
+					String statement=writes.get(i);
 					try
 					{
-						EntityType<?> entityType=_entityType(emf,statement.entity());
-						filas+=_insert(em,emf,entityType,statement,t0).affectedRows();
+						filas+=_runBatchStatement(em,emf,statement,t0).affectedRows();
 					}
 					catch(RuntimeException e)
 					{
 						// En un lote de 50 sentencias, saber cuál falló es la mitad del diagnóstico.
-						throw new IllegalArgumentException("La sentencia "+(i+1)+" de "+parsed.size()
-								+" falló, así que no se insertó ninguna: "+e.getMessage(),e);
+						throw new IllegalArgumentException("La sentencia "+(i+1)+" de "+writes.size()
+								+" falló, así que no se aplicó ninguna: "+e.getMessage(),e);
 					}
 				}
 				tx.commit();
-				return HqlResult.batch(filas,parsed.size(),_millis(t0),
-						filas+" fila(s) insertada(s) en "+parsed.size()+" sentencia(s)");
+				return HqlResult.batch(filas,writes.size(),_millis(t0),
+						filas+" fila(s) afectada(s) en "+writes.size()+" sentencia(s)");
 			}
 			catch(RuntimeException e)
 			{
@@ -680,32 +682,43 @@ public class HqlQueryRunner
 		}
 	}
 
-	/** Valida el lote entero antes de tocar la base: si una sentencia no sirve, no se ejecuta nada. */
-	private List<Statement> _parseBatch(List<String> statements)
+	/** Ejecuta una escritura usando la transacción que ya abrió el lote. */
+	private HqlResult _runBatchStatement(EntityManager em,EntityManagerFactory emf,String text,long t0)
 	{
-		List<Statement> parsed=new ArrayList<>(statements.size());
-		for(int i=0;i<statements.size();i++)
+		Statement parsed=null;
+		IllegalArgumentException parseFailure=null;
+		try
 		{
-			String texto=statements.get(i);
-			Statement statement;
-			try
-			{
-				statement=StatementParser.parse(texto);
-			}
-			catch(IllegalArgumentException e)
-			{
-				throw new IllegalArgumentException("La sentencia "+(i+1)+" de "+statements.size()
-						+" no se entiende: "+e.getMessage(),e);
-			}
-			if( statement==null||statement.kind()!=Statement.Kind.INSERT )
-			{
-				throw new IllegalArgumentException("La sentencia "+(i+1)+" de "+statements.size()
-						+" no es un INSERT: un lote sólo sirve para dar de alta datos (empieza con '"
-						+Text.firstWord(texto)+"')");
-			}
-			parsed.add(statement);
+			parsed=StatementParser.parse(text);
 		}
-		return parsed;
+		catch(IllegalArgumentException e)
+		{
+			parseFailure=e;
+		}
+
+		if( parsed!=null&&parsed.isWrite() )
+		{
+			EntityType<?> entityType=_entityType(emf,parsed.entity());
+			return parsed.kind()==Statement.Kind.INSERT
+					?_insert(em,emf,entityType,parsed,t0)
+					:_update(em,entityType,parsed,t0);
+		}
+
+		try
+		{
+			int affected=em.createQuery(text).executeUpdate();
+			return HqlResult.dml(Text.firstWord(text).toUpperCase(Locale.ROOT),affected,_millis(t0),
+					affected+" fila(s) afectada(s)");
+		}
+		catch(RuntimeException hqlFailure)
+		{
+			if( parseFailure!=null )
+			{
+				throw new IllegalArgumentException("La sentencia no entra en la gramática de la consola ("
+						+parseFailure.getMessage()+") y como HQL tampoco anduvo ("+hqlFailure.getMessage()+").",hqlFailure);
+			}
+			throw hqlFailure;
+		}
 	}
 
 	// ==================== "from Entidad" aplanado ====================
