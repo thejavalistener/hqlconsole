@@ -792,8 +792,8 @@ selección y selección invertida), doce casos del párrafo (cursor en cada pár
 línea, en una línea en blanco, en los bordes, sin líneas en blanco, con CRLF y con el textarea
 vacío), el alert del INSERT, el texto de la confirmación, el reconocimiento del `DESC` y el nombre
 de entidad que usa el panel lateral (`entidadDeDesc`). Requiere `node` en el PATH; si no está, ese
-chequeo se saltea. Ojo si editás `HqlConsolePage.java`: el JS vive en un text block de Java, así que
-una barra invertida va doble.
+chequeo se saltea. Ojo si editás `hql-console.html`: el JS vive en un recurso HTML, así que las
+barras invertidas son las propias de JavaScript y CSS, sin el escape extra de Java.
 
 Del **panel lateral de entidades** se comprueba que la página traiga el panel, su control de
 contraer/expandir con la persistencia, que sea angosto y sólo muestre los nombres, que la lista salga
@@ -841,7 +841,9 @@ hql-console-starter/            el jar que se distribuye (java-library, ~20 KB, 
     HqlResult                     el JSON que sale
   web/
     HqlConsoleController          GET {path} y POST {path}/api/execute
-    HqlConsolePage                el HTML+CSS+JS, en un text block (ojo: barras invertidas dobles)
+    HqlConsolePage                renderer de la plantilla HTML y su configuración dinámica
+  resources/thejavalistener/hqlconsole/web/hql-console.html
+                                   el HTML+CSS+JS de la consola
 hql-console-demo/               aplicación de ejemplo: Empleado/Departamento/Libro + H2, sin config
                                 (Etiqueta -> EtiquetaRara está sólo para probar las mayúsculas)
 verify-demo.ps1                 la verificación end-to-end

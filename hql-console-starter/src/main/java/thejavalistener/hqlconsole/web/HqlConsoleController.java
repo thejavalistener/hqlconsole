@@ -59,7 +59,7 @@ public class HqlConsoleController
 		// El context-path de la aplicación (server.servlet.context-path) no está dentro del mapeo
 		// del controller, así que el fetch de la página lo necesita explícito.
 		String base=request.getContextPath()+path;
-		return HqlConsolePage.html(base,properties.getMaxRows(),properties.isAllowWrites());
+		return HqlConsolePage.html(base,properties.getMaxRows());
 	}
 
 	/**

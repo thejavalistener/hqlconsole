@@ -104,7 +104,10 @@ try {
     $barra = [regex]::Match($page.Content, '(?s)<div class="barra">(.*?)</div>')
     Check 'el encabezado trae consola, idioma y atajo' ($barra.Success -and $barra.Groups[1].Value -match 'Consola' -and $barra.Groups[1].Value -match 'id="idioma-titulo"' -and $barra.Groups[1].Value -match 'id="atajo-ejecutar"') 'faltan elementos del encabezado'
     Check 'la pagina ya no muestra la ruta ni el aviso' ($page.Content -notmatch 'class="ruta"' -and $page.Content -notmatch 'herramienta de desarrollo') 'quedo la ruta o el aviso'
-    Check 'la pagina apunta al base correcto' ($page.Content -match [regex]::Escape("const BASE = '$ContextPath/hqlconsole'")) "no encontro BASE = '$ContextPath/hqlconsole'"
+    $configEsperada = "{`"base`":`"$ContextPath/hqlconsole`",`"maxRows`":$MaxRows}"
+    Check 'la pagina inyecta la configuracion correcta' `
+          ($page.Content -match [regex]::Escape($configEsperada) -and $page.Content -match [regex]::Escape('const BASE = CONFIG.base;')) `
+          "no encontro la configuracion $configEsperada"
     # Ojo: (Get-Content -Raw) puede devolver un array si el archivo tiene una sola linea, y entonces
     # -match devuelve un array y Check explota. El cast a [bool] lo deja siempre booleano.
     Check 'el banner avisa la URL en el log' ([bool]((Get-Content $log -Raw) -match 'Consola HQL en http')) 'no aparece el banner'
@@ -206,7 +209,9 @@ try {
     Check 'DESC SQL marca PK y muestra el destino de FK' ($r.status -eq 200 -and ($r.json.headers -join ',') -eq 'CAMPO,TIPO SQL,RELACION' -and @($r.json.rows | Where-Object { $_[0] -match 'ID \(PK\)' }).Count -gt 0 -and @($r.json.rows | Where-Object { $_[0] -match '\(FK\)$' -and $_[2] -match 'AUTORES \(ID\)' }).Count -gt 0) $r.raw
     Check 'DESC SQL muestra primero las columnas PK' ($r.json.rows.Count -gt 0 -and $r.json.rows[0][0] -match '\(PK\)') ($r.json.rows[0] -join ' | ')
     $r = Exec 'DESC NoExiste'
-    Check 'DESC de una entidad inexistente da 400 y lista las que hay' ($r.status -eq 400 -and $r.json.error -match 'Las que hay son') $r.raw
+    Check 'DESC HQL de una entidad inexistente da 400' ($r.status -eq 400 -and $r.json.error -eq 'Entidad no encontrada: NoExiste') $r.raw
+    $r = Exec 'DESC NO_EXISTE' $null 'sql'
+    Check 'DESC SQL de una tabla inexistente da 400' ($r.status -eq 400 -and $r.json.error -eq "No conozco la tabla 'NO_EXISTE'.") $r.raw
 
     # --- UPDATE sin WHERE: toca todo, o hasta el tope avisando (el seed tiene 6 libros) ---
     $r = Exec 'UPDATE Libro li SET li.disponible=false'
@@ -314,7 +319,7 @@ try {
     Check 'el lote que falla no dejo nada (una sola transaccion)' ($r.json.rows[0][0] -eq 0) $r.raw
 
     $r = Exec "INSERT INTO Libro (titulo) VALUES ('Lote 6'); SELECT count(l) FROM Libro l"
-    Check 'un lote con algo que no es INSERT avisa la posicion' ($r.status -eq 400 -and $r.json.error -match 'sentencia 2 de 2 no es un INSERT') $r.raw
+    Check 'un lote con SELECT avisa la posicion y lo rechaza' ($r.status -eq 400 -and $r.json.error -match 'sentencia 2 de 2 no es INSERT, UPDATE ni DELETE') $r.raw
     $r = Exec "SELECT count(l) FROM Libro l WHERE l.titulo = 'Lote 6'"
     Check 'el lote rechazado no inserto nada' ($r.json.rows[0][0] -eq 0) $r.raw
 
@@ -452,9 +457,9 @@ try {
 
     # --- entidades y atributos son case sensitive ---
     $r = Exec 'DESC libro'
-    Check 'DESC con la entidad en minuscula falla y sugiere' ($r.status -eq 400 -and $r.json.error -match "Quisiste decir 'Libro'") $r.raw
+    Check 'DESC con la entidad en minuscula falla sin sugerencia' ($r.status -eq 400 -and $r.json.error -eq 'Entidad no encontrada: libro') $r.raw
     $r = Exec 'from libro'
-    Check 'from con la entidad en minuscula falla y sugiere' ($r.status -eq 400 -and $r.json.error -match "Quisiste decir 'Libro'") $r.raw
+    Check 'from con la entidad en minuscula falla sin sugerencia' ($r.status -eq 400 -and $r.json.error -eq 'Entidad no encontrada: libro') $r.raw
     $r = Exec 'SELECT l.tiTulo FROM Libro l'
     Check 'un atributo mal capitalizado falla' ($r.status -eq 400) $r.raw
     $r = Exec "INSERT INTO Libro li VALUES li.TITULO='x'"
@@ -719,8 +724,8 @@ check('insertar: en un editor vacio no agrega lineas de mas al principio', vacio
             Check 'seleccion y parrafos, en Node sobre la pagina servida' $false 'no encontre el bloque de funciones puras'
         }
 
-        # El JS vive en un text block de Java: una barra invertida mal puesta lo rompe sin que falle
-        # la compilacion. Esto lo caza sin abrir un navegador (paso dos veces durante el desarrollo).
+        # El JS vive en el recurso HTML: una barra invertida mal puesta lo rompe sin que falle la
+        # compilacion. Esto lo caza sin abrir un navegador (paso dos veces durante el desarrollo).
         $jsPagina = [regex]::Match($page.Content, '(?s)<script>(.*?)</script>').Groups[1].Value
         $archivoPagina = Join-Path $env:TEMP 'hql-console-pagina.js'
         Set-Content -Path $archivoPagina -Value $jsPagina -Encoding UTF8
@@ -734,7 +739,7 @@ check('insertar: en un editor vacio no agrega lineas de mas al principio', vacio
 
     # --- el alert del INSERT ---
     Check 'la pagina avisa los INSERT con un alert' ($page.Content -match 'function mensajeInsercion' -and $page.Content -match 'alert\(mensajeInsercion') 'no esta el alert del INSERT'
-    Check 'el alert del INSERT mira que el texto empiece con insert' ($page.Content -match "indexOf\('insert'\) === 0") 'no se detecta el INSERT'
+    Check 'el alert del INSERT usa el detector actual' ($page.Content -match 'const esInsercion = /' -and $page.Content -match 'insert\\b/i\.test\(hql\)') 'no se detecta el INSERT'
 
     # --- layout partido con divisor movible ---
     Check 'la pagina trae el layout partido' ($page.Content -match 'id="panel-editor"' -and $page.Content -match 'id="panel-resultado"') 'faltan los paneles'
