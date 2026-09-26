@@ -303,6 +303,12 @@ SELECT * FROM Libro l WHERE l.precio > 10000 ORDER BY l.id LIMIT 10
   - Los **NULL van siempre al final**, también en descendente: si no, ordenar al revés arrancaría con
     una pantalla llena de NULL.
   - Funciona también en el panel de detalle, y cada grilla ordena por su cuenta.
+- **Arrastrar un encabezado reordena las columnas.** Soltalo sobre la mitad izquierda o derecha de
+  otro encabezado para ubicarlo antes o después. Se mueven el título y todas sus celdas, sólo en la
+  vista actual: no se modifica el HQL, el resultado del servidor ni el orden original usado para
+  ordenar. El click simple sobre el encabezado sigue alternando el orden ascendente/descendente.
+  Cada grilla (resultado y detalle) mantiene su orden mientras esté visible; una nueva ejecución
+  arma una grilla nueva en el orden que devolvió el servidor.
 - Una relación `to-one` se muestra como **el id de la FK** (`autor` → `1`). Para un `@ManyToOne`
   cuyo destino declare opcionalmente `public String toHqlConsoleString()` sin argumentos, las
   grillas planas de la consola (`from Entidad` y `SELECT *`) cargan esa relación sólo para esa

@@ -630,6 +630,15 @@ check('ordenar: por texto', ordenarFilas(filas, 1, 'TEXTO', 'asc').map(function(
 check('ordenar: sin filas no explota', ordenarFilas(null, 0, 'TEXTO', 'asc').length, 0);
 check('ordenar: tolera filas de distinto largo', ordenarFilas([[1],[2,'x']], 1, 'TEXTO', 'asc').length, 2);
 
+// Reordenar columnas es una operacion visual: los índices siguen siendo los de la respuesta del
+// servidor y el array recibido nunca se modifica.
+var columnas = [0,1,2,3];
+check('columnas: mueve una columna a la izquierda', reubicarColumnas(columnas, 3, 1, false).join(','), '0,3,1,2');
+check('columnas: mueve una columna a la derecha', reubicarColumnas(columnas, 0, 2, true).join(','), '1,2,0,3');
+check('columnas: soltar sobre si misma no cambia el orden', reubicarColumnas(columnas, 1, 1, true).join(','), '0,1,2,3');
+check('columnas: un indice ausente no rompe', reubicarColumnas(columnas, 9, 1, false).join(','), '0,1,2,3');
+check('columnas: no muta el orden anterior', columnas.join(','), '0,1,2,3');
+
 // --- las acciones visibles de entidad: el INSERT de ejemplo y el SELECT * ---
 check('id: reconoce la marca', esAtributoId('id*'), true);
 check('id: un atributo normal no', esAtributoId('titulo'), false);
@@ -860,11 +869,15 @@ check('insertar: en un editor vacio no agrega lineas de mas al principio', vacio
 
     # --- el orden por click en el header ---
     Check 'la pagina trae el orden por click en el header' `
-          ($page.Content -match 'function ordenarPor' -and $page.Content -match 'function compararCeldas' -and $page.Content -match "addEventListener\('click', function\(\) \{\s*ordenarPor") 'falta el orden por header'
+          ($page.Content -match 'function ordenarPor' -and $page.Content -match 'function compararCeldas' -and $page.Content -match "addEventListener\('click'" -and $page.Content -match 'ordenarPor\(tabla, indice\)') 'falta el orden por header'
     Check 'el orden usa el tipo que manda el backend' ($page.Content -match 'function tipoDeColumna' -and $page.Content -match 'datos\.types') 'no se usan los tipos del backend'
     Check 'el header muestra la flecha y el estado' ($page.Content -match 'th\.orden-asc::after' -and $page.Content -match 'aria-sort') 'falta el indicador de orden'
     Check 'ordenar guarda las filas originales (no las pisa)' ($page.Content -match 'tabla\.__filas' -and $page.Content -match 'function ordenarFilas') 'no se guardan las filas originales'
     Check 'ordenar reengancha las filas clickeables' ($page.Content -match 'function recablearFilas' -and $page.Content -match 'recablearFilas\(tabla\)') 'las filas ordenadas pierden el click'
+    Check 'los headers se arrastran para reordenar columnas' `
+          ($page.Content -match 'function reubicarColumnas' -and $page.Content -match 'th\.draggable = true' `
+           -and $page.Content -match "addEventListener\('dragstart'" -and $page.Content -match "addEventListener\('drop'" `
+           -and $page.Content -match 'tabla\.__columnas') 'falta el arrastre de columnas'
 
     # --- editor sin wrap (scroll horizontal) ---
     Check 'el textarea no envuelve las lineas largas' ($page.Content -match 'id="hql"[^>]*wrap="off"') 'falta wrap="off" en el textarea'

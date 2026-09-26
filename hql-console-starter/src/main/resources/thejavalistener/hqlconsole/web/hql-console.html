@@ -55,8 +55,11 @@
      el ancho también cambia, porque ⇅ (U+21C5) no mide lo mismo que ↑ (U+2191) ni que ↓
      (U+2193) en una fuente monoespaciada. Por eso el indicador es inline-block con un ancho
      fijo: los tres estados miden exactamente igual y nada se corre. */
-  th.ordenable { cursor:pointer; user-select:none; }
+  th.ordenable { cursor:grab; user-select:none; }
   th.ordenable:hover { background:#e2e7ee; }
+  th.ordenable.arrastrando-columna { opacity:.45; cursor:grabbing; }
+  th.ordenable.destino-columna { box-shadow:inset 3px 0 0 var(--acento); }
+  th.ordenable.destino-columna-despues { box-shadow:inset -3px 0 0 var(--acento); }
   th.ordenable::after { content:'\21C5'; display:inline-block; width:1em; margin-left:6px;
                         text-align:center; opacity:.25; }
   th.ordenable:hover::after { opacity:.55; }
@@ -488,6 +491,20 @@ function ordenarFilas(filas, indice, tipo, direccion) {
     return factor * compararCeldas(va, vb, tipo);
   });
   return copia;
+}
+
+// Mueve el índice de una columna dentro del orden visual. Los índices siguen apuntando a las
+// columnas originales de la respuesta: así ordenar conserva el tipo correcto y no se toca el JSON.
+function reubicarColumnas(columnas, origen, destino, despues) {
+  const salida = (columnas || []).slice();
+  const desde = salida.indexOf(origen);
+  const hasta = salida.indexOf(destino);
+  if (desde < 0 || hasta < 0 || desde === hasta) { return salida; }
+  const columna = salida.splice(desde, 1)[0];
+  let insertarEn = hasta + (despues ? 1 : 0);
+  if (desde < insertarEn) { insertarEn--; }
+  salida.splice(insertarEn, 0, columna);
+  return salida;
 }
 
 // La dirección siguiente del orden: si ya estaba ascendente, el próximo click baja.
@@ -1092,29 +1109,66 @@ function dibujarGrilla(caja, tabla, datos) {
   const filas = datos.rows || [];
   tabla.textContent = '';
 
+  // Cada tabla mantiene su propio orden visual. Las filas y los tipos siguen en el orden del
+  // servidor; __columnas traduce posición visual -> índice original.
+  tabla.__filas = (datos.rows || []).slice();
+  tabla.__tipos = datos.types || [];
+  tabla.__columnas = cabeceras.map(function(_, indice) { return indice; });
+  tabla.__orden = null;
+  tabla.__relacionesSql = false;
+  tabla.__columnaArrastrada = null;
+  tabla.__ignorarClickHasta = 0;
+
   const thead = document.createElement('thead');
   const filaCabeceras = document.createElement('tr');
   cabeceras.forEach(function(c, indice) {
     const th = document.createElement('th');
     th.textContent = c;
     th.className = 'ordenable';
-    th.title = 'Ordenar por ' + c;
+    th.dataset.columna = String(indice);
+    th.draggable = true;
+    th.title = 'Ordenar por ' + c + '. Arrastrar para reordenar.';
     // El estado arranca sin orden: el primer click ordena ascendente y el segundo, descendente.
     th.setAttribute('aria-sort', 'none');
     th.addEventListener('click', function() {
-      ordenarPor(tabla, indice, cabeceras.length);
+      if (Date.now() < tabla.__ignorarClickHasta) { return; }
+      ordenarPor(tabla, indice);
+    });
+    th.addEventListener('dragstart', function(ev) {
+      tabla.__columnaArrastrada = indice;
+      th.classList.add('arrastrando-columna');
+      ev.dataTransfer.effectAllowed = 'move';
+      ev.dataTransfer.setData('text/plain', String(indice));
+    });
+    th.addEventListener('dragover', function(ev) {
+      if (tabla.__columnaArrastrada === null || tabla.__columnaArrastrada === indice) { return; }
+      ev.preventDefault();
+      const despues = ev.clientX > th.getBoundingClientRect().left + th.getBoundingClientRect().width / 2;
+      th.classList.toggle('destino-columna', !despues);
+      th.classList.toggle('destino-columna-despues', despues);
+      ev.dataTransfer.dropEffect = 'move';
+    });
+    th.addEventListener('dragleave', function() {
+      th.classList.remove('destino-columna', 'destino-columna-despues');
+    });
+    th.addEventListener('drop', function(ev) {
+      ev.preventDefault();
+      const origen = tabla.__columnaArrastrada;
+      const rect = th.getBoundingClientRect();
+      const despues = ev.clientX > rect.left + rect.width / 2;
+      limpiarDestinoDeColumnas(tabla);
+      if (origen !== null && origen !== indice) { moverColumna(tabla, origen, indice, despues); }
+      tabla.__ignorarClickHasta = Date.now() + 250;
+    });
+    th.addEventListener('dragend', function() {
+      tabla.__columnaArrastrada = null;
+      th.classList.remove('arrastrando-columna');
+      limpiarDestinoDeColumnas(tabla);
     });
     filaCabeceras.appendChild(th);
   });
   thead.appendChild(filaCabeceras);
   tabla.appendChild(thead);
-
-  // El estado va colgado de la propia tabla: la grilla de resultados y la del detalle son dos
-  // tablas distintas y cada una ordena por su cuenta, sin variables globales que se pisen.
-  tabla.__filas = (datos.rows || []).slice();
-  tabla.__tipos = datos.types || [];
-  tabla.__orden = null;
-  tabla.__relacionesSql = false;
 
   pintarFilas(tabla, filas);
   caja.hidden = false;
@@ -1127,9 +1181,11 @@ function pintarFilas(tabla, filas) {
   if (viejo) { viejo.remove(); }
 
   const tbody = document.createElement('tbody');
+  const columnas = tabla.__columnas || [];
   filas.forEach(function(fila) {
     const tr = document.createElement('tr');
-    fila.forEach(function(celda) {
+    const celdas = columnas.length ? columnas.map(function(indice) { return fila[indice]; }) : fila;
+    celdas.forEach(function(celda) {
       const td = document.createElement('td');
       if (celda === null || celda === undefined) {
         td.textContent = 'NULL';
@@ -1146,7 +1202,7 @@ function pintarFilas(tabla, filas) {
 
 // Un click en un header: si es la misma columna, invierte la dirección; si es otra, empieza
 // ascendente por la nueva. Siempre parte de las filas originales.
-function ordenarPor(tabla, indice, columnas) {
+function ordenarPor(tabla, indice) {
   const originales = tabla.__filas || [];
   const anterior = tabla.__orden;
   const direccion = (anterior && anterior.indice === indice) ? direccionSiguiente(anterior.direccion) : 'asc';
@@ -1165,11 +1221,38 @@ function marcarOrden(tabla, indice, direccion) {
     const th = celdas[i];
     th.classList.remove('orden-asc', 'orden-desc');
     th.setAttribute('aria-sort', 'none');
-    if (i === indice) {
+    if (Number(th.dataset.columna) === indice) {
       th.classList.add(direccion === 'desc' ? 'orden-desc' : 'orden-asc');
       th.setAttribute('aria-sort', direccion === 'desc' ? 'descending' : 'ascending');
     }
   }
+}
+
+function limpiarDestinoDeColumnas(tabla) {
+  const celdas = tabla.querySelectorAll('thead th');
+  for (let i = 0; i < celdas.length; i++) {
+    celdas[i].classList.remove('destino-columna', 'destino-columna-despues');
+  }
+}
+
+function filasVisibles(tabla) {
+  const orden = tabla.__orden;
+  if (!orden) { return tabla.__filas || []; }
+  return ordenarFilas(tabla.__filas || [], orden.indice, tipoDeColumna(tabla.__tipos, orden.indice), orden.direccion);
+}
+
+function moverColumna(tabla, origen, destino, despues) {
+  const orden = reubicarColumnas(tabla.__columnas, origen, destino, despues);
+  if (orden.join(',') === (tabla.__columnas || []).join(',')) { return; }
+  tabla.__columnas = orden;
+
+  const filaCabeceras = tabla.querySelector('thead tr');
+  orden.forEach(function(indice) {
+    filaCabeceras.appendChild(tabla.querySelector('thead th[data-columna="' + indice + '"]'));
+  });
+  pintarFilas(tabla, filasVisibles(tabla));
+  if (tabla.__orden) { marcarOrden(tabla, tabla.__orden.indice, tabla.__orden.direccion); }
+  recablearFilas(tabla);
 }
 
 // Devuelve las cabeceras dibujadas, o nada si el resultado no era una grilla.
