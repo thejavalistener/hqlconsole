@@ -124,7 +124,8 @@ try {
 
     $r = Exec 'from Empleado e'
     Check 'from Entidad aplana los atributos de Empleado' (($r.json.headers -join ',') -eq 'id,nombre,salario,ingreso,departamento') ($r.json.headers -join ',')
-    Check 'la relacion sale como el id de la FK' ($r.json.rows[0][4] -eq 1) ($r.json.rows[0] -join '|')
+    Check 'la consola carga la relacion etiquetable sin exigir join fetch' `
+          ($r.json.rows[0][4] -eq '1 (Sistemas)') ($r.json.rows[0] -join '|')
 
     $r = Exec 'select e from Empleado e'
     Check 'con SELECT explicito la entidad sale como Tipo#id' ($r.json.rows[0][0] -eq 'Empleado#1') $r.json.rows[0][0]
@@ -396,13 +397,19 @@ try {
     Check 'from <Entidad> aplana y titula con los ATRIBUTOS de DESC' (($r.json.headers -join ',') -eq $atributosDesc) "$($r.json.headers -join ',') vs $atributosDesc"
     Check "from <Entidad> trae $esperadas fila(s)" ($r.json.rowCount -eq $esperadas) $r.json.rowCount
     $posAutor = [array]::IndexOf($r.json.headers, 'autor')
-    Check 'la relacion se muestra como el id de la FK' ($r.json.rows[0][$posAutor] -eq 1) $r.json.rows[0][$posAutor]
+    Check 'la consola carga tambien la etiqueta de Autor sin join fetch' `
+          ($r.json.rows[0][$posAutor] -eq '1 (Jorge Luis Borges)') $r.json.rows[0][$posAutor]
 
     $r = Exec "from Libro l where l.genero = 'NOVELA' order by l.id desc"
     Check 'from <Entidad> con WHERE y ORDER BY sigue aplanado' (($r.json.headers -join ',') -eq $atributosDesc) ($r.json.headers -join ',')
 
-    $r = Exec 'from Libro l join fetch l.autor'
+    $r = Exec 'from Libro l join fetch l.autor order by l.id'
     Check 'join fetch tambien se aplana (la fila es solo la entidad)' ($r.json.headers.Count -eq 9) $r.json.headers.Count
+    $posAutor = [array]::IndexOf($r.json.headers, 'autor')
+    Check 'un @ManyToOne cargado suma su etiqueta HQL Console al id' `
+          ($r.json.rows[0][$posAutor] -eq '1 (Jorge Luis Borges)') $r.json.rows[0][$posAutor]
+    Check 'una relacion con etiqueta se tipa como TEXTO para ordenarla correctamente' `
+          ($r.json.types[$posAutor] -eq 'TEXTO') $r.json.types[$posAutor]
 
     $r = Exec 'select l from Libro l'
     Check 'con SELECT explicito NO se aplana' ($r.json.headers.Count -eq 1 -and $r.json.rows[0][0] -eq 'Libro#1') $r.json.rows[0][0]
@@ -414,6 +421,8 @@ try {
     $r = Exec 'SELECT * FROM Libro'
     Check 'SELECT * FROM <Entidad> aplana igual que from <Entidad>' `
           (($r.json.headers -join ',') -eq $atributosDesc -and $r.json.rowCount -eq $esperadas) "$($r.json.headers -join ',') ($($r.json.rowCount) filas)"
+    Check 'SELECT * carga la etiqueta de la relacion igual que from' `
+          ($r.json.rows[0][$posAutor] -eq '1 (Jorge Luis Borges)') $r.json.rows[0][$posAutor]
     $r = Exec "SELECT * FROM Libro l WHERE l.genero = 'NOVELA' ORDER BY l.id LIMIT 100"
     Check 'SELECT * con alias, WHERE, ORDER BY y LIMIT sigue andando' `
           ($r.status -eq 200 -and ($r.json.headers -join ',') -eq $atributosDesc) $r.raw
@@ -421,6 +430,7 @@ try {
     $r = Exec 'SELECT * FROM Empleado e WHERE e.id = 1'
     Check 'SELECT * FROM ... WHERE devuelve una fila aplanada' `
           ($r.json.rowCount -eq 1 -and ($r.json.headers -join ',') -eq 'id,nombre,salario,ingreso,departamento') ($r.json.headers -join ',')
+    Check 'SELECT * con WHERE carga la etiqueta sin alterar el HQL' ($r.json.rows[0][4] -eq '1 (Sistemas)') $r.json.rows[0][4]
 
     # Un select explicito que no es "*" no se toca: sigue siendo una sola columna con "Tipo#id".
     $r = Exec 'select l from Libro l'
@@ -798,8 +808,8 @@ check('insertar: en un editor vacio no agrega lineas de mas al principio', vacio
     Check 'la cantidad de tipos coincide con la de headers' ($r.json.types.Count -eq $r.json.headers.Count) "$($r.json.types.Count) vs $($r.json.headers.Count)"
 
     $r = Exec 'from Empleado e'
-    Check 'from <Entidad> tambien trae tipos (la relacion es NUMERO: sale como el id de la FK)' `
-          (($r.json.types -join ',') -eq 'NUMERO,TEXTO,NUMERO,FECHA,NUMERO') ($r.json.types -join ',')
+    Check 'from <Entidad> tipa TEXTO una relacion cuyo destino ofrece etiqueta HQL Console' `
+          (($r.json.types -join ',') -eq 'NUMERO,TEXTO,NUMERO,FECHA,TEXTO') ($r.json.types -join ',')
 
     $r = Exec 'SELECT e.nombre FROM Empleado e WHERE e.id = 999'
     Check 'con 0 filas el tipo es OTRO (no hay nada que mirar)' (($r.json.types -join ',') -eq 'OTRO') ($r.json.types -join ',')

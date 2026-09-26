@@ -36,4 +36,10 @@ public class Departamento
 	{
 		return nombre;
 	}
+
+    public String toHqlConsoleString()
+    {
+        return nombre;
+    }
+
 }

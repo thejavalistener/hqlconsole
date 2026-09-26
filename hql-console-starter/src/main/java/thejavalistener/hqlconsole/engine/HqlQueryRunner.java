@@ -21,6 +21,7 @@ import org.hibernate.Session;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
+import jakarta.persistence.EntityGraph;
 import jakarta.persistence.EntityTransaction;
 import jakarta.persistence.PersistenceUnitUtil;
 import jakarta.persistence.Query;
@@ -477,6 +478,7 @@ public class HqlQueryRunner
 			EntityTransaction tx=_begin(em);
 			try
 			{
+				EntityGraph<?> labelGraph=_labelGraph(em,flatEntity);
 				List<?> raw;
 				List<String> headers;
 
@@ -491,6 +493,7 @@ public class HqlQueryRunner
 					// Hibernate lo acepta y es lo que usamos acá; el catch de abajo es el camino
 					// portable, así que un proveedor que lo rechace degrada en vez de romper.
 					TypedQuery<Tuple> typed=em.createQuery(texto,Tuple.class);
+					_applyLabelGraph(typed,labelGraph);
 					_limite(typed,tope,pedirUnaMas);
 					List<Tuple> tuples=typed.getResultList();
 					headers=_headersOf(tuples,texto);
@@ -503,6 +506,7 @@ public class HqlQueryRunner
 					log.debug("La consulta no se pudo leer como Tuple; se usa el camino JPA plano sin alias: {}",
 							providerRejectsTuple.getMessage());
 					Query plain=em.createQuery(texto);
+					_applyLabelGraph(plain,labelGraph);
 					_limite(plain,tope,pedirUnaMas);
 					raw=plain.getResultList();
 					headers=List.of();
@@ -786,21 +790,72 @@ public class HqlQueryRunner
 	}
 
 	/**
+	 * Pide sólo para esta consulta las relaciones que la consola puede etiquetar. No cambia el fetch
+	 * del mapping de la aplicación: {@code from Empleado} sigue teniendo {@code departamento} LAZY
+	 * fuera de la consola. Un grafo permite al proveedor resolverlas sin el N+1 de inicializar cada
+	 * proxy al pintar la fila.
+	 */
+	private EntityGraph<?> _labelGraph(EntityManager em,EntityType<?> entityType)
+	{
+		if( entityType==null )
+		{
+			return null;
+		}
+		EntityGraph<?> graph=null;
+		for(Attribute<?,?> attribute:Mapping.columnsInDeclarationOrder(entityType))
+		{
+			if( _hasRelatedLabel(attribute) )
+			{
+				if( graph==null )
+				{
+					graph=em.createEntityGraph(entityType.getJavaType());
+				}
+				graph.addAttributeNodes(attribute.getName());
+			}
+		}
+		return graph;
+	}
+
+	/** Aplica el fetch graph si el proveedor lo admite; sin él la celda conserva el id. */
+	private void _applyLabelGraph(Query query,EntityGraph<?> graph)
+	{
+		if( graph==null )
+		{
+			return;
+		}
+		try
+		{
+			query.setHint("jakarta.persistence.fetchgraph",graph);
+		}
+		catch(IllegalArgumentException unsupported)
+		{
+			log.debug("El proveedor no admite fetchgraph para etiquetas de la consola: {}",unsupported.getMessage());
+		}
+	}
+
+	/**
 	 * Los tipos de la grilla aplanada, que salen del <b>metamodelo</b> y no de las celdas.
 	 *
-	 * <p>Acá no se puede mirar el valor: una relación se aplana al id de la FK, y si la fila no tiene
-	 * autor, la celda es NULL y no dice nada. El tipo Java del atributo sí lo dice siempre. Y para
-	 * ordenar da igual que la relación sea un objeto o un número: lo que se ve —y lo que se
-	 * compara— es el id.</p>
+	 * <p>Una relación se aplana al id de la FK. Una {@code @ManyToOne} cuyo tipo declare
+	 * {@code toHqlConsoleString()} puede sumar una etiqueta al id, por lo que esa columna pasa a ser
+	 * texto; las demás conservan el tipo del id. El tipo sale del metamodelo y no de una fila, que
+	 * puede tener una relación {@code null}.</p>
 	 */
 	private List<String> _flatTypes(EntityType<?> entityType)
 	{
 		List<String> types=new ArrayList<>();
 		for(Attribute<?,?> attribute:Mapping.columnsInDeclarationOrder(entityType))
 		{
-			types.add(Mapping.isToOne(attribute)
-					?_typeOf(Mapping.idOf(Mapping.relatedEntity(_metamodel,attribute)).getJavaType())
-					:_typeOf(attribute.getJavaType()));
+			if( _hasRelatedLabel(attribute) )
+			{
+				types.add(HqlResult.ColumnType.TEXTO.name());
+			}
+			else
+			{
+				types.add(Mapping.isToOne(attribute)
+						?_typeOf(Mapping.idOf(Mapping.relatedEntity(_metamodel,attribute)).getJavaType())
+						:_typeOf(attribute.getJavaType()));
+			}
 		}
 		return types;
 	}
@@ -855,12 +910,49 @@ public class HqlQueryRunner
 			for(Attribute<?,?> attribute:columns)
 			{
 				Object value=Mapping.read(entity,attribute);
-				// Una relación se muestra como el id de la FK, sin inicializar el proxy.
-				cells.add(_cell(Mapping.isToOne(attribute)?_identifier(value,util):value,util,entityTypes));
+				cells.add(_cell(_flatValue(attribute,value,util),util,entityTypes));
 			}
 			rows.add(cells);
 		}
 		return rows;
+	}
+
+	/**
+	 * Una relación siempre conserva su id. La etiqueta opcional se pide sólo si el valor ya está
+	 * cargado: invocar un método de un proxy LAZY lo inicializaría y convertiría una grilla en N+1
+	 * consultas. Un {@code join fetch} o una relación EAGER sí permite mostrarla.
+	 */
+	private Object _flatValue(Attribute<?,?> attribute,Object value,PersistenceUnitUtil util)
+	{
+		if( !Mapping.isToOne(attribute) )
+		{
+			return value;
+		}
+		Object id=_identifier(value,util);
+		if( id==null||!_hasRelatedLabel(attribute)||!_isLoaded(value,util) )
+		{
+			return id;
+		}
+		String label=HqlConsoleLabel.read(value);
+		return label==null?id:id+" ("+label+")";
+	}
+
+	private boolean _hasRelatedLabel(Attribute<?,?> attribute)
+	{
+		return attribute.getPersistentAttributeType()==Attribute.PersistentAttributeType.MANY_TO_ONE
+				&&HqlConsoleLabel.supports(attribute.getJavaType());
+	}
+
+	private boolean _isLoaded(Object value,PersistenceUnitUtil util)
+	{
+		try
+		{
+			return util.isLoaded(value);
+		}
+		catch(RuntimeException unavailable)
+		{
+			return false;
+		}
 	}
 
 	private Object[] _values(Object row)

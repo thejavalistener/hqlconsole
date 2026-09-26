@@ -303,8 +303,15 @@ SELECT * FROM Libro l WHERE l.precio > 10000 ORDER BY l.id LIMIT 10
   - Los **NULL van siempre al final**, también en descendente: si no, ordenar al revés arrancaría con
     una pantalla llena de NULL.
   - Funciona también en el panel de detalle, y cada grilla ordena por su cuenta.
-- Una relación `to-one` se muestra como **el id de la FK** (`autor` → `1`), sin inicializar el
-  proxy ni traer la entidad relacionada.
+- Una relación `to-one` se muestra como **el id de la FK** (`autor` → `1`). Para un `@ManyToOne`
+  cuyo destino declare opcionalmente `public String toHqlConsoleString()` sin argumentos, las
+  grillas planas de la consola (`from Entidad` y `SELECT *`) cargan esa relación sólo para esa
+  consulta y muestran `1 (Jorge Luis Borges)`. No hay que escribir `join fetch`, ni cambiar el
+  `fetch` del modelo de la aplicación, ni agregar una anotación o dependencia de la consola al
+  dominio. Si falta el método, devuelve vacío, falla o el proveedor no admite el plan de carga, se
+  conserva sólo el id. La etiqueta se normaliza y se limita a 60 caracteres; como puede llevar
+  texto, esa columna se ordena como `TEXTO`. Los `SELECT` explícitos siguen devolviendo exactamente
+  lo solicitado y no reciben esta carga adicional.
 - Las colecciones (`@OneToMany`) no se muestran: no son campos planos.
 - Un `join fetch` también se aplana, porque la fila sigue siendo sólo la entidad. Un **join
   explícito** (`from Libro l join l.autor a`) no: la fila tiene dos raíces y sale como
