@@ -85,3 +85,32 @@ ejecución. Si el `SELECT` devuelve cero o más de una fila, más de una columna
 Los comentarios `//`, `#` y `--` se ignoran. Las consultas admiten `LIMIT n`;
 además, `hql-console.max-rows` aplica un tope global. El modo SQL nativo es de
 sola lectura: allí sólo se permite `SELECT`.
+
+## Datos foráneos o relacionales
+
+La consola puede mostrar datos que provienen de las relaciones @ManyToOne. Por ejemplo, si vemos una fila de `Producto`, ver también nombre del `Proveedor`: 
+
+| idProducto| proveedor|
+|-----------|----------|
+|          1|  3 (Sony)|
+
+Para esto, se debe declarar en la clase el hijo (`Producto`) el método: `public String toHqlConsoleString() `. Por ejemplo:
+
+```
+public class Producto
+{
+   // :
+
+   @ManyToOne
+   private Proveedor proveedor;
+
+   // :
+
+   public String toHqlConsoleString()
+   {
+      return proveedor.getDescripcion();
+   }
+
+   // :
+}
+```
