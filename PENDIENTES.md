@@ -49,6 +49,7 @@ trabajo (una sesión nueva, otro modelo) no tenga que adivinar: la documentació
 | #13 el header no cambia de tamaño al pasar el mouse | **hecho** |
 | #14 case estricto de atributos en los SELECT | **descartado a propósito**; documentado |
 | #15 solapa SQL nativa de sólo lectura | **hecho** |
+| #16 aritmética temporal y variables escalares por script | **hecho** |
 
 ## #15 — Solapa SQL nativa de sólo lectura
 
@@ -64,8 +65,8 @@ trabajo (una sesión nueva, otro modelo) no tenga que adivinar: la documentació
   la metadata JDBC para headers y tipos, con degradación segura si el driver no la expone.
 - En modo SQL se ocultan el menú de entidades y la generación de INSERT. El panel lista tablas y
   vistas, permite filtrar por texto/tipo y ejecuta el `DESC` emulado al hacer clic.
-- Verificación vigente: `verify-demo.ps1` da **234 PASS / 0 FAIL**; con
-  `-ContextPath /demo -MaxRows 3`, **242 PASS / 0 FAIL**.
+- Verificación vigente: `verify-demo.ps1` da **237 PASS / 0 FAIL**; con
+	`-ContextPath /demo -MaxRows 3`, **245 PASS / 0 FAIL**.
 
 ## #12 — El menú por hover, y el bug del header
 

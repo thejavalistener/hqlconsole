@@ -20,7 +20,14 @@ public record BatchPlan(List<BatchPlan.Entry> entries, boolean autoCommit,Map<St
 	private static final Pattern DECLARATION=Pattern.compile("(?s)^\\s*\\$([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*(.*)$");
 
 	/** Una escritura del lote y, si corresponde, la variable que recibe su id generado. */
-	public record Entry(String statement,String generatedIdVariable) {}
+	/** Una entrada de script: INSERT puede generar ID; SELECT sólo puede declarar un escalar. */
+	public record Entry(String statement,String generatedIdVariable,String scalarSelectVariable)
+	{
+		public boolean isScalarSelect()
+		{
+			return scalarSelectVariable!=null;
+		}
+	}
 
 	/** Conserva la vista anterior del plan para los consumidores que sólo necesitan el texto. */
 	public List<String> statements()
@@ -57,6 +64,16 @@ public record BatchPlan(List<BatchPlan.Entry> entries, boolean autoCommit,Map<St
 			{
 				variable=declaration.group(1);
 				statement=declaration.group(2).trim();
+				if( variables.containsKey(variable) )
+				{
+					throw new IllegalArgumentException("La variable $"+variable+" ya fue declarada en este lote.");
+				}
+				if( "select".equalsIgnoreCase(Text.firstWord(statement)) )
+				{
+					variables.put(variable,statement);
+					writes.add(new Entry(statement,null,variable));
+					continue;
+				}
 				Statement parsed=StatementParser.parse(statement);
 				if( parsed==null||parsed.kind()!=Statement.Kind.INSERT )
 				{
@@ -86,11 +103,15 @@ public record BatchPlan(List<BatchPlan.Entry> entries, boolean autoCommit,Map<St
 					_validateReferences(parsed,variables);
 				}
 			}
-			writes.add(new Entry(statement,variable));
+			writes.add(new Entry(statement,variable,null));
 		}
 		if( writes.isEmpty() )
 		{
 			throw new IllegalArgumentException("SET AUTOCOMMIT ON sólo es válido dentro de un lote con escrituras.");
+		}
+		if( writes.stream().allMatch(Entry::isScalarSelect) )
+		{
+			throw new IllegalArgumentException("Un script con SELECT escalares necesita por lo menos una escritura.");
 		}
 		return new BatchPlan(List.copyOf(writes),autoCommit,
 				Collections.unmodifiableMap(new LinkedHashMap<>(variables)));
@@ -100,7 +121,7 @@ public record BatchPlan(List<BatchPlan.Entry> entries, boolean autoCommit,Map<St
 	{
 		for(Statement.Assignment assignment:statement.assignments())
 		{
-			String variable=AttributeBinder.generatedIdVariable(assignment.literal());
+			String variable=ScalarExpression.referencedVariable(assignment.literal());
 			if( variable!=null&&!variables.containsKey(variable) )
 			{
 				throw new IllegalArgumentException("La variable $"+variable
@@ -110,6 +131,13 @@ public record BatchPlan(List<BatchPlan.Entry> entries, boolean autoCommit,Map<St
 	}
 
 	public static boolean isGeneratedIdDeclaration(String statement)
+	{
+		if( statement==null ) return false;
+		Matcher matcher=DECLARATION.matcher(statement);
+		return matcher.matches()&&"insert".equalsIgnoreCase(Text.firstWord(matcher.group(2)));
+	}
+
+	public static boolean isVariableDeclaration(String statement)
 	{
 		return statement!=null&&DECLARATION.matcher(statement).matches();
 	}

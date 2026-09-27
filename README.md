@@ -156,6 +156,9 @@ poner el jar en ese entorno.
 
 ## Sentencias
 
+Para una guía breve con ejemplos de `INSERT`, fechas relativas y variables de
+script, ver [MANUAL-RAPIDO.md](MANUAL-RAPIDO.md).
+
 ### Qué se ejecuta
 
 - **Con texto pintado**, `Ctrl+Enter` ejecuta **sólo la selección** y el resto se

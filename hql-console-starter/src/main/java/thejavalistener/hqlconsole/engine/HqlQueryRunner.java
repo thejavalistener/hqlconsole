@@ -112,7 +112,7 @@ public class HqlQueryRunner
 		{
 			throw new IllegalArgumentException("SET AUTOCOMMIT ON sólo es válido como primera sentencia de un lote.");
 		}
-		if( BatchPlan.isGeneratedIdDeclaration(statement) )
+		if( BatchPlan.isVariableDeclaration(statement) )
 		{
 			throw new IllegalArgumentException("Las variables de IDs generados sÃ³lo son vÃ¡lidas dentro de un lote.");
 		}
@@ -286,9 +286,10 @@ public class HqlQueryRunner
 		EntityTransaction tx=_begin(em);
 		try
 		{
+			ScriptContext context=new ScriptContext();
 			HqlResult result=parsed.kind()==Statement.Kind.INSERT
-					?_insert(em,emf,entityType,parsed,t0)
-					:_update(em,entityType,parsed,t0);
+					?_insert(em,emf,entityType,parsed,t0,context,null)
+					:_update(em,entityType,parsed,t0,context);
 			_cerrar(tx,dryRun);
 			return result;
 		}
@@ -320,11 +321,11 @@ public class HqlQueryRunner
 	/** {@code INSERT INTO Libro li VALUES li.titulo='...', li.fechaAlta=NOW} */
 	private HqlResult _insert(EntityManager em,EntityManagerFactory emf,EntityType<?> entityType,Statement parsed,long t0)
 	{
-		return _insert(em,emf,entityType,parsed,t0,null,null);
+		return _insert(em,emf,entityType,parsed,t0,new ScriptContext(),null);
 	}
 
 	private HqlResult _insert(EntityManager em,EntityManagerFactory emf,EntityType<?> entityType,Statement parsed,long t0,
-			Map<String,Object> variables,String generatedIdVariable)
+			ScriptContext context,String generatedIdVariable)
 	{
 		AttributeBinder binder=new AttributeBinder(em);
 		Object entity=_instantiate(entityType);
@@ -334,7 +335,7 @@ public class HqlQueryRunner
 		for(Statement.Assignment assignment:parsed.assignments())
 		{
 			AttributeBinder.Target target=binder.resolve(entityType,parsed.alias(),assignment.path());
-			binder.apply(entity,target,binder.value(target,assignment.literal(),variables));
+			binder.apply(entity,target,binder.value(target,assignment.literal(),context));
 		}
 
 		em.persist(entity);
@@ -347,7 +348,7 @@ public class HqlQueryRunner
 			{
 				throw new IllegalArgumentException("INSERT de "+entityType.getName()+" no devolviÃ³ un ID para $"+generatedIdVariable+".");
 			}
-			variables.put(generatedIdVariable,id);
+			context.declare(generatedIdVariable,id);
 		}
 		return HqlResult.dml("INSERT",1,_millis(t0),"Insertado "+entityType.getName()+(id==null?"":"#"+id));
 	}
@@ -362,11 +363,11 @@ public class HqlQueryRunner
 	 */
 	private HqlResult _update(EntityManager em,EntityType<?> entityType,Statement parsed,long t0)
 	{
-		return _update(em,entityType,parsed,t0,null);
+		return _update(em,entityType,parsed,t0,new ScriptContext());
 	}
 
 	private HqlResult _update(EntityManager em,EntityType<?> entityType,Statement parsed,long t0,
-			Map<String,Object> variables)
+			ScriptContext context)
 	{
 		String alias=parsed.alias()==null?"e":parsed.alias();
 
@@ -390,7 +391,7 @@ public class HqlQueryRunner
 			for(Statement.Assignment assignment:parsed.assignments())
 			{
 				AttributeBinder.Target target=binder.resolve(entityType,parsed.alias(),assignment.path());
-				binder.apply(entity,target,binder.value(target,assignment.literal(),variables));
+				binder.apply(entity,target,binder.value(target,assignment.literal(),context));
 			}
 		}
 
@@ -674,7 +675,7 @@ public class HqlQueryRunner
 		BatchPlan plan=BatchPlan.parse(statements);
 		List<BatchPlan.Entry> writes=plan.entries();
 		// Vive solamente en esta llamada: ni la sesiÃ³n ni el runner conservan IDs entre lotes.
-		Map<String,Object> generatedIds=new LinkedHashMap<>();
+		ScriptContext context=new ScriptContext();
 
 		EntityManager em=emf.createEntityManager();
 		try
@@ -688,7 +689,7 @@ public class HqlQueryRunner
 					BatchPlan.Entry entry=writes.get(i);
 					try
 					{
-						filas+=_runBatchStatement(em,emf,entry,t0,generatedIds).affectedRows();
+						filas+=_runBatchStatement(em,emf,entry,t0,context).affectedRows();
 					}
 					catch(RuntimeException e)
 					{
@@ -714,10 +715,54 @@ public class HqlQueryRunner
 	}
 
 	/** Ejecuta una escritura usando la transacción que ya abrió el lote. */
+	/** Ejecuta un SELECT escalar dentro de la transacción del script y valida cardinalidad exacta. */
+	private Object _selectScalar(EntityManager em,EntityManagerFactory emf,String hql,String variable)
+	{
+		em.flush();
+		Query query=em.createQuery(hql);
+		query.setMaxResults(2);
+		List<?> rows=query.getResultList();
+		if( rows.isEmpty() ) throw new IllegalArgumentException("El SELECT de $"+variable+" no devolvió ninguna fila.");
+		if( rows.size()>1 ) throw new IllegalArgumentException("El SELECT de $"+variable+" devolvió más de una fila.");
+		Object value=rows.get(0);
+		if( value==null ) throw new IllegalArgumentException("El SELECT de $"+variable+" devolvió NULL.");
+		if( value instanceof Object[]||value instanceof Tuple )
+		{
+			throw new IllegalArgumentException("El SELECT de $"+variable+" debe devolver una sola columna escalar.");
+		}
+		if( !_isScalar(value)||_isEntity(value,emf) )
+		{
+			throw new IllegalArgumentException("El SELECT de $"+variable+" debe devolver un escalar, no "
+					+value.getClass().getSimpleName()+".");
+		}
+		return value;
+	}
+
+	private boolean _isScalar(Object value)
+	{
+		return value instanceof String||value instanceof Number||value instanceof Boolean||value instanceof Character
+				||value instanceof Enum<?>||value instanceof UUID||ScriptContext.isTemporal(value);
+	}
+
+	private boolean _isEntity(Object value,EntityManagerFactory emf)
+	{
+		for(EntityType<?> entity:emf.getMetamodel().getEntities())
+		{
+			if( entity.getJavaType().isInstance(value) ) return true;
+		}
+		return false;
+	}
+
 	private HqlResult _runBatchStatement(EntityManager em,EntityManagerFactory emf,BatchPlan.Entry entry,long t0,
-			Map<String,Object> generatedIds)
+			ScriptContext context)
 	{
 		String text=entry.statement();
+		if( entry.isScalarSelect() )
+		{
+			Object value=_selectScalar(em,emf,text,entry.scalarSelectVariable());
+			context.declare(entry.scalarSelectVariable(),value);
+			return HqlResult.dml("SELECT",0,_millis(t0),"Variable $"+entry.scalarSelectVariable()+" declarada");
+		}
 		Statement parsed=null;
 		IllegalArgumentException parseFailure=null;
 		try
@@ -733,8 +778,8 @@ public class HqlQueryRunner
 		{
 			EntityType<?> entityType=_entityType(emf,parsed.entity());
 			return parsed.kind()==Statement.Kind.INSERT
-					?_insert(em,emf,entityType,parsed,t0,generatedIds,entry.generatedIdVariable())
-					:_update(em,entityType,parsed,t0,generatedIds);
+					?_insert(em,emf,entityType,parsed,t0,context,entry.generatedIdVariable())
+					:_update(em,entityType,parsed,t0,context);
 		}
 
 		try

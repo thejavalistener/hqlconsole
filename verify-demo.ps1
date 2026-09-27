@@ -324,6 +324,22 @@ try {
     $r = Exec "SELECT count(l) FROM Libro l WHERE l.titulo = 'Lote 6'"
     Check 'el lote rechazado no inserto nada' ($r.json.rows[0][0] -eq 0) $r.raw
 
+    # --- variables escalares: SELECT exacto y aritmetica de dias/numeros ---
+    $r = Exec '$fecha = SELECT l.fechaPublicacion FROM Libro l WHERE l.titulo = ''Ficciones''; INSERT INTO Libro (titulo, fechaPublicacion) VALUES (''Fecha escalar'', $fecha + 10)'
+    Check 'SELECT escalar seguido de fecha mas dias devuelve BATCH' ($r.status -eq 200 -and $r.json.type -eq 'BATCH' -and $r.json.affectedRows -eq 1) $r.raw
+    $r = Exec "SELECT l.fechaPublicacion FROM Libro l WHERE l.titulo = 'Fecha escalar'"
+    Check 'la fecha escalar mas dias se inserto' ($r.json.rows[0][0] -eq '1944-01-11') $r.raw
+
+    $r = Exec '$precio = SELECT l.precio FROM Libro l WHERE l.titulo = ''Ficciones''; UPDATE Libro l SET l.precio = $precio + 10 WHERE l.titulo = ''El Aleph'''
+    Check 'SELECT numerico y aritmetica actualizan una fila' ($r.status -eq 200 -and $r.json.affectedRows -eq 1) $r.raw
+    $r = Exec "SELECT l.precio FROM Libro l WHERE l.titulo = 'El Aleph'"
+    Check 'el precio escalar mas diez queda correcto' ($r.json.rows[0][0] -eq 15010.00) $r.raw
+
+    $r = Exec '$mala = SELECT l.fechaPublicacion FROM Libro l; INSERT INTO Libro (titulo) VALUES (''No queda por select'')'
+    Check 'SELECT escalar con mas de una fila falla' ($r.status -eq 400 -and $r.json.error -match 'm.s de una fila') $r.raw
+    $r = Exec "SELECT count(l) FROM Libro l WHERE l.titulo = 'No queda por select'"
+    Check 'un SELECT escalar invalido no deja escrituras' ($r.json.rows[0][0] -eq 0) $r.raw
+
     # El ; dentro de un literal no parte la sentencia...
     $r = Exec "INSERT INTO Libro li VALUES li.titulo='Con ; adentro', li.precio=9"
     Check 'el ; dentro de un literal no parte la sentencia' ($r.json.type -eq 'DML' -and $r.json.affectedRows -eq 1) $r.raw

@@ -173,10 +173,21 @@ public class AttributeBinder
 	 */
 	public Object value(Target target,String literal)
 	{
-		return value(target,literal,null);
+		return value(target,literal,new ScriptContext());
 	}
 
 	/** Resuelve una variable efÃ­mera de lote antes de aplicar la conversiÃ³n normal del literal. */
+	public Object value(Target target,String literal,ScriptContext context)
+	{
+		Object expression=ScalarExpression.resolve(literal,context,target.javaType());
+		if( ScalarExpression.isResolved(expression) )
+		{
+			return _adaptScalar(target,expression);
+		}
+		return value(target,literal,(Map<String,Object>)null);
+	}
+
+	/** Camino de compatibilidad para quien todavía invoque la API previa de IDs generados. */
 	public Object value(Target target,String literal,Map<String,Object> variables)
 	{
 		String variable=generatedIdVariable(literal);
@@ -211,6 +222,48 @@ public class AttributeBinder
 	}
 
 	/** Devuelve el nombre sÃ³lo cuando el literal entero es una referencia ($nombre). */
+	/** Adapta un valor escalar real al tipo del atributo, sin perder precisión por serialización. */
+	private Object _adaptScalar(Target target,Object value)
+	{
+		Class<?> expected=target.javaType();
+		Object converted;
+		if( expected.isInstance(value) )
+		{
+			converted=value;
+		}
+		else if( value instanceof Number&&_isNumeric(expected) )
+		{
+			converted=_convert(value.toString(),expected);
+		}
+		else if( ScriptContext.isTemporal(value)&&_isTemporal(expected) )
+		{
+			converted=_convert(value.toString(),expected);
+		}
+		else
+		{
+			String label=target.relatedEntity()!=null
+					?"id de "+target.relatedEntity().getSimpleName():expected.getSimpleName();
+			throw new IllegalArgumentException("No puedo usar un valor "+value.getClass().getSimpleName()
+					+" para '"+target.path()+"' (esperaba "+label+").");
+		}
+		return target.relatedEntity()==null?converted:em.getReference(target.relatedEntity(),converted);
+	}
+
+	private boolean _isNumeric(Class<?> type)
+	{
+		return type==Integer.class||type==int.class||type==Long.class||type==long.class
+				||type==Short.class||type==short.class||type==Byte.class||type==byte.class
+				||type==BigInteger.class||type==BigDecimal.class||type==Double.class||type==double.class
+				||type==Float.class||type==float.class;
+	}
+
+	private boolean _isTemporal(Class<?> type)
+	{
+		return type==LocalDate.class||type==LocalDateTime.class||type==LocalTime.class||type==Instant.class
+				||type==OffsetDateTime.class||type==ZonedDateTime.class||type==java.util.Date.class
+				||type==java.sql.Date.class||type==java.sql.Timestamp.class||type==java.sql.Time.class;
+	}
+
 	public static String generatedIdVariable(String literal)
 	{
 		Matcher matcher=GENERATED_ID_VARIABLE.matcher(literal.trim());
