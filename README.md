@@ -231,12 +231,15 @@ Detalles del párrafo, que están cubiertos por los tests:
   selección se respeta y no se toca.
 - **El foco arranca en el editor.** Al abrir la consola el cursor ya está en el textarea, en el
   carácter 0: uno viene a escribir acá, así que no hace falta hacer clic primero.
-- **El texto del editor es persistente.** Lo que escribís queda en el `localStorage` del navegador y
-  reaparece la próxima vez que abrís la página: sobrevive a recargar, a cerrar el navegador y a
-  bajar y volver a levantar la aplicación. Se guarda mientras tipeás (con un retardo de 400 ms) y
-  también al ejecutar y al cerrar la pestaña, así que no hace falta ejecutar para no perderlo. El
-  almacén es lo único que se comparte entre aplicaciones distintas servidas desde el mismo
-  `host:puerto`; si querés borrarlo, limpiá los datos del sitio.
+- **Subpestañas persistentes por lenguaje.** HQL y SQL conservan conjuntos independientes de
+  consultas: cada modo siempre tiene al menos una pestaña y el botón `+` crea otra en el modo actual.
+  La `×` cierra una consulta (pide confirmación si contiene texto) y el nombre se puede cambiar con
+  doble clic. Se guardan el contenido, los nombres y la pestaña activa de cada modo en el
+  `localStorage` del navegador; sobreviven a recargar, a cerrar el navegador y a bajar y volver a
+  levantar la aplicación. Se guarda mientras tipeás (con un retardo de 400 ms) y también al ejecutar
+  y al cerrar la página, así que no hace falta ejecutar para no perderlo. El almacén es lo único que
+  se comparte entre aplicaciones distintas servidas desde el mismo `host:puerto`; si querés borrarlo,
+  limpiá los datos del sitio.
 - **La página se sirve con `Cache-Control: no-store`.** Si el navegador cacheara el HTML, un cambio
   en la consola seguiría invisible hasta un `Ctrl+F5`, con la sensación de que el jar no se actualizó.
 

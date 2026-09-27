@@ -99,7 +99,7 @@ try {
 
     Check 'GET /hqlconsole responde 200 HTML' ($page.StatusCode -eq 200 -and "$($page.Headers['Content-Type'])" -like 'text/html*') $page.StatusCode
     Check 'la pagina trae el textarea sin boton Ejecutar' ($page.Content -match '<textarea' -and $page.Content -notmatch 'id="run"')
-    Check 'la pagina trae las dos solapas y los dos editores' ($page.Content -match 'id="tab-hql"' -and $page.Content -match 'id="tab-sql"' -and $page.Content -match 'id="sql"') 'falta HQL o SQL'
+    Check 'la pagina trae las dos solapas, los dos editores y las subpestanas' ($page.Content -match 'id="tab-hql"' -and $page.Content -match 'id="tab-sql"' -and $page.Content -match 'id="sql"' -and $page.Content -match 'id="subsolapas"') 'falta HQL, SQL o las subpestanas'
     Check 'la pagina persiste SQL y la solapa activa' ($page.Content -match 'hql-console.consulta-sql' -and $page.Content -match 'hql-console.solapa') 'faltan claves SQL'
     $barra = [regex]::Match($page.Content, '(?s)<div class="barra">(.*?)</div>')
     Check 'el encabezado trae consola, idioma y atajo' ($barra.Success -and $barra.Groups[1].Value -match 'Consola' -and $barra.Groups[1].Value -match 'id="idioma-titulo"' -and $barra.Groups[1].Value -match 'id="atajo-ejecutar"') 'faltan elementos del encabezado'
@@ -773,11 +773,13 @@ check('insertar: en un editor vacio no agrega lineas de mas al principio', vacio
     Check 'el arrastre del divisor descuenta el panel de entidades' ($page.Content -match 'panelEditor\.getBoundingClientRect') 'el divisor se mide desde el borde del split'
 
     # --- persistencia del texto ---
-    Check 'el texto del editor se persiste en el navegador' ($page.Content -match "CLAVE_TEXTO = 'hql-console\.consulta'" -and $page.Content -match 'ALMACEN\.setItem\(CLAVE_TEXTO') 'no se guarda el texto'
-    Check 'el texto se restituye al abrir la pagina' ($page.Content -match 'ta\.value = \(textoGuardado === null') 'no se restituye el texto'
+    Check 'las subpestanas se persisten en el navegador' ($page.Content -match "CLAVE_PESTANAS = 'hql-console\.pestanas\.v1'" -and $page.Content -match 'ALMACEN\.setItem\(CLAVE_PESTANAS') 'no se guardan las subpestanas'
+    Check 'el texto activo se restituye al abrir la pagina' ($page.Content -match "ta\.value = pestanaActiva\('hql'\)\.texto") 'no se restituye el texto'
+    Check 'cada modo mantiene sus propias subpestanas' ($page.Content -match 'tabs: \{ hql: \[hql\], sql: \[sql\] \}' -and $page.Content -match 'grupoPestanas\(languageActiva\)') 'HQL y SQL comparten las mismas subpestanas'
+    Check 'se pueden agregar, cerrar y renombrar subpestanas' ($page.Content -match 'function agregarPestana' -and $page.Content -match 'function cerrarPestana' -and $page.Content -match 'function renombrarPestana') 'faltan acciones de subpestanas'
     # Al abrir, el foco arranca en el editor y el cursor en el caracter 0.
     Check 'al abrir el foco queda en el editor con el cursor en 0' `
-          ($page.Content -match '(?s)ta\.value = \(textoGuardado === null.*?ta\.focus\(\);\s*ta\.setSelectionRange\(0, 0\)') 'no se enfoca el editor al abrir'
+           ($page.Content -match '(?s)ta\.value = pestanaActiva\(''hql''\)\.texto.*?ta\.focus\(\);\s*ta\.setSelectionRange\(0, 0\)') 'no se enfoca el editor al abrir'
     Check 'se guarda tambien mientras se escribe' ($page.Content -match "ta\.addEventListener\('input'" -and $page.Content -match 'setTimeout\(guardarTexto') 'no hay guardado al tipear'
     Check 'el ancho del divisor tambien se persiste' ($page.Content -match 'CLAVE_ANCHO') 'no se persiste el ancho'
 

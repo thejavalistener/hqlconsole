@@ -162,6 +162,7 @@
     <div id="lista-entidades"></div>
   </aside>
   <div id="panel-editor">
+    <div id="subsolapas" role="tablist" aria-label="Consultas abiertas"></div>
     <textarea id="hql" spellcheck="false" wrap="off" placeholder="SELECT e.id, e.nombre FROM Empleado e"></textarea>
     <textarea id="sql" spellcheck="false" wrap="off" placeholder="SELECT ID, TITULO FROM LIBROS" hidden></textarea>
   </div>
@@ -221,6 +222,8 @@ const listaEntidades = document.getElementById('lista-entidades');
 
 const EJEMPLO = 'SELECT e.id, e.nombre, e.salario FROM Empleado e';
 const CLAVE_TEXTO = 'hql-console.consulta';
+const CLAVE_TEXTO_SQL = 'hql-console.consulta-sql';
+const CLAVE_PESTANAS = 'hql-console.pestanas.v1';
 const CLAVE_ANCHO = 'hql-console.ancho';
 const CLAVE_ALTO = 'hql-console.alto-detalle';
 const CLAVE_ENTIDADES = 'hql-console.entidades-abierto';
@@ -253,19 +256,53 @@ const ALMACEN = (function() {
   }
 })();
 
+function crearPestana(id, titulo, texto) {
+  return { id: id, titulo: titulo, texto: texto || '' };
+}
+function estadoInicialPestanas() {
+  const hqlAnterior = ALMACEN.getItem(CLAVE_TEXTO);
+  const sqlAnterior = ALMACEN.getItem(CLAVE_TEXTO_SQL);
+  const hql = crearPestana('hql-1', 'Consulta 1', hqlAnterior === null ? EJEMPLO : hqlAnterior);
+  const sql = crearPestana('sql-1', 'Consulta 1', sqlAnterior === null ? '' : sqlAnterior);
+  return { version: 1, activa: { hql: hql.id, sql: sql.id }, siguiente: { hql: 2, sql: 2 }, tabs: { hql: [hql], sql: [sql] } };
+}
+function normalizarPestanas(candidato) {
+  if (!candidato || candidato.version !== 1 || !candidato.tabs) { return null; }
+  const estado = { version: 1, activa: candidato.activa || {}, siguiente: candidato.siguiente || {}, tabs: {} };
+  ['hql', 'sql'].forEach(function(language) {
+    const origen = Array.isArray(candidato.tabs[language]) ? candidato.tabs[language] : [];
+    estado.tabs[language] = origen.filter(function(tab) {
+      return tab && typeof tab.id === 'string' && typeof tab.titulo === 'string' && typeof tab.texto === 'string';
+    }).map(function(tab) { return crearPestana(tab.id, tab.titulo, tab.texto); });
+    if (!estado.tabs[language].length) { estado.tabs[language].push(crearPestana(language + '-1', 'Consulta 1', language === 'hql' ? EJEMPLO : '')); }
+    if (!estado.tabs[language].some(function(tab) { return tab.id === estado.activa[language]; })) { estado.activa[language] = estado.tabs[language][0].id; }
+    const siguiente = Number(estado.siguiente[language]);
+    estado.siguiente[language] = Number.isInteger(siguiente) && siguiente > 0 ? siguiente : estado.tabs[language].length + 1;
+  });
+  return estado;
+}
+function cargarPestanas() {
+  try { return normalizarPestanas(JSON.parse(ALMACEN.getItem(CLAVE_PESTANAS))) || estadoInicialPestanas(); }
+  catch (e) { return estadoInicialPestanas(); }
+}
+let pestanas = cargarPestanas();
+function grupoPestanas(language) { return pestanas.tabs[language === 'sql' ? 'sql' : 'hql']; }
+function pestanaActiva(language) {
+  const modo = language === 'sql' ? 'sql' : 'hql';
+  return grupoPestanas(modo).find(function(tab) { return tab.id === pestanas.activa[modo]; }) || grupoPestanas(modo)[0];
+}
+function persistirPestanas() { try { ALMACEN.setItem(CLAVE_PESTANAS, JSON.stringify(pestanas)); } catch (e) {} }
+persistirPestanas();
 function guardarTexto() {
-  if (typeof languageActiva === 'undefined' || languageActiva === 'hql') {
-    try { ALMACEN.setItem(CLAVE_TEXTO, ta.value); } catch (e) {}
-    return;
-  }
-  const editor = typeof editorActivo === 'function' ? editorActivo() : ta;
-  try { ALMACEN.setItem(claveDeTexto(typeof languageActiva === 'undefined' ? 'hql' : languageActiva), editor.value); } catch (e) {}
+  const modo = typeof languageActiva === 'undefined' ? 'hql' : languageActiva;
+  const editor = modo === 'sql' ? document.getElementById('sql') : ta;
+  pestanaActiva(modo).texto = editor.value;
+  persistirPestanas();
 }
 
 // Lo que haya guardado se restituye al abrir la página: sobrevive a recargar y a reiniciar
 // la aplicación, porque vive en el navegador y no en el servidor.
-const textoGuardado = ALMACEN.getItem(CLAVE_TEXTO);
-ta.value = (textoGuardado === null || textoGuardado === undefined) ? EJEMPLO : textoGuardado;
+ta.value = pestanaActiva('hql').texto;
 
 // Al abrir, el foco arranca en el editor y el cursor en el carácter 0: uno viene a escribir
 // acá, así que no tiene que hacer clic primero. El scroll también va al principio, para que se
@@ -1482,16 +1519,19 @@ const sqlEditor = document.getElementById('sql');
 const tabHql = document.getElementById('tab-hql');
 const tabSql = document.getElementById('tab-sql');
 const tituloConsola = document.getElementById('idioma-titulo');
-const CLAVE_TEXTO_SQL = 'hql-console.consulta-sql';
 const CLAVE_SOLAPA = 'hql-console.solapa';
 let languageActiva = ALMACEN.getItem(CLAVE_SOLAPA) === 'sql' ? 'sql' : 'hql';
 let tablasConocidas = [];
+const subsolapas = document.getElementById('subsolapas');
 const estiloSql = document.createElement('style');
 estiloSql.textContent = '#split{position:relative}#solapas{position:absolute;z-index:1;top:0;left:0;width:calc(var(--ancho-editor) + 228px);height:31px;display:flex;align-items:end;gap:3px;border-bottom:1px solid var(--borde)}#solapas button{height:28px;padding:4px 13px;color:inherit;background:transparent;border:1px solid transparent;border-radius:6px 6px 0 0;font-size:12px;font-weight:600}#solapas button:hover{background:#eef4ff}#solapas .solapa-activa{color:var(--acento);background:#fff;border-color:var(--borde);border-bottom-color:#fff;margin-bottom:-1px}#alcance-solapa{margin-left:auto;margin-bottom:6px;font-size:11px;opacity:.62;white-space:nowrap}#panel-entidades,#panel-editor{margin-top:31px}#sql{flex:1 1 auto;width:100%;min-height:0;margin:0;padding:10px;background:#fff;font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:1.5;border:1px solid var(--borde);border-radius:6px;resize:none;tab-size:2;wrap:off;white-space:pre;overflow:auto}body.modo-hql #panel-entidades,body.modo-sql #panel-entidades{width:220px}.filtros-tablas{display:flex;gap:3px;padding:4px}.filtros-tablas input{width:100%;min-width:0}.filtros-tablas select{max-width:70px}@media(max-width:720px){#solapas{position:static;width:auto}#panel-entidades,#panel-editor{margin-top:0}#alcance-solapa{display:none}}';
 document.head.appendChild(estiloSql);
 const estiloIntegrado = document.createElement('style');
 estiloIntegrado.textContent = 'body{padding:0}.barra{justify-content:flex-start;align-items:center;flex-wrap:nowrap;width:100%;min-height:58px;background:#fff;border:0;border-bottom:1px solid var(--borde);border-radius:0;padding:12px 20px;gap:8px}.barra h1{display:flex;align-items:center;gap:5px;white-space:nowrap;font-size:17px}.icono-consola{font-size:21px;line-height:1;color:var(--acento)}.separador-titulo{opacity:.45;font-weight:400}.barra #idioma-titulo{box-sizing:border-box;width:3em;text-align:center;padding:1px 6px;border-radius:4px;background:#dce8ff;color:#174f96}.barra #atajo-ejecutar{margin-left:8px;display:inline-flex;align-items:center;min-height:26px;padding:4px 9px;border-radius:4px;background:#2f6fbd;color:#fff;font-size:12px;font-weight:600;white-space:nowrap}#split,#error{margin-left:12px;margin-right:12px}#panel-entidades{margin-right:0;border:1px solid var(--borde);border-top:0;border-right:0;border-radius:0 0 0 6px;background:#eef4ff}#panel-editor{border:1px solid var(--borde);border-top:0;border-left:0;border-radius:0 0 6px 0;background:#fff;padding:0;gap:0}#hql,#sql{border:0;border-radius:0;background:transparent;outline:0}#hql:focus,#sql:focus{outline:0}#entidades-cabecera{background:transparent}#toggle-entidades{opacity:.55}#toggle-entidades:hover{opacity:1}.marca-mapeada{margin-left:5px;color:#1769aa;font-weight:700}#panel-entidades.contraido .filtros-tablas{display:none}body.modo-hql #panel-entidades.contraido,body.modo-sql #panel-entidades.contraido{width:30px}#split.entidades-contraidas #solapas{width:calc(var(--ancho-editor) + 38px)}@media(max-width:720px){.barra{padding:10px 12px}.barra #atajo-ejecutar{margin-left:auto}#panel-entidades{border:1px solid var(--borde);border-radius:6px}#panel-editor{border:1px solid var(--borde);border-radius:6px}}';
 document.head.appendChild(estiloIntegrado);
+const estiloSubsolapas = document.createElement('style');
+estiloSubsolapas.textContent = '#subsolapas{flex:0 0 auto;display:flex;align-items:center;gap:3px;min-width:0;padding:4px 6px 0;border-bottom:1px solid var(--borde);overflow-x:auto;overflow-y:hidden}.subsolapa{display:flex;align-items:center;min-width:0;flex:0 0 auto;border:1px solid transparent;border-bottom:0;border-radius:5px 5px 0 0}.subsolapa.activa{background:#eef4ff;border-color:var(--borde);margin-bottom:-1px}.subsolapa-etiqueta,.subsolapa-cerrar,.subsolapa-agregar{color:inherit;background:transparent;border:0;border-radius:4px;padding:4px 7px;font-size:12px;font-weight:600;line-height:18px}.subsolapa-etiqueta{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.subsolapa-cerrar{padding:4px 6px;font-size:16px;font-weight:400}.subsolapa-etiqueta:hover,.subsolapa-cerrar:hover,.subsolapa-agregar:hover{background:#dce8ff}.subsolapa.activa .subsolapa-etiqueta{color:var(--acento)}.subsolapa-agregar{position:sticky;right:0;flex:0 0 auto;font-size:18px;padding:3px 8px;line-height:20px;color:var(--acento);box-shadow:-5px 0 6px #fff}';
+document.head.appendChild(estiloSubsolapas);
 const estiloResultados = document.createElement('style');
 estiloResultados.textContent = '#panel-resultado{margin-top:31px}#divisor{margin-top:31px}#estado{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:20px;font-family:ui-monospace,Consolas,monospace;font-size:12px}#estado:empty{display:none}@media(max-width:720px){#panel-resultado,#divisor{margin-top:0}}';
 document.head.appendChild(estiloResultados);
@@ -1502,7 +1542,97 @@ const filtroTablas = filtros.querySelector('#filtro-tablas');
 const tipoTablas = filtros.querySelector('#tipo-tablas');
 panelEntidades.querySelector('#entidades-cabecera').after(filtros);
 
-function editorActivo() { return languageActiva === 'sql' ? sqlEditor : ta; }
+function editorDe(language) { return language === 'sql' ? sqlEditor : ta; }
+function editorActivo() { return editorDe(languageActiva); }
+function cargarPestanaEnEditor(language) {
+  const editor = editorDe(language);
+  editor.value = pestanaActiva(language).texto;
+}
+function enfocarEditor() {
+  const editor = editorActivo();
+  editor.focus();
+  editor.setSelectionRange(0, 0);
+  editor.scrollTop = 0;
+  editor.scrollLeft = 0;
+}
+function renderizarSubsolapas() {
+  subsolapas.textContent = '';
+  grupoPestanas(languageActiva).forEach(function(tab) {
+    const item = document.createElement('div');
+    item.className = 'subsolapa' + (tab.id === pestanas.activa[languageActiva] ? ' activa' : '');
+    const etiqueta = document.createElement('button');
+    etiqueta.type = 'button'; etiqueta.className = 'subsolapa-etiqueta'; etiqueta.setAttribute('role', 'tab');
+    etiqueta.setAttribute('aria-selected', tab.id === pestanas.activa[languageActiva] ? 'true' : 'false');
+    etiqueta.textContent = tab.titulo; etiqueta.title = tab.titulo + ' (doble clic para renombrar)';
+    etiqueta.addEventListener('click', function() { seleccionarPestana(tab.id); });
+    etiqueta.addEventListener('dblclick', function() { renombrarPestana(tab.id); });
+    const cerrar = document.createElement('button');
+    cerrar.type = 'button'; cerrar.className = 'subsolapa-cerrar'; cerrar.textContent = '\u00d7';
+    cerrar.setAttribute('aria-label', 'Cerrar ' + tab.titulo); cerrar.title = 'Cerrar ' + tab.titulo;
+    cerrar.addEventListener('click', function(ev) { ev.stopPropagation(); cerrarPestana(tab.id); });
+    item.append(etiqueta, cerrar);
+    subsolapas.appendChild(item);
+  });
+  const agregar = document.createElement('button');
+  agregar.type = 'button'; agregar.className = 'subsolapa-agregar'; agregar.textContent = '+';
+  agregar.setAttribute('aria-label', 'Nueva consulta ' + languageActiva.toUpperCase());
+  agregar.title = 'Nueva consulta ' + languageActiva.toUpperCase();
+  agregar.addEventListener('click', agregarPestana);
+  subsolapas.appendChild(agregar);
+}
+function seleccionarPestana(id) {
+  guardarTexto();
+  pestanas.activa[languageActiva] = id;
+  persistirPestanas();
+  cargarPestanaEnEditor(languageActiva);
+  renderizarSubsolapas();
+  enfocarEditor();
+  refrescarSeleccionActiva();
+}
+function agregarPestana() {
+  guardarTexto();
+  const numero = pestanas.siguiente[languageActiva]++;
+  const nueva = crearPestana(languageActiva + '-' + numero + '-' + Date.now(), 'Consulta ' + numero, '');
+  grupoPestanas(languageActiva).push(nueva);
+  pestanas.activa[languageActiva] = nueva.id;
+  persistirPestanas();
+  cargarPestanaEnEditor(languageActiva);
+  renderizarSubsolapas();
+  enfocarEditor();
+  refrescarSeleccionActiva();
+}
+function renombrarPestana(id) {
+  const tab = grupoPestanas(languageActiva).find(function(item) { return item.id === id; });
+  if (!tab) { return; }
+  const titulo = window.prompt('Nombre de la pestaña:', tab.titulo);
+  if (titulo === null) { return; }
+  const limpio = titulo.trim();
+  if (!limpio) { return; }
+  tab.titulo = limpio.slice(0, 80);
+  persistirPestanas();
+  renderizarSubsolapas();
+  enfocarEditor();
+}
+function cerrarPestana(id) {
+  guardarTexto();
+  const tabs = grupoPestanas(languageActiva);
+  const indice = tabs.findIndex(function(tab) { return tab.id === id; });
+  if (indice < 0) { return; }
+  const tab = tabs[indice];
+  if (tab.texto.trim() && !window.confirm('Cerrar "' + tab.titulo + '" va a borrar su contenido guardado. ¿Continuar?')) { return; }
+  tabs.splice(indice, 1);
+  if (!tabs.length) {
+    const numero = pestanas.siguiente[languageActiva]++;
+    tabs.push(crearPestana(languageActiva + '-' + numero + '-' + Date.now(), 'Consulta ' + numero, ''));
+  }
+  const siguiente = tabs[Math.min(indice, tabs.length - 1)];
+  pestanas.activa[languageActiva] = siguiente.id;
+  persistirPestanas();
+  cargarPestanaEnEditor(languageActiva);
+  renderizarSubsolapas();
+  enfocarEditor();
+  refrescarSeleccionActiva();
+}
 function cambiarSolapa(language) {
   languageActiva = language === 'sql' ? 'sql' : 'hql';
   document.body.classList.toggle('modo-sql', languageActiva === 'sql'); document.body.classList.toggle('modo-hql', languageActiva !== 'sql');
@@ -1512,14 +1642,13 @@ function cambiarSolapa(language) {
   tituloConsola.textContent = languageActiva === 'sql' ? 'SQL' : 'HQL';
   filtros.hidden = false; tipoTablas.hidden = languageActiva !== 'sql'; filtroTablas.placeholder = languageActiva === 'sql' ? 'Filtrar tablas' : 'Filtrar entidades'; panelEntidades.querySelector('.entidades-titulo').textContent = languageActiva === 'sql' ? 'Tablas' : 'Entidades';
   ALMACEN.setItem(CLAVE_SOLAPA, languageActiva); if (languageActiva === 'sql') { listaEntidades.textContent = ''; asegurarTablas(); } else { pintarEntidades(); asegurarEntidades(); }
-  editorActivo().focus(); refrescarSeleccionActiva();
+  cargarPestanaEnEditor(languageActiva); renderizarSubsolapas(); enfocarEditor(); refrescarSeleccionActiva();
 }
-function guardarTextoActivo() { try { ALMACEN.setItem(claveDeTexto(languageActiva), editorActivo().value); } catch (e) {} }
-const sqlGuardado = ALMACEN.getItem(CLAVE_TEXTO_SQL);
-sqlEditor.value = sqlGuardado === null || sqlGuardado === undefined ? '' : sqlGuardado;
-tabHql.addEventListener('click', function() { cambiarSolapa('hql'); }); tabSql.addEventListener('click', function() { cambiarSolapa('sql'); });
+function guardarTextoActivo() { guardarTexto(); }
+sqlEditor.value = pestanaActiva('sql').texto;
+tabHql.addEventListener('click', function() { guardarTexto(); cambiarSolapa('hql'); }); tabSql.addEventListener('click', function() { guardarTexto(); cambiarSolapa('sql'); });
 function rangoSql() { const inicio=sqlEditor.selectionStart, fin=sqlEditor.selectionEnd, recorte=textoAejecutar(sqlEditor.value,inicio,fin); if(fin>inicio&&recorte.trim()){return {hql:recorte,etiqueta:'selecciÃ³n',inicio:inicio,fin:fin,pintar:false};} const p=rangoParrafo(sqlEditor.value,inicio); return {hql:sqlEditor.value.substring(p.inicio,p.fin),etiqueta:'pÃ¡rrafo del cursor',inicio:p.inicio,fin:p.fin,pintar:true}; }
-function refrescarSeleccionActiva() {}
+function refrescarSeleccionActiva() { if (languageActiva === 'hql') { refrescarSeleccion(); } }
 function ejecutarSql() { guardarTextoActivo(); const rango=rangoSql(); if(rango.pintar){sqlEditor.focus();sqlEditor.setSelectionRange(rango.inicio,rango.fin);} ejecutarTextoSql(rango.hql.split('\r').join('').trim(),rango.etiqueta); }
 async function ejecutarTextoSql(sql,etiqueta) { if(!sql){mostrarError({error:'No hay nada que ejecutar.'});return;}if(btn){btn.disabled=true;}if(cajaError.open){cajaError.close();}estado.textContent='Ejecutando '+etiqueta+'...';try{const respuesta=await pedir(sql,false);if(!respuesta.ok){mostrarError(respuesta.datos);return;}resetPanelDerecho();const cabeceras=mostrarResultado(respuesta.datos,sql);if(esDescDeTablaSql(sql)&&cabeceras){hacerRelacionesSqlClickeables(cabeceras,tabla);}}catch(e){mostrarError({error:'No se pudo contactar la consola: '+e});}finally{if(btn){btn.disabled=false;}} }
 function pintarTablas() { if(languageActiva!=='sql'){return;}const visibles=filtrarTablas(tablasConocidas,filtroTablas.value,tipoTablas.value);listaEntidades.textContent='';visibles.forEach(function(tablaSql){const boton=document.createElement('button');boton.type='button';boton.className='entidad-item';boton.appendChild(document.createTextNode(tablaSql.nombre));if(tablaSql.entidad){const marca=document.createElement('span');marca.className='marca-mapeada';marca.textContent='[M]';boton.appendChild(marca);}boton.addEventListener('click',function(){ejecutarTextoSql('DESC '+tablaSql.nombre,'la tabla '+tablaSql.nombre);});listaEntidades.appendChild(boton);}); }
