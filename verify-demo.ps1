@@ -98,7 +98,7 @@ try {
     }
 
     Check 'GET /hqlconsole responde 200 HTML' ($page.StatusCode -eq 200 -and "$($page.Headers['Content-Type'])" -like 'text/html*') $page.StatusCode
-    Check 'la pagina trae el textarea sin boton Ejecutar' ($page.Content -match '<textarea' -and $page.Content -notmatch 'id="run"')
+    Check 'la pagina trae el textarea y el boton Ejecutar' ($page.Content -match '<textarea' -and $page.Content -match 'id="run"')
     Check 'la pagina trae las dos solapas, los dos editores y las subpestanas' ($page.Content -match 'id="tab-hql"' -and $page.Content -match 'id="tab-sql"' -and $page.Content -match 'id="sql"' -and $page.Content -match 'id="subsolapas"') 'falta HQL, SQL o las subpestanas'
     Check 'la pagina persiste SQL y la solapa activa' ($page.Content -match 'hql-console.consulta-sql' -and $page.Content -match 'hql-console.solapa') 'faltan claves SQL'
     $barra = [regex]::Match($page.Content, '(?s)<div class="barra">(.*?)</div>')
