@@ -62,6 +62,15 @@ public class HqlConsoleController
 		return HqlConsolePage.html(base,properties.getMaxRows());
 	}
 
+	/** Manual de uso renderizado como HTML estático y sin acceso a la base. */
+	@GetMapping(path="${hql-console.path:/hqlconsole}/help",produces=MediaType.TEXT_HTML_VALUE)
+	@ResponseBody
+	public String help(HttpServletResponse response)
+	{
+		response.setHeader("Cache-Control","no-store, no-cache, must-revalidate");
+		return HqlConsolePage.help();
+	}
+
 	/**
 	 * Ejecuta HQL contra el EntityManager vivo.
 	 *

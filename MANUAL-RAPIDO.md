@@ -35,13 +35,33 @@ INSERT INTO PromocionVigencia (fechaInicio, fechaFin)
 VALUES (TODAY - 10, NOW + 5)
 ```
 
+`NOW` y `TODAY` son sinónimos en esta aritmética: ambos toman la fecha de
+inicio de la ejecución actual.
+
 Sólo hay días: no meses ni años. No se aceptan expresiones como `NOW + -1` ni
 `NOW + 1 + 2`. `NOW` sin aritmética conserva la conversión al tipo del campo.
 
 ## Variables de script
 
-Una variable existe únicamente durante ese script. Puede recibir un ID generado
-por `INSERT`:
+Una variable existe únicamente durante ese script. Puede declararse con
+literales; una fecha entre comillas usa ISO estricto `yyyy-MM-dd` y se guarda
+como fecha, los enteros/decimales conservan tipo numérico y los booleanos usan
+`true` o `false`:
+
+```hql
+$fecha = '2026-05-19';
+$valorInt = 10;
+$importe = 1250.50;
+$activo = true;
+
+INSERT INTO Libro (titulo, fechaPublicacion, precio)
+VALUES ('Edición posterior', $fecha + 10, $valorInt);
+```
+
+`'2026-5-19'` se rechaza: escribí `'2026-05-19'`. Un texto que tenga forma de
+fecha se puede forzar como texto con `TEXT '2026-05-19'`.
+
+También puede recibir un ID generado por `INSERT`:
 
 ```hql
 $autor = INSERT INTO Autor (nombre) VALUES ('Ada');

@@ -102,7 +102,9 @@ try {
     Check 'la pagina trae las dos solapas, los dos editores y las subpestanas' ($page.Content -match 'id="tab-hql"' -and $page.Content -match 'id="tab-sql"' -and $page.Content -match 'id="sql"' -and $page.Content -match 'id="subsolapas"') 'falta HQL, SQL o las subpestanas'
     Check 'la pagina persiste SQL y la solapa activa' ($page.Content -match 'hql-console.consulta-sql' -and $page.Content -match 'hql-console.solapa') 'faltan claves SQL'
     $barra = [regex]::Match($page.Content, '(?s)<div class="barra">(.*?)</div>')
-    Check 'el encabezado trae consola, idioma y atajo' ($barra.Success -and $barra.Groups[1].Value -match 'Consola' -and $barra.Groups[1].Value -match 'id="idioma-titulo"' -and $barra.Groups[1].Value -match 'id="atajo-ejecutar"') 'faltan elementos del encabezado'
+    Check 'el encabezado trae consola, idioma y ayuda alineada a la derecha' ($barra.Success -and $barra.Groups[1].Value -match 'Consola' -and $barra.Groups[1].Value -match 'id="idioma-titulo"' -and $barra.Groups[1].Value -match 'class="barra-acciones"' -and $barra.Groups[1].Value -match 'id="help"' -and $barra.Groups[1].Value -notmatch 'atajo-ejecutar') 'faltan elementos del encabezado'
+    $helpPage = Invoke-WebRequest -UseBasicParsing "$base/hqlconsole/help" -TimeoutSec 5
+    Check 'la ayuda sirve el manual HTML con literales y NOW/TODAY' ($helpPage.StatusCode -eq 200 -and $helpPage.Content -match 'Literales y variables' -and $helpPage.Content -match 'NOW</code> y <code>TODAY</code> son sin.nimos') 'no se sirvio el manual de ayuda'
     Check 'la pagina ya no muestra la ruta ni el aviso' ($page.Content -notmatch 'class="ruta"' -and $page.Content -notmatch 'herramienta de desarrollo') 'quedo la ruta o el aviso'
     $configEsperada = "{`"base`":`"$ContextPath/hqlconsole`",`"maxRows`":$MaxRows}"
     Check 'la pagina inyecta la configuracion correcta' `
@@ -329,6 +331,14 @@ try {
     Check 'SELECT escalar seguido de fecha mas dias devuelve BATCH' ($r.status -eq 200 -and $r.json.type -eq 'BATCH' -and $r.json.affectedRows -eq 1) $r.raw
     $r = Exec "SELECT l.fechaPublicacion FROM Libro l WHERE l.titulo = 'Fecha escalar'"
     Check 'la fecha escalar mas dias se inserto' ($r.json.rows[0][0] -eq '1944-01-11') $r.raw
+
+    $r = Exec '$fechaLiteral = ''2026-05-19''; $valorInt = 10; INSERT INTO Libro (titulo, fechaPublicacion, precio) VALUES (''Fecha literal'', $fechaLiteral + 10, $valorInt)'
+    Check 'literales fecha e int se usan dentro del script' ($r.status -eq 200 -and $r.json.affectedRows -eq 1) $r.raw
+    $r = Exec "SELECT l.fechaPublicacion, l.precio FROM Libro l WHERE l.titulo = 'Fecha literal'"
+    Check 'el literal fecha es ISO y el entero conserva valor' (($r.json.rows[0][0] -eq '2026-05-29') -and ($r.json.rows[0][1] -eq 10)) $r.raw
+
+    $r = Exec '$fechaMala = ''2026-5-19''; INSERT INTO Libro (titulo) VALUES (''No llega literal'')'
+    Check 'una fecha literal sin ceros se rechaza' ($r.status -eq 400 -and $r.json.error -match 'yyyy-MM-dd') $r.raw
 
     $r = Exec '$precio = SELECT l.precio FROM Libro l WHERE l.titulo = ''Ficciones''; UPDATE Libro l SET l.precio = $precio + 10 WHERE l.titulo = ''El Aleph'''
     Check 'SELECT numerico y aritmetica actualizan una fila' ($r.status -eq 200 -and $r.json.affectedRows -eq 1) $r.raw

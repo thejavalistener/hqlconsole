@@ -51,6 +51,15 @@ class HqlConsolePageTemplateTest
 				()->HqlConsolePage.render(CONFIG_MARKER+CONFIG_MARKER,"/hqlconsole",500));
 	}
 
+	@Test
+	void packagedHelpExplainsLiteralsAndTemporalAliases()
+	{
+		String help=HqlConsolePage.help();
+
+		assertTrue(help.contains("Literales y variables"));
+		assertTrue(help.contains("NOW</code> y <code>TODAY</code> son sinónimos"));
+	}
+
 	private int count(String value,String fragment)
 	{
 		int count=0;

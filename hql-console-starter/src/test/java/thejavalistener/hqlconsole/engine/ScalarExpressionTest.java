@@ -35,6 +35,17 @@ class ScalarExpressionTest
 	}
 
 	@Test
+	void infersSupportedLiteralTypesAndKeepsIsoDatesStrict()
+	{
+		assertEquals(LocalDate.of(2026,5,19),ScalarExpression.literalValue("'2026-05-19'"));
+		assertEquals(10,ScalarExpression.literalValue("10"));
+		assertEquals(new BigDecimal("10.50"),ScalarExpression.literalValue("10.50"));
+		assertEquals(Boolean.TRUE,ScalarExpression.literalValue("true"));
+		assertEquals("2026-05-19",ScalarExpression.literalValue("TEXT '2026-05-19'"));
+		assertThrows(IllegalArgumentException.class,() -> ScalarExpression.literalValue("'2026-5-19'"));
+	}
+
+	@Test
 	void rejectsExpressionsOutsideTheSmallGrammar()
 	{
 		assertThrows(IllegalArgumentException.class,() -> ScalarExpression.resolve("NOW + -1",context,LocalDate.class));

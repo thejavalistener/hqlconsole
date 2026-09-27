@@ -33,6 +33,17 @@ class ScalarScriptBatchTest
 	}
 
 	@Test
+	void canUseALiteralDateAndIntegerInsideAScript()
+	{
+		runner.executeBatch(List.of(
+				"$fecha = '2026-05-19'",
+				"$valorInt = 10",
+				"INSERT INTO Libro (titulo, fechaPublicacion, precio) VALUES ('Fecha literal', $fecha + 10, $valorInt)"));
+
+		assertEquals(LocalDate.of(2026,5,29),singleDate("Fecha literal"));
+	}
+
+	@Test
 	void todayArithmeticWorksForConsoleInsert()
 	{
 		runner.execute("INSERT INTO Libro (titulo, fechaPublicacion) VALUES ('Ayer de consola', TODAY - 1)");

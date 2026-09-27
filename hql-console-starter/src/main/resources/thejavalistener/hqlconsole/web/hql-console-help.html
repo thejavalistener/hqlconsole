@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ayuda de HQL Console</title>
+<style>
+  :root { color-scheme:light dark; --borde:#d0d4da; --fondo:#f6f7f9; --acento:#1f6feb; }
+  body { margin:0; padding:22px; font:14px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--fondo); }
+  main { max-width:860px; margin:auto; padding:24px; background:#fff; border:1px solid var(--borde); border-radius:8px; }
+  h1 { margin-top:0; font-size:22px; } h2 { margin-top:28px; font-size:17px; }
+  code, pre { font-family:ui-monospace,Consolas,monospace; } code { padding:1px 4px; border-radius:3px; background:#eef1f5; }
+  pre { margin:12px 0; padding:12px; overflow:auto; border-radius:6px; background:#eef1f5; }
+  .nota { padding:10px 12px; border-left:4px solid var(--acento); background:#eef4ff; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Manual rápido de HQL Console</h1>
+  <p>La consola ejecuta HQL contra el <code>EntityManager</code> vivo de la aplicación. Es una herramienta de desarrollo: no la dejes habilitada en producción.</p>
+
+  <h2>Consultar y descubrir</h2>
+  <pre>DESC Libro
+SELECT l.id, l.titulo FROM Libro l ORDER BY l.titulo
+SELECT * FROM Libro LIMIT 20</pre>
+  <p>Usá los nombres de entidades y atributos Java, no las tablas ni columnas físicas. <code>Ctrl+Enter</code> ejecuta la selección o el párrafo donde está el cursor.</p>
+
+  <h2>Insertar y actualizar</h2>
+  <pre>INSERT INTO Libro (titulo, fechaPublicacion) VALUES ('Nuevo libro', TODAY)
+UPDATE Libro l SET l.titulo = 'Título corregido' WHERE l.id = 1</pre>
+  <p>Separá sentencias de un script con <code>;</code>. Se ejecutan en una sola transacción: si una falla, se revierte todo el script.</p>
+
+  <h2>NOW y TODAY</h2>
+  <p><code>NOW</code> y <code>TODAY</code> son sinónimos para la aritmética temporal de la consola. Ambos representan la fecha de inicio del script; se les pueden sumar o restar días enteros.</p>
+  <pre>INSERT INTO PromocionVigencia (fechaInicio, fechaFin)
+VALUES (TODAY - 10, NOW + 5)</pre>
+  <p>No hay meses ni años. No se aceptan <code>NOW + -1</code> ni <code>NOW + 1 + 2</code>.</p>
+
+  <h2>Literales y variables</h2>
+  <pre>$fecha = '2026-05-19';
+$valorInt = 10;
+$importe = 1250.50;
+$activo = true;
+
+INSERT INTO Libro (titulo, fechaPublicacion, precio)
+VALUES ('Edición posterior', $fecha + 10, $valorInt);</pre>
+  <ul>
+    <li>Una fecha entre comillas usa ISO estricto <code>yyyy-MM-dd</code>.</li>
+    <li>Un entero, decimal o booleano conserva su tipo escalar.</li>
+    <li><code>'2026-5-19'</code> se rechaza: escribí <code>'2026-05-19'</code>.</li>
+    <li>Para forzar texto con forma de fecha, usá <code>TEXT '2026-05-19'</code>.</li>
+  </ul>
+  <p>También se pueden usar IDs generados y un <code>SELECT</code> escalar de una sola fila y columna:</p>
+  <pre>$autor = INSERT INTO Autor (nombre) VALUES ('Ada');
+INSERT INTO Libro (titulo, autor) VALUES ('Notas de Ada', $autor);
+
+$fecha = SELECT l.fechaPublicacion FROM Libro l WHERE l.id = 1;
+INSERT INTO Libro (titulo, fechaPublicacion) VALUES ('Edición posterior', $fecha + 10);</pre>
+  <div class="nota">Las variables sólo existen durante el script. No hay listas, entidades, <code>if</code>, bucles ni concatenación. Un error revierte todas las escrituras del script.</div>
+
+  <h2>Comentarios y límites</h2>
+  <p>Se aceptan comentarios <code>//</code>, <code>#</code> y <code>--</code>. Las consultas aceptan <code>LIMIT n</code> y además respetan <code>hql-console.max-rows</code>. La solapa SQL nativa sólo permite <code>SELECT</code>.</p>
+</main>
+</body>
+</html>

@@ -21,11 +21,16 @@ public record BatchPlan(List<BatchPlan.Entry> entries, boolean autoCommit,Map<St
 
 	/** Una escritura del lote y, si corresponde, la variable que recibe su id generado. */
 	/** Una entrada de script: INSERT puede generar ID; SELECT sólo puede declarar un escalar. */
-	public record Entry(String statement,String generatedIdVariable,String scalarSelectVariable)
+	public record Entry(String statement,String generatedIdVariable,String scalarSelectVariable,String literalVariable)
 	{
 		public boolean isScalarSelect()
 		{
 			return scalarSelectVariable!=null;
+		}
+
+		public boolean isLiteralDeclaration()
+		{
+			return literalVariable!=null;
 		}
 	}
 
@@ -71,7 +76,13 @@ public record BatchPlan(List<BatchPlan.Entry> entries, boolean autoCommit,Map<St
 				if( "select".equalsIgnoreCase(Text.firstWord(statement)) )
 				{
 					variables.put(variable,statement);
-					writes.add(new Entry(statement,null,variable));
+					writes.add(new Entry(statement,null,variable,null));
+					continue;
+				}
+				if( ScalarExpression.isLiteral(statement) )
+				{
+					variables.put(variable,statement);
+					writes.add(new Entry(statement,null,null,variable));
 					continue;
 				}
 				Statement parsed=StatementParser.parse(statement);
@@ -103,13 +114,13 @@ public record BatchPlan(List<BatchPlan.Entry> entries, boolean autoCommit,Map<St
 					_validateReferences(parsed,variables);
 				}
 			}
-			writes.add(new Entry(statement,variable,null));
+			writes.add(new Entry(statement,variable,null,null));
 		}
 		if( writes.isEmpty() )
 		{
 			throw new IllegalArgumentException("SET AUTOCOMMIT ON sólo es válido dentro de un lote con escrituras.");
 		}
-		if( writes.stream().allMatch(Entry::isScalarSelect) )
+		if( writes.stream().allMatch(entry -> entry.isScalarSelect()||entry.isLiteralDeclaration()) )
 		{
 			throw new IllegalArgumentException("Un script con SELECT escalares necesita por lo menos una escritura.");
 		}

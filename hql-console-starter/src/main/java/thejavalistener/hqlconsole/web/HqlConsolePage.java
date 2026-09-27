@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 public final class HqlConsolePage
 {
 	private static final String RESOURCE="/thejavalistener/hqlconsole/web/hql-console.html";
+	private static final String HELP_RESOURCE="/thejavalistener/hqlconsole/web/hql-console-help.html";
 	private static final String CONFIG_MARKER="__HQL_CONSOLE_CONFIG__";
 	private static final String TEMPLATE=_loadTemplate();
 
@@ -19,6 +20,20 @@ public final class HqlConsolePage
 	public static String html(String base,int maxRows)
 	{
 		return render(TEMPLATE,base,maxRows);
+	}
+
+	/** Manual breve ya renderizado y empaquetado con el starter; no depende de Markdown en el navegador. */
+	public static String help()
+	{
+		try(InputStream input=HqlConsolePage.class.getResourceAsStream(HELP_RESOURCE))
+		{
+			if( input==null ) throw new IllegalStateException("No encontré el manual de ayuda en el classpath.");
+			return new String(input.readAllBytes(),StandardCharsets.UTF_8);
+		}
+		catch(IOException e)
+		{
+			throw new IllegalStateException("No pude leer el manual de ayuda.",e);
+		}
 	}
 
 	static String render(String template,String base,int maxRows)

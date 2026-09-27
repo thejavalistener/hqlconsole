@@ -757,6 +757,11 @@ public class HqlQueryRunner
 			ScriptContext context)
 	{
 		String text=entry.statement();
+		if( entry.isLiteralDeclaration() )
+		{
+			context.declare(entry.literalVariable(),ScalarExpression.literalValue(text));
+			return HqlResult.dml("LITERAL",0,_millis(t0),"Variable $"+entry.literalVariable()+" declarada");
+		}
 		if( entry.isScalarSelect() )
 		{
 			Object value=_selectScalar(em,emf,text,entry.scalarSelectVariable());

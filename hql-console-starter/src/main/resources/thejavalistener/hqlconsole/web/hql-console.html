@@ -17,6 +17,15 @@
   body.arrastrando { user-select:none; cursor:col-resize; }
   h1 { font-size:16px; margin:0; }
   .barra { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; flex:0 0 auto; }
+  .barra-acciones { margin-left:auto; display:flex; align-items:center; gap:8px; }
+  #help { color:var(--acento); background:transparent; border:1px solid var(--acento); }
+  #help:hover { background:#eef4ff; }
+  #help-dialog { width:min(920px,94vw); height:min(760px,88vh); padding:0; border:1px solid var(--borde); border-radius:8px; }
+  #help-dialog::backdrop { background:rgb(0 0 0 / .35); }
+  #help-dialog-header { display:flex; align-items:center; gap:10px; padding:10px 14px; border-bottom:1px solid var(--borde); }
+  #help-dialog-title { flex:1 1 auto; margin:0; font-size:16px; }
+  #help-close { padding:5px 10px; }
+  #help-frame { display:block; width:100%; height:calc(100% - 49px); border:0; }
   button { padding:7px 16px; font-size:13px; font-weight:600; color:#fff; background:var(--acento); border:0; border-radius:6px; cursor:pointer; }
   button:disabled { opacity:.5; cursor:progress; }
   .estado { font-size:12px; opacity:.75; }
@@ -145,10 +154,13 @@
 <div class="barra">
   <span class="icono-consola" aria-hidden="true">&#9678;</span>
   <h1>Consola <span class="separador-titulo">/</span> <span id="idioma-titulo">HQL</span></h1>
-  <span id="atajo-ejecutar">Ctrl+Enter</span>
-  <button type="button" id="run" aria-keyshortcuts="Control+Enter Meta+Enter">Ejecutar (Ctrl+Enter)</button>
+  <div class="barra-acciones">
+    <button type="button" id="run" aria-keyshortcuts="Control+Enter Meta+Enter">Ejecutar (Ctrl+Enter)</button>
+    <button type="button" id="help">Ayuda</button>
+  </div>
 </div>
 <dialog id="error"><div id="error-titlebar"><span id="error-icon">!</span><span>Error de ejecución</span><button type="button" id="error-close">Cerrar</button></div><div id="error-body"><div id="error-msg"></div><pre id="error-sql"></pre></div></dialog>
+<dialog id="help-dialog" aria-labelledby="help-dialog-title"><div id="help-dialog-header"><h2 id="help-dialog-title">Ayuda de HQL Console</h2><button type="button" id="help-close">Cerrar</button></div><iframe id="help-frame" title="Manual rápido de HQL Console" sandbox></iframe></dialog>
 <div id="split">
   <div id="solapas" role="tablist" aria-label="Lenguaje de consulta">
     <button type="button" id="tab-hql" role="tab" aria-selected="true">HQL</button>
@@ -194,6 +206,10 @@ const MAX_ROWS = CONFIG.maxRows;
 
 const ta = document.getElementById('hql');
 const btn = document.getElementById('run');
+const helpButton = document.getElementById('help');
+const helpDialog = document.getElementById('help-dialog');
+const helpClose = document.getElementById('help-close');
+const helpFrame = document.getElementById('help-frame');
 const estado = document.getElementById('estado');
 const seleccion = document.getElementById('seleccion');
 const cajaError = document.getElementById('error-panel');
@@ -760,6 +776,14 @@ function refrescarSeleccion() {
 }
 
 if (btn) { btn.addEventListener('click', ejecutar); }
+if (helpButton) {
+  helpButton.addEventListener('click', function() {
+    if (!helpDialog || !helpDialog.showModal) { window.open(BASE + '/help', '_blank', 'noopener'); return; }
+    if (!helpFrame.src) { helpFrame.src = BASE + '/help'; }
+    helpDialog.showModal();
+  });
+}
+if (helpClose) { helpClose.addEventListener('click', function() { helpDialog.close(); }); }
 // Sin esto, el mousedown del botón le roba el foco al textarea y el navegador colapsa la
 // selección: el botón terminaba ejecutando todo en vez de lo pintado.
 if (btn) { btn.addEventListener('mousedown', function(ev) { ev.preventDefault(); }); }
