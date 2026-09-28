@@ -47,7 +47,7 @@
   #help-content .nota { padding:10px 12px; border-left:4px solid var(--acento); background:var(--superficie-acento); }
   button { padding:7px 16px; font-size:13px; font-weight:600; color:#fff; background:var(--acento); border:0; border-radius:6px; cursor:pointer; }
   button:disabled { opacity:.5; cursor:progress; }
-  .tema-control { display:flex; align-items:center; gap:5px; color:var(--texto-tenue); font-size:12px; white-space:nowrap; }
+  .tema-control { display:flex; align-items:center; font-size:12px; white-space:nowrap; }
   .tema-control select { min-width:82px; padding:4px 6px; color:var(--texto); background:var(--superficie); border:1px solid var(--borde); border-radius:4px; font:inherit; }
   .tema-control select:focus-visible { outline:2px solid var(--acento); outline-offset:2px; }
   .estado { font-size:12px; opacity:.75; }
@@ -177,7 +177,7 @@
   <span class="icono-consola" aria-hidden="true">&#9678;</span>
    <h1>Consola <span class="separador-titulo">/</span> <span id="idioma-titulo">HQL</span></h1>
    <div class="barra-acciones">
-     <label class="tema-control" for="tema"><span>Tema</span><select id="tema"><option value="sistema">Sistema</option><option value="claro">Claro</option><option value="oscuro">Oscuro</option></select></label>
+     <label class="tema-control"><select id="tema" aria-label="Tema"><option value="sistema">Sistema</option><option value="claro">Claro</option><option value="oscuro">Oscuro</option></select></label>
      <button type="button" id="run" aria-keyshortcuts="Control+Enter Meta+Enter">Ejecutar (Ctrl+Enter)</button>
      <button type="button" id="help">Ayuda</button>
   </div>
