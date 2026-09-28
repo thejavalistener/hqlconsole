@@ -1,47 +1,62 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HQL Console</title>
-<style>
-  :root { color-scheme: light dark; --borde:#d0d4da; --fondo:#f6f7f9; --acento:#1f6feb; --error:#b3261e; }
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HQL Console</title>
+  <script>
+    (function() {
+      try {
+        const tema = window.localStorage.getItem('hql-console.tema');
+        if (tema === 'claro' || tema === 'oscuro') { document.documentElement.dataset.tema = tema; }
+      } catch (e) {}
+    })();
+  </script>
+  <style>
+  :root { color-scheme:light; --borde:#d0d7de; --fondo:#f6f8fa; --superficie:#fff; --superficie-suave:#eef1f5; --superficie-acento:#eef4ff; --superficie-seleccion:#dce8ff; --superficie-cabecera:#eaeef2; --superficie-hover:#e2e7ee; --superficie-fila:#fafbfc; --texto:#1f2328; --texto-tenue:#57606a; --texto-nulo:#6e7781; --acento:#1f6feb; --acento-oscuro:#174f96; --acento-boton:#2f6fbd; --marca:#1769aa; --error:#b3261e; --fondo-error:#fff5f4; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-tema]) { color-scheme:dark; --borde:#30363d; --fondo:#0d1117; --superficie:#161b22; --superficie-suave:#21262d; --superficie-acento:#1f3b5b; --superficie-seleccion:#264f78; --superficie-cabecera:#21262d; --superficie-hover:#30363d; --superficie-fila:#161b22; --texto:#f0f6fc; --texto-tenue:#c9d1d9; --texto-nulo:#8b949e; --acento:#58a6ff; --acento-oscuro:#a5d6ff; --acento-boton:#1f6feb; --marca:#79c0ff; --error:#ff7b72; --fondo-error:#3b1517; }
+  }
+  :root[data-tema="oscuro"] { color-scheme:dark; --borde:#30363d; --fondo:#0d1117; --superficie:#161b22; --superficie-suave:#21262d; --superficie-acento:#1f3b5b; --superficie-seleccion:#264f78; --superficie-cabecera:#21262d; --superficie-hover:#30363d; --superficie-fila:#161b22; --texto:#f0f6fc; --texto-tenue:#c9d1d9; --texto-nulo:#8b949e; --acento:#58a6ff; --acento-oscuro:#a5d6ff; --acento-boton:#1f6feb; --marca:#79c0ff; --error:#ff7b72; --fondo-error:#3b1517; }
   * { box-sizing: border-box; }
   /* El atributo hidden tiene que ganar siempre. Sin esto, un panel con display:flex en su
      propia regla de CSS se queda visible aunque el JS le ponga hidden: es el mismo nivel de
      cascada y el id pesa mas que la regla del navegador. */
   [hidden] { display:none !important; }
   html, body { height:100%; }
-  body { margin:0; padding:12px; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  body { margin:0; padding:12px; color:var(--texto); font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
          background:var(--fondo); display:flex; flex-direction:column; gap:8px; height:100vh; overflow:hidden; }
   body.arrastrando { user-select:none; cursor:col-resize; }
   h1 { font-size:16px; margin:0; }
   .barra { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; flex:0 0 auto; }
   .barra-acciones { margin-left:auto; display:flex; align-items:center; gap:8px; }
   #help { color:var(--acento); background:transparent; border:1px solid var(--acento); }
-  #help:hover { background:#eef4ff; }
-  #help-dialog { width:min(920px,94vw); height:min(760px,88vh); padding:0; border:1px solid var(--borde); border-radius:8px; }
+  #help:hover { background:var(--superficie-acento); }
+  #help-dialog { width:min(920px,94vw); height:min(760px,88vh); padding:0; color:var(--texto); background:var(--superficie); border:1px solid var(--borde); border-radius:8px; }
   #help-dialog::backdrop { background:rgb(0 0 0 / .35); }
   #help-dialog-header { display:flex; align-items:center; gap:10px; padding:10px 14px; border-bottom:1px solid var(--borde); }
   #help-dialog-title { flex:1 1 auto; margin:0; font-size:16px; }
   #help-close { padding:5px 10px; }
   #help-content { height:calc(100% - 49px); overflow:auto; padding:22px; background:var(--fondo); font:14px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; }
-  #help-content main { max-width:860px; margin:auto; padding:24px; color:#1f2328; background:#fff; border:1px solid var(--borde); border-radius:8px; }
+  #help-content main { max-width:860px; margin:auto; padding:24px; color:var(--texto); background:var(--superficie); border:1px solid var(--borde); border-radius:8px; }
   #help-content h1 { margin-top:0; font-size:22px; } #help-content h2 { margin-top:28px; font-size:17px; }
   #help-content code, #help-content pre { font-family:ui-monospace,Consolas,monospace; }
-  #help-content code { padding:1px 4px; border-radius:3px; background:#eef1f5; }
-  #help-content pre { margin:12px 0; padding:12px; overflow:auto; border-radius:6px; background:#eef1f5; }
-  #help-content blockquote { margin:12px 0; padding:1px 12px; border-left:4px solid var(--acento); background:#eef4ff; }
-  #help-content .nota { padding:10px 12px; border-left:4px solid var(--acento); background:#eef4ff; }
+  #help-content code { padding:1px 4px; border-radius:3px; background:var(--superficie-suave); }
+  #help-content pre { margin:12px 0; padding:12px; overflow:auto; border-radius:6px; background:var(--superficie-suave); }
+  #help-content blockquote { margin:12px 0; padding:1px 12px; border-left:4px solid var(--acento); background:var(--superficie-acento); }
+  #help-content .nota { padding:10px 12px; border-left:4px solid var(--acento); background:var(--superficie-acento); }
   button { padding:7px 16px; font-size:13px; font-weight:600; color:#fff; background:var(--acento); border:0; border-radius:6px; cursor:pointer; }
   button:disabled { opacity:.5; cursor:progress; }
+  .tema-control { display:flex; align-items:center; gap:5px; color:var(--texto-tenue); font-size:12px; white-space:nowrap; }
+  .tema-control select { min-width:82px; padding:4px 6px; color:var(--texto); background:var(--superficie); border:1px solid var(--borde); border-radius:4px; font:inherit; }
+  .tema-control select:focus-visible { outline:2px solid var(--acento); outline-offset:2px; }
   .estado { font-size:12px; opacity:.75; }
   .sel { color:var(--acento); opacity:1; font-weight:600; }
 
   /* --- el área partida: editor a la izquierda, resultados a la derecha --- */
   #split { flex:1 1 auto; min-height:0; display:flex; align-items:stretch; --ancho-editor:48%; }
   #panel-editor { flex:0 0 var(--ancho-editor); display:flex; flex-direction:column; gap:8px; min-width:0; }
-  #hql { flex:1 1 auto; width:100%; min-height:0; margin:0; padding:10px; background:#fff;
+  #hql { flex:1 1 auto; width:100%; min-height:0; margin:0; padding:10px; color:var(--texto); background:var(--superficie);
          font-family: ui-monospace, Consolas, monospace; font-size:13px; line-height:1.5;
          border:1px solid var(--borde); border-radius:6px; resize:none; tab-size:2;
          /* Sin wrap: una línea larga scrollea en horizontal en vez de partirse. El wrap="off"
@@ -55,14 +70,14 @@
   #divisor:hover::before, #divisor:focus-visible::before, body.arrastrando #divisor::before { background:var(--acento); }
   #divisor:focus-visible { outline:2px solid var(--acento); outline-offset:2px; border-radius:4px; }
   #panel-resultado { flex:1 1 auto; min-width:0; min-height:0; display:flex; flex-direction:column; gap:8px; }
-  .vacio { flex:0 0 auto; padding:16px; text-align:center; color:#8b949e; font-size:13px;
+  .vacio { flex:0 0 auto; padding:16px; text-align:center; color:var(--texto-nulo); font-size:13px;
            border:1px dashed var(--borde); border-radius:6px; }
-  .tabla { flex:1 1 auto; min-height:0; overflow:auto; border:1px solid var(--borde); border-radius:6px; background:#fff; }
+  .tabla { flex:1 1 auto; min-height:0; overflow:auto; border:1px solid var(--borde); border-radius:6px; background:var(--superficie); }
   table { border-collapse:collapse; width:100%; font-size:13px; }
   th, td { padding:6px 10px; text-align:left; border-bottom:1px solid var(--borde); font-family: ui-monospace, Consolas, monospace; white-space:pre; }
-  th { position:sticky; top:0; background:#eceff3; font-weight:600; }
-  tr:nth-child(even) td { background:#fafbfc; }
-  td.nulo { color:#8b949e; font-style:italic; }
+  th { position:sticky; top:0; background:var(--superficie-cabecera); font-weight:600; }
+  tr:nth-child(even) td { background:var(--superficie-fila); }
+  td.nulo { color:var(--texto-nulo); font-style:italic; }
 
   /* Los headers se pueden clickear para ordenar. La flechita va como contenido del ::after
      para no ensuciar el textContent del th, que es el nombre de la columna.
@@ -72,7 +87,7 @@
      (U+2193) en una fuente monoespaciada. Por eso el indicador es inline-block con un ancho
      fijo: los tres estados miden exactamente igual y nada se corre. */
   th.ordenable { cursor:grab; user-select:none; }
-  th.ordenable:hover { background:#e2e7ee; }
+  th.ordenable:hover { background:var(--superficie-hover); }
   th.ordenable.arrastrando-columna { opacity:.45; cursor:grabbing; }
   th.ordenable.destino-columna { box-shadow:inset 3px 0 0 var(--acento); }
   th.ordenable.destino-columna-despues { box-shadow:inset -3px 0 0 var(--acento); }
@@ -84,7 +99,7 @@
   .pie { flex:0 0 auto; font-size:12px; opacity:.7; }
   details { flex:0 0 auto; font-size:12px; }
   summary { cursor:pointer; opacity:.7; }
-  details pre { background:#fff; border:1px solid var(--borde); border-radius:6px; padding:10px; overflow:auto; max-height:40vh; }
+  details pre { background:var(--superficie); border:1px solid var(--borde); border-radius:6px; padding:10px; overflow:auto; max-height:40vh; }
 
   /* --- el detalle de una entidad: el panel derecho se parte en dos --- */
   body.arrastrando-alto { user-select:none; cursor:row-resize; }
@@ -96,18 +111,18 @@
   #divisor-h:focus-visible { outline:2px solid var(--acento); outline-offset:2px; border-radius:4px; }
   #panel-detalle { flex:0 0 var(--alto-detalle,45%); min-height:0; display:flex; flex-direction:column; gap:8px; }
   #detalle-error { flex:0 0 auto; padding:8px 10px; border:1px solid var(--error); border-left-width:4px;
-                   border-radius:6px; background:#fff5f4; color:var(--error); font-size:12px; }
+                   border-radius:6px; background:var(--fondo-error); color:var(--error); font-size:12px; }
   /* Las filas de la lista de "DESC" se pueden clickear. El !important es por el rayado de las pares. */
   .fila-clickeable { cursor:pointer; }
-  .fila-clickeable:hover td { background:#eef4ff !important; }
-  .fila-elegida td { background:#dce8ff !important; font-weight:600; }
+  .fila-clickeable:hover td { background:var(--superficie-acento) !important; }
+  .fila-elegida td { background:var(--superficie-seleccion) !important; font-weight:600; }
 
   /* --- el panel lateral: la lista de entidades, para no tener que escribir DESC a mano --- */
   /* Angosto a proposito: solo tiene que entrar el nombre de la entidad. Cerrado queda una
      franja con el boton, que es el control para volver a abrirlo. */
   #panel-entidades { flex:0 0 auto; width:150px; margin-right:8px; min-width:0;
                      display:flex; flex-direction:column; overflow:hidden;
-                     background:#fff; border:1px solid var(--borde); border-radius:6px; }
+                     background:var(--superficie); border:1px solid var(--borde); border-radius:6px; }
   #panel-entidades.contraido { width:30px; }
   #entidades-cabecera { flex:0 0 auto; display:flex; align-items:center; gap:4px;
                         padding:4px 4px 4px 8px; border-bottom:1px solid var(--borde); }
@@ -117,7 +132,7 @@
   #panel-entidades.contraido .entidades-titulo { display:none; }
   #toggle-entidades { flex:0 0 auto; padding:0 4px; font-size:14px; line-height:1.2; font-weight:700;
                       color:var(--acento); background:none; border:0; border-radius:4px; cursor:pointer; }
-  #toggle-entidades:hover { background:#eef4ff; }
+  #toggle-entidades:hover { background:var(--superficie-acento); }
   #lista-entidades { flex:1 1 auto; min-height:0; overflow:auto; padding:4px;
                      display:flex; flex-direction:column; gap:2px; }
   #panel-entidades.contraido #lista-entidades { display:none; }
@@ -125,20 +140,20 @@
                   font-size:12px; font-weight:400; color:inherit; font-family:ui-monospace, Consolas, monospace;
                   border-radius:4px; }
   button.entidad-item { width:100%; text-align:left; background:none; border:0; cursor:pointer; }
-  .entidad-item:hover { background:#eef4ff; }
-  .entidad-item.elegida { background:#dce8ff; font-weight:600; }
+  .entidad-item:hover { background:var(--superficie-acento); }
+  .entidad-item.elegida { background:var(--superficie-seleccion); font-weight:600; }
   .entidad-nombre { flex:1 1 auto; min-width:0; text-align:left; padding:2px 4px; font:inherit; color:inherit;
                     background:none; border:0; border-radius:3px; cursor:pointer; white-space:nowrap;
                     overflow:hidden; text-overflow:ellipsis; }
   .entidad-nombre:hover, .entidad-nombre:focus-visible,
-  button.entidad-item:hover, button.entidad-item:focus-visible { background:#fff; filter:brightness(.82); }
+  button.entidad-item:hover, button.entidad-item:focus-visible { background:var(--superficie-hover); }
   .entidad-acciones { flex:0 0 auto; display:flex; align-items:center; gap:6px; padding-right:3px; }
   .entidad-accion { display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px;
                     padding:0; background:none; border:0; border-radius:4px; cursor:pointer; }
   .entidad-accion svg { width:18px; height:18px; fill:currentColor; }
   .entidad-accion-query { color:#2196F3; }
   .entidad-accion-insert { color:#4CAF50; }
-  .entidad-accion:hover, .entidad-accion:focus-visible { background:#fff; filter:brightness(.82); }
+  .entidad-accion:hover, .entidad-accion:focus-visible { background:var(--superficie-hover); }
 
   /* En pantallas angostas el divisor no tiene sentido: se apilan. */
   @media (max-width: 720px) {
@@ -160,10 +175,11 @@
 <body>
 <div class="barra">
   <span class="icono-consola" aria-hidden="true">&#9678;</span>
-  <h1>Consola <span class="separador-titulo">/</span> <span id="idioma-titulo">HQL</span></h1>
-  <div class="barra-acciones">
-    <button type="button" id="run" aria-keyshortcuts="Control+Enter Meta+Enter">Ejecutar (Ctrl+Enter)</button>
-    <button type="button" id="help">Ayuda</button>
+   <h1>Consola <span class="separador-titulo">/</span> <span id="idioma-titulo">HQL</span></h1>
+   <div class="barra-acciones">
+     <label class="tema-control" for="tema"><span>Tema</span><select id="tema"><option value="sistema">Sistema</option><option value="claro">Claro</option><option value="oscuro">Oscuro</option></select></label>
+     <button type="button" id="run" aria-keyshortcuts="Control+Enter Meta+Enter">Ejecutar (Ctrl+Enter)</button>
+     <button type="button" id="help">Ayuda</button>
   </div>
 </div>
 <dialog id="error"><div id="error-titlebar"><span id="error-icon">!</span><span>Error de ejecución</span><button type="button" id="error-close">Cerrar</button></div><div id="error-body"><div id="error-msg"></div><pre id="error-sql"></pre></div></dialog>
@@ -251,6 +267,7 @@ const CLAVE_PESTANAS = 'hql-console.pestanas.v1';
 const CLAVE_ANCHO = 'hql-console.ancho';
 const CLAVE_ALTO = 'hql-console.alto-detalle';
 const CLAVE_ENTIDADES = 'hql-console.entidades-abierto';
+const CLAVE_TEMA = 'hql-console.tema';
 
 // Los nombres de entidad que ya vimos (salen del DESC sin argumentos). Sirven para saber si el
 // "TIPO JAVA" de un atributo es una entidad relacionada o un tipo común como String o Long, y
@@ -279,6 +296,17 @@ const ALMACEN = (function() {
     };
   }
 })();
+
+const selectorTema = document.getElementById('tema');
+function aplicarTema(preferencia, persistir) {
+  const tema = preferencia === 'claro' || preferencia === 'oscuro' ? preferencia : 'sistema';
+  if (tema === 'sistema') { delete document.documentElement.dataset.tema; }
+  else { document.documentElement.dataset.tema = tema; }
+  selectorTema.value = tema;
+  if (persistir) { ALMACEN.setItem(CLAVE_TEMA, tema); }
+}
+aplicarTema(ALMACEN.getItem(CLAVE_TEMA), false);
+selectorTema.addEventListener('change', function() { aplicarTema(selectorTema.value, true); });
 
 function crearPestana(id, titulo, texto) {
   return { id: id, titulo: titulo, texto: texto || '' };
@@ -1690,13 +1718,13 @@ let languageActiva = ALMACEN.getItem(CLAVE_SOLAPA) === 'sql' ? 'sql' : 'hql';
 let tablasConocidas = [];
 const subsolapas = document.getElementById('subsolapas');
 const estiloSql = document.createElement('style');
-estiloSql.textContent = '#split{position:relative}#solapas{position:absolute;z-index:1;top:0;left:0;width:calc(var(--ancho-editor) + 228px);height:31px;display:flex;align-items:end;gap:3px;border-bottom:1px solid var(--borde)}#solapas button{height:28px;padding:4px 13px;color:inherit;background:transparent;border:1px solid transparent;border-radius:6px 6px 0 0;font-size:12px;font-weight:600}#solapas button:hover{background:#eef4ff}#solapas .solapa-activa{color:var(--acento);background:#fff;border-color:var(--borde);border-bottom-color:#fff;margin-bottom:-1px}#alcance-solapa{margin-left:auto;margin-bottom:6px;font-size:11px;opacity:.62;white-space:nowrap}#panel-entidades,#panel-editor{margin-top:31px}#sql{flex:1 1 auto;width:100%;min-height:0;margin:0;padding:10px;background:#fff;font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:1.5;border:1px solid var(--borde);border-radius:6px;resize:none;tab-size:2;wrap:off;white-space:pre;overflow:auto}body.modo-hql #panel-entidades,body.modo-sql #panel-entidades{width:220px}.filtros-tablas{display:flex;gap:3px;padding:4px}.filtros-tablas input{width:100%;min-width:0}.filtros-tablas select{max-width:70px}@media(max-width:720px){#solapas{position:static;width:auto}#panel-entidades,#panel-editor{margin-top:0}#alcance-solapa{display:none}}';
+estiloSql.textContent = '#split{position:relative}#solapas{position:absolute;z-index:1;top:0;left:0;width:calc(var(--ancho-editor) + 228px);height:31px;display:flex;align-items:end;gap:3px;border-bottom:1px solid var(--borde)}#solapas button{height:28px;padding:4px 13px;color:inherit;background:transparent;border:1px solid transparent;border-radius:6px 6px 0 0;font-size:12px;font-weight:600}#solapas button:hover{background:var(--superficie-acento)}#solapas .solapa-activa{color:var(--acento);background:var(--superficie);border-color:var(--borde);border-bottom-color:var(--superficie);margin-bottom:-1px}#alcance-solapa{margin-left:auto;margin-bottom:6px;font-size:11px;opacity:.62;white-space:nowrap}#panel-entidades,#panel-editor{margin-top:31px}#sql{flex:1 1 auto;width:100%;min-height:0;margin:0;padding:10px;color:var(--texto);background:var(--superficie);font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:1.5;border:1px solid var(--borde);border-radius:6px;resize:none;tab-size:2;wrap:off;white-space:pre;overflow:auto}body.modo-hql #panel-entidades,body.modo-sql #panel-entidades{width:220px}.filtros-tablas{display:flex;gap:3px;padding:4px}.filtros-tablas input{width:100%;min-width:0}.filtros-tablas select{max-width:70px}@media(max-width:720px){#solapas{position:static;width:auto}#panel-entidades,#panel-editor{margin-top:0}#alcance-solapa{display:none}}';
 document.head.appendChild(estiloSql);
 const estiloIntegrado = document.createElement('style');
-estiloIntegrado.textContent = 'body{padding:0}.barra{justify-content:flex-start;align-items:center;flex-wrap:nowrap;width:100%;min-height:58px;background:#fff;border:0;border-bottom:1px solid var(--borde);border-radius:0;padding:12px 20px;gap:8px}.barra h1{display:flex;align-items:center;gap:5px;white-space:nowrap;font-size:17px}.icono-consola{font-size:21px;line-height:1;color:var(--acento)}.separador-titulo{opacity:.45;font-weight:400}.barra #idioma-titulo{box-sizing:border-box;width:3em;text-align:center;padding:1px 6px;border-radius:4px;background:#dce8ff;color:#174f96}.barra #atajo-ejecutar{margin-left:8px;display:inline-flex;align-items:center;min-height:26px;padding:4px 9px;border-radius:4px;background:#2f6fbd;color:#fff;font-size:12px;font-weight:600;white-space:nowrap}#split,#error{margin-left:12px;margin-right:12px}#panel-entidades{margin-right:0;border:1px solid var(--borde);border-top:0;border-right:0;border-radius:0 0 0 6px;background:#eef4ff}#panel-editor{border:1px solid var(--borde);border-top:0;border-left:0;border-radius:0 0 6px 0;background:#fff;padding:0;gap:0}#hql,#sql{border:0;border-radius:0;background:transparent;outline:0}#hql:focus,#sql:focus{outline:0}#entidades-cabecera{background:transparent}#toggle-entidades{opacity:.55}#toggle-entidades:hover{opacity:1}.marca-mapeada{margin-left:5px;color:#1769aa;font-weight:700}#panel-entidades.contraido .filtros-tablas{display:none}body.modo-hql #panel-entidades.contraido,body.modo-sql #panel-entidades.contraido{width:30px}#split.entidades-contraidas #solapas{width:calc(var(--ancho-editor) + 38px)}@media(max-width:720px){.barra{padding:10px 12px}.barra #atajo-ejecutar{margin-left:auto}#panel-entidades{border:1px solid var(--borde);border-radius:6px}#panel-editor{border:1px solid var(--borde);border-radius:6px}}';
+estiloIntegrado.textContent = 'body{padding:0}.barra{justify-content:flex-start;align-items:center;flex-wrap:nowrap;width:100%;min-height:58px;background:var(--superficie);border:0;border-bottom:1px solid var(--borde);border-radius:0;padding:12px 20px;gap:8px}.barra h1{display:flex;align-items:center;gap:5px;white-space:nowrap;font-size:17px}.icono-consola{font-size:21px;line-height:1;color:var(--acento)}.separador-titulo{opacity:.45;font-weight:400}.barra #idioma-titulo{box-sizing:border-box;width:3em;text-align:center;padding:1px 6px;border-radius:4px;background:var(--superficie-seleccion);color:var(--acento-oscuro)}.barra #atajo-ejecutar{margin-left:8px;display:inline-flex;align-items:center;min-height:26px;padding:4px 9px;border-radius:4px;background:var(--acento-boton);color:#fff;font-size:12px;font-weight:600;white-space:nowrap}#split,#error{margin-left:12px;margin-right:12px}#panel-entidades{margin-right:0;border:1px solid var(--borde);border-top:0;border-right:0;border-radius:0 0 0 6px;background:var(--superficie-acento)}#panel-editor{border:1px solid var(--borde);border-top:0;border-left:0;border-radius:0 0 6px 0;background:var(--superficie);padding:0;gap:0}#hql,#sql{border:0;border-radius:0;background:transparent;outline:0}#hql:focus,#sql:focus{outline:0}#entidades-cabecera{background:transparent}#toggle-entidades{opacity:.55}#toggle-entidades:hover{opacity:1}.marca-mapeada{margin-left:5px;color:var(--marca);font-weight:700}#panel-entidades.contraido .filtros-tablas{display:none}body.modo-hql #panel-entidades.contraido,body.modo-sql #panel-entidades.contraido{width:30px}#split.entidades-contraidas #solapas{width:calc(var(--ancho-editor) + 38px)}@media(max-width:720px){.barra{flex-wrap:wrap;padding:10px 12px}.barra-acciones{width:100%;margin-left:0;justify-content:flex-end}.barra #atajo-ejecutar{margin-left:auto}#panel-entidades{border:1px solid var(--borde);border-radius:6px}#panel-editor{border:1px solid var(--borde);border-radius:6px}}';
 document.head.appendChild(estiloIntegrado);
 const estiloSubsolapas = document.createElement('style');
-estiloSubsolapas.textContent = '#subsolapas{flex:0 0 auto;display:flex;align-items:center;gap:3px;min-width:0;padding:4px 6px 0;border-bottom:1px solid var(--borde);overflow-x:auto;overflow-y:hidden}.subsolapa{display:flex;align-items:center;min-width:0;flex:0 0 auto;border:1px solid transparent;border-bottom:0;border-radius:5px 5px 0 0}.subsolapa.activa{background:#eef4ff;border-color:var(--borde);margin-bottom:-1px}.subsolapa-etiqueta,.subsolapa-cerrar,.subsolapa-agregar{color:inherit;background:transparent;border:0;border-radius:4px;padding:4px 7px;font-size:12px;font-weight:600;line-height:18px}.subsolapa-etiqueta{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.subsolapa-cerrar{padding:4px 6px;font-size:16px;font-weight:400}.subsolapa-etiqueta:hover,.subsolapa-cerrar:hover,.subsolapa-agregar:hover{background:#dce8ff}.subsolapa.activa .subsolapa-etiqueta{color:var(--acento)}.subsolapa-agregar{position:sticky;right:0;flex:0 0 auto;font-size:18px;padding:3px 8px;line-height:20px;color:var(--acento);box-shadow:-5px 0 6px #fff}';
+estiloSubsolapas.textContent = '#subsolapas{flex:0 0 auto;display:flex;align-items:center;gap:3px;min-width:0;padding:4px 6px 0;border-bottom:1px solid var(--borde);overflow-x:auto;overflow-y:hidden}.subsolapa{display:flex;align-items:center;min-width:0;flex:0 0 auto;border:1px solid transparent;border-bottom:0;border-radius:5px 5px 0 0}.subsolapa.activa{background:var(--superficie-acento);border-color:var(--borde);margin-bottom:-1px}.subsolapa-etiqueta,.subsolapa-cerrar,.subsolapa-agregar{color:inherit;background:transparent;border:0;border-radius:4px;padding:4px 7px;font-size:12px;font-weight:600;line-height:18px}.subsolapa-etiqueta{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.subsolapa-cerrar{padding:4px 6px;font-size:16px;font-weight:400}.subsolapa-etiqueta:hover,.subsolapa-cerrar:hover,.subsolapa-agregar:hover{background:var(--superficie-seleccion)}.subsolapa.activa .subsolapa-etiqueta{color:var(--acento)}.subsolapa-agregar{position:sticky;right:0;flex:0 0 auto;font-size:18px;padding:3px 8px;line-height:20px;color:var(--acento);box-shadow:-5px 0 6px var(--superficie)}';
 document.head.appendChild(estiloSubsolapas);
 const estiloResultados = document.createElement('style');
 estiloResultados.textContent = '#panel-resultado{margin-top:31px}#divisor{margin-top:31px}#estado{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:20px;font-family:ui-monospace,Consolas,monospace;font-size:12px}#estado:empty{display:none}@media(max-width:720px){#panel-resultado,#divisor{margin-top:0}}';

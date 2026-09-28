@@ -29,6 +29,11 @@ class HqlConsolePageTemplateTest
 			assertTrue(template.contains("id=\"hql-console-config\""),"Falta el bloque JSON de configuración.");
 			assertTrue(template.contains("id=\"panel-editor\"")&&template.contains("id=\"panel-resultado\""),
 					"La plantilla perdió paneles esenciales.");
+			assertTrue(template.contains("id=\"tema\""),"Falta el selector de tema.");
+			assertTrue(template.contains("value=\"sistema\"")&&template.contains("value=\"claro\"")&&template.contains("value=\"oscuro\""),
+					"El selector de tema debe ofrecer sistema, claro y oscuro.");
+			assertTrue(template.contains("prefers-color-scheme: dark"),"Falta el tema oscuro automático.");
+			assertTrue(template.contains("hql-console.tema"),"La preferencia de tema debe persistirse.");
 			assertEquals(0,count(template,"__BASE__")+count(template,"__MAX_ROWS__")+count(template,"__ALLOW_WRITES__"),
 					"La plantilla conserva marcadores de la implementación anterior.");
 		}

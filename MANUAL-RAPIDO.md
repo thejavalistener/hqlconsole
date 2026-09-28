@@ -110,21 +110,17 @@ La consola puede mostrar datos que provienen de las relaciones @ManyToOne. Por e
 |-----------|----------|
 |          1|  3 (Sony)|
 
-Para esto, se debe declarar en la clase el hijo (`Producto`) el método: `public String toHqlConsoleString() `. Por ejemplo:
+Para esto, se debe declarar en la clase foránea (`Proveedor`) el método: `public String toHqlConsoleString() `. Por ejemplo:
 
 ```
-public class Producto
+public class Proveedor
 {
-   // :
-
-   @ManyToOne
-   private Proveedor proveedor;
-
+   private String empresa;
    // :
 
    public String toHqlConsoleString()
    {
-      return proveedor.getDescripcion();
+      return empresa;
    }
 
    // :
