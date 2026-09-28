@@ -25,7 +25,13 @@
   #help-dialog-header { display:flex; align-items:center; gap:10px; padding:10px 14px; border-bottom:1px solid var(--borde); }
   #help-dialog-title { flex:1 1 auto; margin:0; font-size:16px; }
   #help-close { padding:5px 10px; }
-  #help-frame { display:block; width:100%; height:calc(100% - 49px); border:0; }
+  #help-content { height:calc(100% - 49px); overflow:auto; padding:22px; background:var(--fondo); font:14px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  #help-content main { max-width:860px; margin:auto; padding:24px; color:#1f2328; background:#fff; border:1px solid var(--borde); border-radius:8px; }
+  #help-content h1 { margin-top:0; font-size:22px; } #help-content h2 { margin-top:28px; font-size:17px; }
+  #help-content code, #help-content pre { font-family:ui-monospace,Consolas,monospace; }
+  #help-content code { padding:1px 4px; border-radius:3px; background:#eef1f5; }
+  #help-content pre { margin:12px 0; padding:12px; overflow:auto; border-radius:6px; background:#eef1f5; }
+  #help-content .nota { padding:10px 12px; border-left:4px solid var(--acento); background:#eef4ff; }
   button { padding:7px 16px; font-size:13px; font-weight:600; color:#fff; background:var(--acento); border:0; border-radius:6px; cursor:pointer; }
   button:disabled { opacity:.5; cursor:progress; }
   .estado { font-size:12px; opacity:.75; }
@@ -160,7 +166,7 @@
   </div>
 </div>
 <dialog id="error"><div id="error-titlebar"><span id="error-icon">!</span><span>Error de ejecución</span><button type="button" id="error-close">Cerrar</button></div><div id="error-body"><div id="error-msg"></div><pre id="error-sql"></pre></div></dialog>
-<dialog id="help-dialog" aria-labelledby="help-dialog-title"><div id="help-dialog-header"><h2 id="help-dialog-title">Ayuda de HQL Console</h2><button type="button" id="help-close">Cerrar</button></div><iframe id="help-frame" title="Manual rápido de HQL Console" sandbox></iframe></dialog>
+<dialog id="help-dialog" aria-labelledby="help-dialog-title"><div id="help-dialog-header"><h2 id="help-dialog-title">Ayuda de HQL Console</h2><button type="button" id="help-close">Cerrar</button></div><div id="help-content" aria-live="polite">Cargando ayuda...</div></dialog>
 <div id="split">
   <div id="solapas" role="tablist" aria-label="Lenguaje de consulta">
     <button type="button" id="tab-hql" role="tab" aria-selected="true">HQL</button>
@@ -209,7 +215,7 @@ const btn = document.getElementById('run');
 const helpButton = document.getElementById('help');
 const helpDialog = document.getElementById('help-dialog');
 const helpClose = document.getElementById('help-close');
-const helpFrame = document.getElementById('help-frame');
+const helpContent = document.getElementById('help-content');
 const estado = document.getElementById('estado');
 const seleccion = document.getElementById('seleccion');
 const cajaError = document.getElementById('error-panel');
@@ -636,6 +642,12 @@ function selectDeEntidad(entidad) {
   return 'SELECT * FROM ' + entidad + ' LIMIT ' + LIMITE_QUERY;
 }
 
+function selectDeTabla(tablaSql) {
+  // SQL nativo no lleva LIMIT textual: el backend aplica hql-console.max-rows con
+  // Query.setMaxResults. Así evita mezclar el LIMIT específico de un motor con su FETCH FIRST.
+  return 'SELECT * FROM ' + tablaSql;
+}
+
 /**
  * La posición donde tiene que quedar el cursor dentro de un INSERT: adentro del paréntesis de
  * {@code VALUES}, que es donde se completan los valores.
@@ -776,11 +788,58 @@ function refrescarSeleccion() {
 }
 
 if (btn) { btn.addEventListener('click', ejecutar); }
+
+const CLAVE_AYUDA = 'hql-console.ayuda.html.v1';
+
+function contenidoSeguroDeAyuda(html) {
+  const documento = new DOMParser().parseFromString(html, 'text/html');
+  const origen = documento.querySelector('main') || documento.body;
+  const plantilla = document.createElement('template');
+  plantilla.innerHTML = origen.innerHTML;
+  plantilla.content.querySelectorAll('script,style,link,iframe,object,embed,form').forEach(function(nodo) { nodo.remove(); });
+  plantilla.content.querySelectorAll('*').forEach(function(nodo) {
+    Array.from(nodo.attributes).forEach(function(atributo) {
+      const nombre = atributo.name.toLowerCase();
+      const valor = atributo.value.trim().toLowerCase();
+      if (nombre.startsWith('on') || ((nombre === 'href' || nombre === 'src') && valor.startsWith('javascript:'))) {
+        nodo.removeAttribute(atributo.name);
+      }
+    });
+  });
+  const main = document.createElement('main');
+  main.appendChild(plantilla.content.cloneNode(true));
+  return main;
+}
+
+function mostrarAyuda(html) {
+  if (!helpContent) { return; }
+  helpContent.replaceChildren(contenidoSeguroDeAyuda(html));
+}
+
+async function cargarAyuda() {
+  if (!helpContent) { return; }
+  try {
+    const guardada = window.sessionStorage.getItem(CLAVE_AYUDA);
+    if (guardada) { mostrarAyuda(guardada); return; }
+  } catch (e) {}
+
+  helpContent.textContent = 'Cargando ayuda...';
+  try {
+    const respuesta = await fetch(BASE + '/help', { headers: { Accept: 'text/html' } });
+    if (!respuesta.ok) { throw new Error('HTTP ' + respuesta.status); }
+    const html = await respuesta.text();
+    try { window.sessionStorage.setItem(CLAVE_AYUDA, html); } catch (e) {}
+    mostrarAyuda(html);
+  } catch (e) {
+    helpContent.textContent = 'No se pudo cargar la ayuda: ' + e.message;
+  }
+}
+
 if (helpButton) {
   helpButton.addEventListener('click', function() {
     if (!helpDialog || !helpDialog.showModal) { window.open(BASE + '/help', '_blank', 'noopener'); return; }
-    if (!helpFrame.src) { helpFrame.src = BASE + '/help'; }
     helpDialog.showModal();
+    cargarAyuda();
   });
 }
 if (helpClose) { helpClose.addEventListener('click', function() { helpDialog.close(); }); }
@@ -1676,7 +1735,7 @@ function rangoSql() { const inicio=sqlEditor.selectionStart, fin=sqlEditor.selec
 function refrescarSeleccionActiva() { if (languageActiva === 'hql') { refrescarSeleccion(); } }
 function ejecutarSql() { guardarTextoActivo(); const rango=rangoSql(); if(rango.pintar){sqlEditor.focus();sqlEditor.setSelectionRange(rango.inicio,rango.fin);} ejecutarTextoSql(rango.hql.split('\r').join('').trim(),rango.etiqueta); }
 async function ejecutarTextoSql(sql,etiqueta) { if(!sql){mostrarError({error:'No hay nada que ejecutar.'});return;}if(btn){btn.disabled=true;}if(cajaError.open){cajaError.close();}estado.textContent='Ejecutando '+etiqueta+'...';try{const respuesta=await pedir(sql,false);if(!respuesta.ok){mostrarError(respuesta.datos);return;}resetPanelDerecho();const cabeceras=mostrarResultado(respuesta.datos,sql);if(esDescDeTablaSql(sql)&&cabeceras){hacerRelacionesSqlClickeables(cabeceras,tabla);}}catch(e){mostrarError({error:'No se pudo contactar la consola: '+e});}finally{if(btn){btn.disabled=false;}} }
-function pintarTablas() { if(languageActiva!=='sql'){return;}const visibles=filtrarTablas(tablasConocidas,filtroTablas.value,tipoTablas.value);listaEntidades.textContent='';visibles.forEach(function(tablaSql){const boton=document.createElement('button');boton.type='button';boton.className='entidad-item';boton.appendChild(document.createTextNode(tablaSql.nombre));if(tablaSql.entidad){const marca=document.createElement('span');marca.className='marca-mapeada';marca.textContent='[M]';boton.appendChild(marca);}boton.addEventListener('click',function(){ejecutarTextoSql('DESC '+tablaSql.nombre,'la tabla '+tablaSql.nombre);});listaEntidades.appendChild(boton);}); }
+function pintarTablas() { if(languageActiva!=='sql'){return;}const visibles=filtrarTablas(tablasConocidas,filtroTablas.value,tipoTablas.value);listaEntidades.textContent='';visibles.forEach(function(tablaSql){const item=document.createElement('div');item.className='entidad-item';const nombre=document.createElement('button');nombre.type='button';nombre.className='entidad-nombre';nombre.textContent=tablaSql.nombre;nombre.title='Ver el detalle de '+tablaSql.nombre;if(tablaSql.entidad){const marca=document.createElement('span');marca.className='marca-mapeada';marca.textContent='[M]';nombre.appendChild(marca);}nombre.addEventListener('click',function(){ejecutarTextoSql('DESC '+tablaSql.nombre,'la tabla '+tablaSql.nombre);});const acciones=document.createElement('div');acciones.className='entidad-acciones';const query=document.createElement('button');query.type='button';query.className='entidad-accion entidad-accion-query';query.innerHTML=ICONO_QUERY;query.setAttribute('aria-label','Ejecutar query de '+tablaSql.nombre);query.title='Ejecutar '+selectDeTabla(tablaSql.nombre);query.addEventListener('click',function(){ejecutarTextoSql(selectDeTabla(tablaSql.nombre),'query de '+tablaSql.nombre);});acciones.appendChild(query);item.append(nombre,acciones);listaEntidades.appendChild(item);}); }
 async function asegurarTablas() { if(tablasConocidas.length){pintarTablas();return;}const respuesta=await pedir('DESC',false);if(!respuesta.ok){tablasConocidas=[];pintarTablas();return;}const h=respuesta.datos.headers||[],n=h.indexOf('TABLA'),t=h.indexOf('TIPO'),e=h.indexOf('ES_ENTIDAD');tablasConocidas=(respuesta.datos.rows||[]).map(function(fila){return {nombre:String(fila[n]),tipo:String(fila[t]),entidad:e>=0&&fila[e]==='SI'};});pintarTablas(); }
 filtroTablas.addEventListener('input',function(){if(languageActiva==='sql'){pintarTablas();}else{pintarEntidades();}});tipoTablas.addEventListener('change',pintarTablas);
 sqlEditor.addEventListener('input',function(){clearTimeout(temporizador);temporizador=setTimeout(guardarTextoActivo,400);refrescarSeleccionActiva();});sqlEditor.addEventListener('keydown',function(ev){if(ev.key==='Enter'&&(ev.ctrlKey||ev.metaKey)){ev.preventDefault();ejecutarSql();}});['keyup','mouseup','select','click'].forEach(function(evento){sqlEditor.addEventListener(evento,refrescarSeleccionActiva);});window.addEventListener('pagehide',guardarTextoActivo);

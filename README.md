@@ -150,6 +150,7 @@ Si cambiás el `server.servlet.context-path`, la consola se mueve con él sin qu
 | `max-rows` | `500` | Tope de filas por consulta (0 = sin tope). Avisa cuando trunca. |
 | `allow-writes` | `true` | Habilita las sentencias de escritura (`insert`, `update`, `delete`), incluidas las de un lote. |
 | `show-stacktrace` | `false` | Incluye el stacktrace completo en la respuesta de error. |
+| `help-url` | manual oficial publicado | URL HTTPS del HTML de ayuda. La consola lo descarga una vez por sesión y cae al manual empaquetado si no hay red. Es opcional: se configura sólo para reemplazar la fuente por otra. |
 
 Para dejarla apagada en producción alcanza con `hql-console.enabled=false`, o directamente no
 poner el jar en ese entorno.
@@ -338,8 +339,10 @@ antes de tocar la base. Los comentarios `//`, `#` y `--` funcionan igual que en 
 `hql-console.max-rows` también se aplica y avisa si el resultado quedó truncado.
 
 El panel izquierdo muestra las tablas y vistas del esquema, incluidas las que no tienen entidad
-mapeada; permite filtrarlas por nombre y tipo. Un clic ejecuta el `DESC <tabla>` emulado por la
-consola, nunca una sentencia enviada al motor como `DESC` nativo. En esta solapa, `DESC` lista
+mapeada; permite filtrarlas por nombre y tipo. Un clic sobre el nombre ejecuta el `DESC <tabla>`
+emulado por la consola, nunca una sentencia enviada al motor como `DESC` nativo; su lupa ejecuta
+`SELECT * FROM <tabla>`, sin tocar el editor. El tope global `hql-console.max-rows` se aplica por
+la API de consulta, sin agregar un `LIMIT` dependiente del dialecto SQL. En esta solapa, `DESC` lista
 `TABLA | TIPO | ES_ENTIDAD` y `DESC <tabla>` muestra `CAMPO | TIPO SQL | RELACION`: una clave
 primaria se marca como `CAMPO (PK)`, una foránea como `CAMPO (FK)` y su destino como
 `TABLA (CAMPO)`. Las filas FK abren debajo el `DESC` emulado de la tabla destino. No hay generación

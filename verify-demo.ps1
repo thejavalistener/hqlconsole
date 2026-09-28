@@ -12,7 +12,8 @@
 param(
     [int]$Port = 18080,
     [string]$ContextPath = '',
-    [int]$MaxRows = 500
+    [int]$MaxRows = 500,
+    [string]$HelpUrl = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -80,6 +81,7 @@ Check 'printVersion coincide con el nombre del jar del starter' `
 Write-Host "== Levantando el demo en el puerto $Port (context-path '$ContextPath', tope $MaxRows) ==" -ForegroundColor Cyan
 $javaArgs = @('-jar', "`"$jar`"", "--server.port=$Port", "--hql-console.max-rows=$MaxRows")
 if ($ContextPath) { $javaArgs += "--server.servlet.context-path=$ContextPath" }
+if ($HelpUrl) { $javaArgs += "--hql-console.help-url=$HelpUrl" }
 $proc = Start-Process -FilePath 'java' -ArgumentList $javaArgs -PassThru -WindowStyle Hidden `
                       -RedirectStandardOutput $log -RedirectStandardError "$log.err"
 
@@ -110,6 +112,8 @@ try {
     Check 'la pagina inyecta la configuracion correcta' `
           ($page.Content -match [regex]::Escape($configEsperada) -and $page.Content -match [regex]::Escape('const BASE = CONFIG.base;')) `
           "no encontro la configuracion $configEsperada"
+    Check 'la ayuda se carga dentro del diálogo una vez por sesión, sin iframe' `
+          ($page.Content -match 'id="help-content"' -and $page.Content -notmatch 'help-frame' -and $page.Content -match "const CLAVE_AYUDA = 'hql-console\.ayuda\.html\.v1';" -and $page.Content -match "fetch\(BASE \+ '/help'") 'falta la ayuda dinámica dentro del diálogo'
     # Ojo: (Get-Content -Raw) puede devolver un array si el archivo tiene una sola linea, y entonces
     # -match devuelve un array y Check explota. El cast a [bool] lo deja siempre booleano.
     Check 'el banner avisa la URL en el log' ([bool]((Get-Content $log -Raw) -match 'Consola HQL en http')) 'no aparece el banner'
@@ -200,6 +204,8 @@ try {
     $r = Exec 'SELECT ID, TITULO FROM LIBROS ORDER BY ID' $null 'sql'
     Check 'SQL SELECT nativo devuelve filas y headers' ($r.status -eq 200 -and $r.json.rowCount -gt 0 -and ($r.json.headers -join ',') -eq 'ID,TITULO') $r.raw
     if ($MaxRows -lt 6) { Check 'SQL respeta el tope de filas' ($r.json.rowCount -eq $MaxRows -and $r.json.truncated -eq $true) $r.raw }
+    $r = Exec 'SELECT * FROM LIBROS' $null 'sql'
+    Check 'la consulta de la lupa SQL no mezcla LIMIT con FETCH FIRST' ($r.status -eq 200 -and $r.json.rowCount -gt 0) $r.raw
     $r = Exec "-- comentario`nSELECT ID FROM LIBROS" $null 'sql'
     Check 'SQL acepta comentarios' ($r.status -eq 200 -and $r.json.rowCount -gt 0) $r.raw
     $r = Exec 'DROP TABLE LIBROS' $null 'sql'
@@ -697,6 +703,7 @@ check('tipo numerico: LocalDate no', esTipoNumerico('LocalDate'), false);
 
 check('select: arma el SELECT * con LIMIT', selectDeEntidad('Libro'), 'SELECT * FROM Libro LIMIT 100');
 check('select: el limite sale de la constante', selectDeEntidad('X').indexOf('LIMIT 100') > 0, true);
+check('sql: arma el SELECT * de tabla sin LIMIT nativo', selectDeTabla('LIBROS'), 'SELECT * FROM LIBROS');
 
 // --- el INSERT generado se mete en el parrafo del cursor, sin pisar lo que habia ---
 var doc = 'SELECT 1\n\nSELECT 2';
@@ -925,6 +932,8 @@ check('insertar: en un editor vacio no agrega lineas de mas al principio', vacio
     Check 'SQL limpia las acciones HQL y no las vuelve a pintar' `
           ($page.Content -match "if \(languageActiva === 'sql'\) \{ return; \}" -and $page.Content -match "languageActiva === 'sql'\) \{ listaEntidades\.textContent = ''; asegurarTablas\(\); \}" `
            -and $page.Content -match "function pintarTablas\(\) \{ if\(languageActiva!=='sql'\)\{return;\}") 'SQL puede mostrar acciones HQL'
+    Check 'cada tabla SQL tiene sólo la lupa que ejecuta SELECT sin LIMIT nativo' `
+          ($page.Content -match 'function selectDeTabla' -and $page.Content -match "ejecutarTextoSql\(selectDeTabla\(tablaSql\.nombre\)" -and $page.Content -match "query\.innerHTML=ICONO_QUERY" -and $page.Content -notmatch 'insert\.innerHTML=ICONO_INSERT.*function pintarTablas') 'falta la lupa SQL o aparece INSERT'
     Check 'los iconos tienen tamaño uniforme y etiqueta accesible' `
           ($page.Content -match 'width:20px; height:20px' -and $page.Content -match 'svg \{ width:18px; height:18px' `
            -and $page.Content -match "query\.setAttribute\('aria-label'" -and $page.Content -match "insert\.setAttribute\('aria-label'") 'los iconos no son accesibles o uniformes'

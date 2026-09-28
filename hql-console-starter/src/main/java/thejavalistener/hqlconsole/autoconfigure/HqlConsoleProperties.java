@@ -1,5 +1,8 @@
 package thejavalistener.hqlconsole.autoconfigure;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -11,6 +14,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix="hql-console")
 public class HqlConsoleProperties
 {
+	/** Manual HTML publicado por la propia consola; la aplicación anfitriona no debe configurarlo. */
+	private static final String DEFAULT_HELP_URL="https://raw.githubusercontent.com/thejavalistener/hqlconsole/main/hql-console-starter/src/main/resources/thejavalistener/hqlconsole/web/hql-console-help.html";
+
 	/** Habilita la consola. */
 	private boolean enabled=true;
 
@@ -25,6 +31,9 @@ public class HqlConsoleProperties
 
 	/** Incluye el stacktrace completo en la respuesta de error. */
 	private boolean showStacktrace=false;
+
+	/** URL HTTPS del manual dinámico. Vacía fuerza el respaldo empaquetado. */
+	private String helpUrl=DEFAULT_HELP_URL;
 
 	public boolean isEnabled()
 	{
@@ -95,5 +104,41 @@ public class HqlConsoleProperties
 	public void setShowStacktrace(boolean showStacktrace)
 	{
 		this.showStacktrace=showStacktrace;
+	}
+
+	/**
+	 * URL del manual que abre el botón Ayuda en una pestaña nueva.
+	 *
+	 * <p>Por defecto apunta al HTML publicado por la consola: actualizar ese archivo no exige
+	 * recompilar ni configurar la aplicación anfitriona. Sólo se admite HTTPS; si está vacía, se
+	 * usa el manual HTML que trae el starter.</p>
+	 */
+	public String normalizedHelpUrl()
+	{
+		String value=helpUrl==null?"":helpUrl.trim();
+		if( value.isEmpty() ) return "";
+		try
+		{
+			URI uri=new URI(value);
+			if( !"https".equalsIgnoreCase(uri.getScheme())||uri.getHost()==null )
+			{
+				throw new IllegalArgumentException("hql-console.help-url debe ser una URL HTTPS válida o quedar vacía.");
+			}
+			return uri.toASCIIString();
+		}
+		catch(URISyntaxException e)
+		{
+			throw new IllegalArgumentException("hql-console.help-url debe ser una URL HTTPS válida o quedar vacía.",e);
+		}
+	}
+
+	public String getHelpUrl()
+	{
+		return helpUrl;
+	}
+
+	public void setHelpUrl(String helpUrl)
+	{
+		this.helpUrl=helpUrl;
 	}
 }

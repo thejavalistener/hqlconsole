@@ -2,13 +2,19 @@ package thejavalistener.hqlconsole.web;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 
 /** Renderiza la plantilla HTML empaquetada de la consola. */
 public final class HqlConsolePage
 {
 	private static final String RESOURCE="/thejavalistener/hqlconsole/web/hql-console.html";
 	private static final String HELP_RESOURCE="/thejavalistener/hqlconsole/web/hql-console-help.html";
+	private static final HttpClient HTTP=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
 	private static final String CONFIG_MARKER="__HQL_CONSOLE_CONFIG__";
 	private static final String TEMPLATE=_loadTemplate();
 
@@ -34,6 +40,32 @@ public final class HqlConsolePage
 		{
 			throw new IllegalStateException("No pude leer el manual de ayuda.",e);
 		}
+	}
+
+	/**
+	 * Lee el manual remoto y, ante cualquier problema de red o contenido, conserva el manual
+	 * empaquetado. El controller cachea el resultado por sesión para no consultar la red más de una vez.
+	 */
+	public static String help(String remoteUrl)
+	{
+		if( remoteUrl==null||remoteUrl.isBlank() ) return help();
+		try
+		{
+			HttpRequest request=HttpRequest.newBuilder(URI.create(remoteUrl))
+					.timeout(Duration.ofSeconds(5))
+					.header("Accept","text/html")
+					.GET().build();
+			HttpResponse<String> response=HTTP.send(request,HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+			if( response.statusCode()>=200&&response.statusCode()<300&&!response.body().isBlank() )
+			{
+				return response.body();
+			}
+		}
+		catch(Exception ignored)
+		{
+			// La ayuda nunca debe romper la consola porque GitHub o la red estén caídos.
+		}
+		return help();
 	}
 
 	static String render(String template,String base,int maxRows)

@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import thejavalistener.hqlconsole.autoconfigure.HqlConsoleProperties;
 import thejavalistener.hqlconsole.engine.HqlQueryRunner;
 import thejavalistener.hqlconsole.engine.BatchPlan;
@@ -34,6 +35,8 @@ import thejavalistener.hqlconsole.engine.Text;
 @Controller
 public class HqlConsoleController
 {
+	private static final String HELP_SESSION_ATTRIBUTE=HqlConsoleController.class.getName()+".help";
+
 	private final HqlQueryRunner runner;
 	private final HqlConsoleProperties properties;
 
@@ -65,10 +68,16 @@ public class HqlConsoleController
 	/** Manual de uso renderizado como HTML estático y sin acceso a la base. */
 	@GetMapping(path="${hql-console.path:/hqlconsole}/help",produces=MediaType.TEXT_HTML_VALUE)
 	@ResponseBody
-	public String help(HttpServletResponse response)
+	public String help(HttpServletRequest request,HttpServletResponse response)
 	{
 		response.setHeader("Cache-Control","no-store, no-cache, must-revalidate");
-		return HqlConsolePage.help();
+		HttpSession session=request.getSession();
+		Object cached=session.getAttribute(HELP_SESSION_ATTRIBUTE);
+		if( cached instanceof String html ) return html;
+
+		String html=HqlConsolePage.help(properties.normalizedHelpUrl());
+		session.setAttribute(HELP_SESSION_ATTRIBUTE,html);
+		return html;
 	}
 
 	/**
