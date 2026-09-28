@@ -10,7 +10,7 @@ class HqlConsolePropertiesTest
 	@Test
 	void defaultHelpUrlPointsToTheConsoleManual()
 	{
-		assertEquals("https://raw.githubusercontent.com/thejavalistener/hqlconsole/main/hql-console-starter/src/main/resources/thejavalistener/hqlconsole/web/hql-console-help.html",
+		assertEquals("https://raw.githubusercontent.com/thejavalistener/hqlconsole/main/docs/help.md",
 				new HqlConsoleProperties().normalizedHelpUrl());
 	}
 

@@ -106,14 +106,14 @@ try {
     $barra = [regex]::Match($page.Content, '(?s)<div class="barra">(.*?)</div>')
     Check 'el encabezado trae consola, idioma y ayuda alineada a la derecha' ($barra.Success -and $barra.Groups[1].Value -match 'Consola' -and $barra.Groups[1].Value -match 'id="idioma-titulo"' -and $barra.Groups[1].Value -match 'class="barra-acciones"' -and $barra.Groups[1].Value -match 'id="help"' -and $barra.Groups[1].Value -notmatch 'atajo-ejecutar') 'faltan elementos del encabezado'
     $helpPage = Invoke-WebRequest -UseBasicParsing "$base/hqlconsole/help" -TimeoutSec 5
-    Check 'la ayuda sirve el manual HTML con literales y NOW/TODAY' ($helpPage.StatusCode -eq 200 -and $helpPage.Content -match 'Literales y variables' -and $helpPage.Content -match 'NOW</code> y <code>TODAY</code> son sin.nimos') 'no se sirvio el manual de ayuda'
+    Check 'la ayuda sirve el manual Markdown o su fallback con literales y NOW/TODAY' ($helpPage.StatusCode -eq 200 -and $helpPage.Content -match 'Literales y variables' -and $helpPage.Content -match '(?s)NOW.*TODAY') 'no se sirvio el manual de ayuda'
     Check 'la pagina ya no muestra la ruta ni el aviso' ($page.Content -notmatch 'class="ruta"' -and $page.Content -notmatch 'herramienta de desarrollo') 'quedo la ruta o el aviso'
     $configEsperada = "{`"base`":`"$ContextPath/hqlconsole`",`"maxRows`":$MaxRows}"
     Check 'la pagina inyecta la configuracion correcta' `
           ($page.Content -match [regex]::Escape($configEsperada) -and $page.Content -match [regex]::Escape('const BASE = CONFIG.base;')) `
           "no encontro la configuracion $configEsperada"
     Check 'la ayuda se carga dentro del diálogo una vez por sesión, sin iframe' `
-          ($page.Content -match 'id="help-content"' -and $page.Content -notmatch 'help-frame' -and $page.Content -match "const CLAVE_AYUDA = 'hql-console\.ayuda\.html\.v1';" -and $page.Content -match "fetch\(BASE \+ '/help'") 'falta la ayuda dinámica dentro del diálogo'
+          ($page.Content -match 'id="help-content"' -and $page.Content -notmatch 'help-frame' -and $page.Content -match "const CLAVE_AYUDA = 'hql-console\.ayuda\.md\.v2';" -and $page.Content -match 'function contenidoMarkdownAyuda' -and $page.Content -match "fetch\(BASE \+ '/help'") 'falta la ayuda Markdown dentro del diálogo'
     # Ojo: (Get-Content -Raw) puede devolver un array si el archivo tiene una sola linea, y entonces
     # -match devuelve un array y Check explota. El cast a [bool] lo deja siempre booleano.
     Check 'el banner avisa la URL en el log' ([bool]((Get-Content $log -Raw) -match 'Consola HQL en http')) 'no aparece el banner'

@@ -5,7 +5,7 @@ la dejes habilitada en producción.
 
 ## Ayuda
 
-El botón **Ayuda** descarga por defecto el HTML publicado por HQL Console y lo
+El botón **Ayuda** descarga por defecto el Markdown publicado por HQL Console y lo
 guarda durante la sesión actual. Por eso una mejora publicada del manual queda
 disponible en la siguiente sesión, sin recompilar ni configurar la aplicación
 que usa el JAR. Si la red no está disponible, muestra el manual empaquetado.
@@ -13,11 +13,11 @@ que usa el JAR. Si la red no está disponible, muestra el manual empaquetado.
 Sólo si querés usar otro manual, podés sobrescribir la fuente HTTPS con:
 
 ```properties
-hql-console.help-url=https://servidor.example/manual/hql-console-help.html
+hql-console.help-url=https://servidor.example/manual/help.md
 ```
 
-El documento remoto debe ser HTML y tener un `<main>`; se muestra dentro del
-diálogo de la consola, sin iframe.
+El documento remoto es Markdown; se muestra dentro del diálogo de la consola,
+sin iframe.
 
 ## Consultar y descubrir
 

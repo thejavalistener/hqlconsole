@@ -15,7 +15,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class HqlConsoleProperties
 {
 	/** Manual HTML publicado por la propia consola; la aplicación anfitriona no debe configurarlo. */
-	private static final String DEFAULT_HELP_URL="https://raw.githubusercontent.com/thejavalistener/hqlconsole/main/hql-console-starter/src/main/resources/thejavalistener/hqlconsole/web/hql-console-help.html";
+	private static final String DEFAULT_HELP_URL="https://raw.githubusercontent.com/thejavalistener/hqlconsole/main/docs/help.md";
 
 	/** Habilita la consola. */
 	private boolean enabled=true;
@@ -32,7 +32,7 @@ public class HqlConsoleProperties
 	/** Incluye el stacktrace completo en la respuesta de error. */
 	private boolean showStacktrace=false;
 
-	/** URL HTTPS del manual dinámico. Vacía fuerza el respaldo empaquetado. */
+	/** URL HTTPS del manual Markdown dinámico. Vacía fuerza el respaldo empaquetado. */
 	private String helpUrl=DEFAULT_HELP_URL;
 
 	public boolean isEnabled()
@@ -109,7 +109,7 @@ public class HqlConsoleProperties
 	/**
 	 * URL del manual que abre el botón Ayuda en una pestaña nueva.
 	 *
-	 * <p>Por defecto apunta al HTML publicado por la consola: actualizar ese archivo no exige
+	 * <p>Por defecto apunta al Markdown publicado por la consola: actualizar ese archivo no exige
 	 * recompilar ni configurar la aplicación anfitriona. Sólo se admite HTTPS; si está vacía, se
 	 * usa el manual HTML que trae el starter.</p>
 	 */

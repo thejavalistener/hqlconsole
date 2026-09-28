@@ -53,7 +53,7 @@ public final class HqlConsolePage
 		{
 			HttpRequest request=HttpRequest.newBuilder(URI.create(remoteUrl))
 					.timeout(Duration.ofSeconds(5))
-					.header("Accept","text/html")
+					.header("Accept","text/markdown, text/plain;q=0.9, text/html;q=0.8")
 					.GET().build();
 			HttpResponse<String> response=HTTP.send(request,HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 			if( response.statusCode()>=200&&response.statusCode()<300&&!response.body().isBlank() )

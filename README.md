@@ -150,7 +150,7 @@ Si cambiás el `server.servlet.context-path`, la consola se mueve con él sin qu
 | `max-rows` | `500` | Tope de filas por consulta (0 = sin tope). Avisa cuando trunca. |
 | `allow-writes` | `true` | Habilita las sentencias de escritura (`insert`, `update`, `delete`), incluidas las de un lote. |
 | `show-stacktrace` | `false` | Incluye el stacktrace completo en la respuesta de error. |
-| `help-url` | manual oficial publicado | URL HTTPS del HTML de ayuda. La consola lo descarga una vez por sesión y cae al manual empaquetado si no hay red. Es opcional: se configura sólo para reemplazar la fuente por otra. |
+| `help-url` | `docs/help.md` oficial publicado | URL HTTPS del Markdown de ayuda. La consola lo descarga una vez por sesión y cae al manual empaquetado si no hay red. Es opcional: se configura sólo para reemplazar la fuente por otra. |
 
 Para dejarla apagada en producción alcanza con `hql-console.enabled=false`, o directamente no
 poner el jar en ese entorno.

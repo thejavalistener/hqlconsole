@@ -31,6 +31,7 @@
   #help-content code, #help-content pre { font-family:ui-monospace,Consolas,monospace; }
   #help-content code { padding:1px 4px; border-radius:3px; background:#eef1f5; }
   #help-content pre { margin:12px 0; padding:12px; overflow:auto; border-radius:6px; background:#eef1f5; }
+  #help-content blockquote { margin:12px 0; padding:1px 12px; border-left:4px solid var(--acento); background:#eef4ff; }
   #help-content .nota { padding:10px 12px; border-left:4px solid var(--acento); background:#eef4ff; }
   button { padding:7px 16px; font-size:13px; font-weight:600; color:#fff; background:var(--acento); border:0; border-radius:6px; cursor:pointer; }
   button:disabled { opacity:.5; cursor:progress; }
@@ -789,7 +790,7 @@ function refrescarSeleccion() {
 
 if (btn) { btn.addEventListener('click', ejecutar); }
 
-const CLAVE_AYUDA = 'hql-console.ayuda.html.v1';
+const CLAVE_AYUDA = 'hql-console.ayuda.md.v2';
 
 function contenidoSeguroDeAyuda(html) {
   const documento = new DOMParser().parseFromString(html, 'text/html');
@@ -811,9 +812,90 @@ function contenidoSeguroDeAyuda(html) {
   return main;
 }
 
-function mostrarAyuda(html) {
+function agregarInlineMarkdown(destino, texto) {
+  const patron = /(`[^`]*`|\*\*[^*]+\*\*|\*[^*]+\*)/g;
+  let desde = 0, coincidencia;
+  while ((coincidencia = patron.exec(texto)) !== null) {
+    if (coincidencia.index > desde) { destino.appendChild(document.createTextNode(texto.slice(desde, coincidencia.index))); }
+    const valor = coincidencia[0];
+    if (valor.startsWith('`')) {
+      const codigo = document.createElement('code');
+      codigo.textContent = valor.slice(1, -1);
+      destino.appendChild(codigo);
+    } else {
+      const enfasis = document.createElement(valor.startsWith('**') ? 'strong' : 'em');
+      enfasis.textContent = valor.slice(valor.startsWith('**') ? 2 : 1, valor.startsWith('**') ? -2 : -1);
+      destino.appendChild(enfasis);
+    }
+    desde = coincidencia.index + valor.length;
+  }
+  if (desde < texto.length) { destino.appendChild(document.createTextNode(texto.slice(desde))); }
+}
+
+function contenidoMarkdownAyuda(markdown) {
+  const main = document.createElement('main');
+  const lineas = String(markdown).replace(/\r/g, '').split('\n');
+  let indice = 0;
+  while (indice < lineas.length) {
+    const linea = lineas[indice];
+    if (!linea.trim()) { indice++; continue; }
+    if (/^```/.test(linea)) {
+      const bloque = [];
+      indice++;
+      while (indice < lineas.length && !/^```/.test(lineas[indice])) { bloque.push(lineas[indice++]); }
+      if (indice < lineas.length) { indice++; }
+      const pre = document.createElement('pre');
+      pre.textContent = bloque.join('\n');
+      main.appendChild(pre);
+      continue;
+    }
+    const titulo = linea.match(/^(#{1,3})\s+(.+)$/);
+    if (titulo) {
+      const encabezado = document.createElement('h' + titulo[1].length);
+      agregarInlineMarkdown(encabezado, titulo[2]);
+      main.appendChild(encabezado);
+      indice++;
+      continue;
+    }
+    if (/^[-*]\s+/.test(linea)) {
+      const lista = document.createElement('ul');
+      while (indice < lineas.length && /^[-*]\s+/.test(lineas[indice])) {
+        const item = document.createElement('li');
+        agregarInlineMarkdown(item, lineas[indice].replace(/^[-*]\s+/, ''));
+        lista.appendChild(item);
+        indice++;
+      }
+      main.appendChild(lista);
+      continue;
+    }
+    if (/^>\s?/.test(linea)) {
+      const cita = document.createElement('blockquote');
+      const parrafo = document.createElement('p');
+      const texto = [];
+      while (indice < lineas.length && /^>\s?/.test(lineas[indice])) { texto.push(lineas[indice++].replace(/^>\s?/, '')); }
+      agregarInlineMarkdown(parrafo, texto.join(' '));
+      cita.appendChild(parrafo);
+      main.appendChild(cita);
+      continue;
+    }
+    const texto = [];
+    while (indice < lineas.length && lineas[indice].trim() && !/^```|^(#{1,3})\s+|^[-*]\s+|^>\s?/.test(lineas[indice])) {
+      texto.push(lineas[indice++].trim());
+    }
+    const parrafo = document.createElement('p');
+    agregarInlineMarkdown(parrafo, texto.join(' '));
+    main.appendChild(parrafo);
+  }
+  return main;
+}
+
+function contenidoDeAyuda(contenido) {
+  return /^\s*<!doctype html|^\s*<html/i.test(contenido) ? contenidoSeguroDeAyuda(contenido) : contenidoMarkdownAyuda(contenido);
+}
+
+function mostrarAyuda(contenido) {
   if (!helpContent) { return; }
-  helpContent.replaceChildren(contenidoSeguroDeAyuda(html));
+  helpContent.replaceChildren(contenidoDeAyuda(contenido));
 }
 
 async function cargarAyuda() {
@@ -825,11 +907,11 @@ async function cargarAyuda() {
 
   helpContent.textContent = 'Cargando ayuda...';
   try {
-    const respuesta = await fetch(BASE + '/help', { headers: { Accept: 'text/html' } });
+    const respuesta = await fetch(BASE + '/help', { headers: { Accept: 'text/markdown, text/plain;q=0.9, text/html;q=0.8' } });
     if (!respuesta.ok) { throw new Error('HTTP ' + respuesta.status); }
-    const html = await respuesta.text();
-    try { window.sessionStorage.setItem(CLAVE_AYUDA, html); } catch (e) {}
-    mostrarAyuda(html);
+    const contenido = await respuesta.text();
+    try { window.sessionStorage.setItem(CLAVE_AYUDA, contenido); } catch (e) {}
+    mostrarAyuda(contenido);
   } catch (e) {
     helpContent.textContent = 'No se pudo cargar la ayuda: ' + e.message;
   }
