@@ -90,6 +90,13 @@ public class HqlQueryRunner
 		return execute(hql,false);
 	}
 
+	/** SQL de la última ejecución capturada por el proveedor, o {@code null} si no aplica. */
+	public String getLastSql()
+	{
+		SqlCapture capture=sqlCapture;
+		return capture==null?null:capture.getLastSql();
+	}
+
 	/**
 	 * Igual que {@link #execute(String)}, pero con {@code dryRun} el trabajo se hace y después se
 	 * tira atrás: la transacción termina en {@code rollback} en vez de {@code commit}.

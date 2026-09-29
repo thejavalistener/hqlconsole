@@ -21,6 +21,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import thejavalistener.hqlconsole.autoconfigure.HqlConsoleProperties;
 import thejavalistener.hqlconsole.engine.HqlQueryRunner;
+import thejavalistener.hqlconsole.engine.HqlResult;
 import thejavalistener.hqlconsole.engine.BatchPlan;
 import thejavalistener.hqlconsole.engine.Text;
 
@@ -160,14 +161,33 @@ public class HqlConsoleController
 		{
 			// Con una sola sentencia se usa el texto ya recortado (sin el ';' del final); con más de
 			// una, el lote.
-			return ResponseEntity.ok(statements.size()==1
+			HqlResult result=statements.size()==1
 					?runner.execute(statements.get(0),dryRun)
-					:runner.executeBatch(statements));
+					:runner.executeBatch(statements);
+			return ResponseEntity.ok(_withGeneratedSql(result));
 		}
 		catch(Exception e)
 		{
 			return ResponseEntity.badRequest().body(_error(e,hql));
 		}
+	}
+
+	/** Conserva el contrato plano de HqlResult y agrega el SQL sólo para la vista HQL. */
+	private Map<String,Object> _withGeneratedSql(HqlResult result)
+	{
+		Map<String,Object> out=new LinkedHashMap<>();
+		out.put("type",result.type());
+		out.put("headers",result.headers());
+		out.put("types",result.types());
+		out.put("rows",result.rows());
+		out.put("rowCount",result.rowCount());
+		out.put("affectedRows",result.affectedRows());
+		out.put("statementCount",result.statementCount());
+		out.put("truncated",result.truncated());
+		out.put("elapsedMs",result.elapsedMs());
+		out.put("message",result.message());
+		out.put("sql",runner.getLastSql());
+		return out;
 	}
 
 	// ==================== errores ====================

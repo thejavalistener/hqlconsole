@@ -70,6 +70,16 @@
   #divisor:hover::before, #divisor:focus-visible::before, body.arrastrando #divisor::before { background:var(--acento); }
   #divisor:focus-visible { outline:2px solid var(--acento); outline-offset:2px; border-radius:4px; }
   #panel-resultado { flex:1 1 auto; min-width:0; min-height:0; display:flex; flex-direction:column; gap:8px; }
+  .result-tabs { flex:0 0 auto; display:flex; gap:3px; border-bottom:1px solid var(--borde); }
+  .result-tab { padding:5px 11px; color:var(--texto-tenue); background:transparent; border:1px solid transparent;
+                border-radius:6px 6px 0 0; font-size:12px; font-weight:600; }
+  .result-tab:hover { color:var(--texto); background:var(--superficie-acento); }
+  .result-tab.activa { color:var(--acento); background:var(--superficie); border-color:var(--borde);
+                       border-bottom-color:var(--superficie); margin-bottom:-1px; }
+  .result-pane { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; gap:8px; }
+  .result-raw { flex:1 1 auto; min-height:0; margin:0; padding:10px; overflow:auto; color:var(--texto);
+                background:var(--superficie); border:1px solid var(--borde); border-radius:6px;
+                font:13px/1.5 ui-monospace, Consolas, monospace; white-space:pre; }
   .vacio { flex:0 0 auto; padding:16px; text-align:center; color:var(--texto-nulo); font-size:13px;
            border:1px dashed var(--borde); border-radius:6px; }
   .tabla { flex:1 1 auto; min-height:0; overflow:auto; border:1px solid var(--borde); border-radius:6px; background:var(--superficie); }
@@ -206,19 +216,27 @@
        title="Arrastra para redimensionar. Flechas: de a 2%. Inicio/Fin: extremos. Doble clic: 50/50."></div>
   <div id="panel-resultado" style="position:relative">
     <div id="error-panel" hidden style="position:absolute;inset:0;z-index:10;box-sizing:border-box;overflow:scroll;padding:16px;background:var(--fondo,#fff)"><div id="error-panel-msg"></div><button type="button" id="error-panel-close" style="margin-top:4px">Cerrar</button><pre id="error-panel-detail" style="white-space:pre"></pre></div>
-    <span class="estado" id="estado"></span>
-    <div class="vacio" id="vacio">Los resultados aparecen acá.</div>
-    <div class="tabla" id="tabla" hidden><table id="t"></table></div>
-    <div id="divisor-h" role="separator" aria-orientation="horizontal" tabindex="0" hidden
-         aria-label="Redimensionar el detalle"
-         title="Arrastra para redimensionar el detalle. Flechas: de a 2%. Inicio/Fin: extremos. Doble clic: 45%."></div>
-    <div id="panel-detalle" hidden>
-      <span class="estado" id="detalle-titulo"></span>
-      <div id="detalle-error" hidden></div>
-      <div class="tabla" id="tabla-detalle" hidden><table id="t-detalle"></table></div>
+    <div class="result-tabs" role="tablist" aria-label="Resultado de la consulta">
+      <button type="button" id="result-tab-result" class="result-tab activa" role="tab" aria-selected="true">Resultado</button>
+      <button type="button" id="result-tab-sql" class="result-tab" role="tab" aria-selected="false">SQL Generado</button>
+      <button type="button" id="result-tab-json" class="result-tab" role="tab" aria-selected="false">Json</button>
     </div>
-    <div class="pie" id="pie"></div>
-    <details id="crudo" hidden><summary>JSON crudo</summary><pre id="crudo-pre"></pre></details>
+    <div id="result-pane-result" class="result-pane" role="tabpanel">
+      <span class="estado" id="estado"></span>
+      <div class="vacio" id="vacio">Los resultados aparecen acá.</div>
+      <div class="tabla" id="tabla" hidden><table id="t"></table></div>
+      <div id="divisor-h" role="separator" aria-orientation="horizontal" tabindex="0" hidden
+           aria-label="Redimensionar el detalle"
+           title="Arrastra para redimensionar el detalle. Flechas: de a 2%. Inicio/Fin: extremos. Doble clic: 45%."></div>
+      <div id="panel-detalle" hidden>
+        <span class="estado" id="detalle-titulo"></span>
+        <div id="detalle-error" hidden></div>
+        <div class="tabla" id="tabla-detalle" hidden><table id="t-detalle"></table></div>
+      </div>
+      <div class="pie" id="pie"></div>
+    </div>
+    <div id="result-pane-sql" class="result-pane" role="tabpanel" hidden><pre id="generated-sql" class="result-raw"></pre></div>
+    <div id="result-pane-json" class="result-pane" role="tabpanel" hidden><pre id="crudo-pre" class="result-raw"></pre></div>
   </div>
 </div>
 <script id="hql-console-config" type="application/json">__HQL_CONSOLE_CONFIG__</script>
@@ -244,8 +262,10 @@ const cajaTabla = document.getElementById('tabla');
 const tabla = document.getElementById('t');
 const vacio = document.getElementById('vacio');
 const pie = document.getElementById('pie');
-const crudo = document.getElementById('crudo');
 const crudoPre = document.getElementById('crudo-pre');
+const generatedSql = document.getElementById('generated-sql');
+const resultTabs = { resultado: document.getElementById('result-tab-result'), sql: document.getElementById('result-tab-sql'), json: document.getElementById('result-tab-json') };
+const resultPanes = { resultado: document.getElementById('result-pane-result'), sql: document.getElementById('result-pane-sql'), json: document.getElementById('result-pane-json') };
 const split = document.getElementById('split');
 const divisor = document.getElementById('divisor');
 const panelEditor = document.getElementById('panel-editor');
@@ -259,6 +279,25 @@ const tablaDetalle = document.getElementById('t-detalle');
 const panelEntidades = document.getElementById('panel-entidades');
 const toggleEntidades = document.getElementById('toggle-entidades');
 const listaEntidades = document.getElementById('lista-entidades');
+
+function activarPestanaResultado(nombre) {
+  Object.keys(resultTabs).forEach(function(clave) {
+    const activa = clave === nombre;
+    resultTabs[clave].classList.toggle('activa', activa);
+    resultTabs[clave].setAttribute('aria-selected', activa ? 'true' : 'false');
+    resultPanes[clave].hidden = !activa;
+  });
+}
+
+function configurarPestanasResultado(language) {
+  const esHql = language === 'hql';
+  resultTabs.sql.hidden = !esHql;
+  if (!esHql && resultPanes.sql.hidden === false) { activarPestanaResultado('resultado'); }
+}
+
+Object.keys(resultTabs).forEach(function(clave) {
+  resultTabs[clave].addEventListener('click', function() { activarPestanaResultado(clave); });
+});
 
 const EJEMPLO = 'SELECT e.id, e.nombre, e.salario FROM Empleado e';
 const CLAVE_TEXTO = 'hql-console.consulta';
@@ -1496,7 +1535,8 @@ function mostrarResultado(datos, sentencia) {
   estado.textContent = etiqueta;
   estado.title = etiqueta;
   crudoPre.textContent = JSON.stringify(datos, null, 2);
-  crudo.hidden = false;
+  generatedSql.textContent = datos.sql || 'No se generó SQL para esta ejecución.';
+  activarPestanaResultado('resultado');
   vacio.hidden = true;
 
   if (datos.type === 'DML' || datos.type === 'BATCH') {
@@ -1674,8 +1714,8 @@ function resetPanelDerecho() {
   cajaTabla.hidden = true;
   tabla.textContent = '';
   vacio.hidden = true;
-  crudo.hidden = true;
   crudoPre.textContent = '';
+  generatedSql.textContent = '';
 }
 
 function cabecerasDeFilas(filas) {
@@ -1829,6 +1869,7 @@ function cerrarPestana(id) {
 }
 function cambiarSolapa(language) {
   languageActiva = language === 'sql' ? 'sql' : 'hql';
+  configurarPestanasResultado(languageActiva);
   document.body.classList.toggle('modo-sql', languageActiva === 'sql'); document.body.classList.toggle('modo-hql', languageActiva !== 'sql');
   ta.hidden = languageActiva === 'sql'; sqlEditor.hidden = languageActiva !== 'sql';
   tabHql.classList.toggle('solapa-activa', languageActiva === 'hql'); tabSql.classList.toggle('solapa-activa', languageActiva === 'sql');

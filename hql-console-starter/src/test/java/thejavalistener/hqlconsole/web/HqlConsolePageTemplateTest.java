@@ -34,6 +34,12 @@ class HqlConsolePageTemplateTest
 					"El selector de tema debe ofrecer sistema, claro y oscuro.");
 			assertTrue(template.contains("prefers-color-scheme: dark"),"Falta el tema oscuro automático.");
 			assertTrue(template.contains("hql-console.tema"),"La preferencia de tema debe persistirse.");
+			assertTrue(template.contains("id=\"result-tab-result\"")
+					&&template.contains("id=\"result-tab-sql\"")
+					&&template.contains("id=\"result-tab-json\""),
+					"Faltan las pestañas Resultado, SQL Generado y Json.");
+			assertTrue(template.contains("id=\"generated-sql\"")&&template.contains("id=\"crudo-pre\""),
+					"Faltan los paneles de SQL generado o JSON crudo.");
 			assertEquals(0,count(template,"__BASE__")+count(template,"__MAX_ROWS__")+count(template,"__ALLOW_WRITES__"),
 					"La plantilla conserva marcadores de la implementación anterior.");
 		}
