@@ -31,6 +31,9 @@ import jakarta.persistence.TypedQuery;
 import jakarta.persistence.metamodel.Attribute;
 import jakarta.persistence.metamodel.EntityType;
 import jakarta.persistence.metamodel.Metamodel;
+import thejavalistener.hqlconsole.sql.HibernateSqlCapture;
+import thejavalistener.hqlconsole.sql.SqlCapture;
+import thejavalistener.hqlconsole.sql.SqlCaptureFactory;
 
 /**
  * Ejecuta las sentencias que llegan de la consola contra el {@code EntityManagerFactory} vivo.
@@ -73,6 +76,7 @@ public class HqlQueryRunner
 	 * el tipo de una relación mal clasificado, nunca un dato equivocado.
 	 */
 	private volatile Metamodel _metamodel;
+	private volatile SqlCapture sqlCapture;
 
 	public HqlQueryRunner(ObjectProvider<EntityManagerFactory> entityManagerFactory,EntityDescriber describer,int maxRows)
 	{
@@ -101,6 +105,21 @@ public class HqlQueryRunner
 	public HqlResult execute(String hql,boolean dryRun)
 	{
 		EntityManagerFactory emf=_entityManagerFactory();
+		SqlCapture capture=_sqlCapture(emf);
+		capture.register(emf);
+		_clearSql(capture);
+		try
+		{
+			return _execute(emf,hql,dryRun);
+		}
+		finally
+		{
+			_printSql(capture);
+		}
+	}
+
+	private HqlResult _execute(EntityManagerFactory emf,String hql,boolean dryRun)
+	{
 		// Los comentarios se excluyen acá también (y no sólo en el controller) porque el runner es una
 		// API pública: si alguien lo usa embebido, la sentencia con comentarios tiene que funcionar
 		// igual. La primera palabra se busca DESPUÉS de sacarlos: si no, un "// nota" arriba haría que
@@ -137,7 +156,7 @@ public class HqlQueryRunner
 	{
 		EntityManagerFactory emf=_entityManagerFactory();
 		long t0=System.nanoTime();
-		EntityManager em=emf.createEntityManager();
+		EntityManager em=_createEntityManager(emf);
 		try
 		{
 			EntityTransaction tx=_begin(em);
@@ -254,7 +273,7 @@ public class HqlQueryRunner
 
 		if( parsed!=null )
 		{
-			EntityManager em=emf.createEntityManager();
+			EntityManager em=_createEntityManager(emf);
 			try
 			{
 				return _runConsoleWrite(em,emf,parsed,t0,dryRun);
@@ -421,7 +440,7 @@ public class HqlQueryRunner
 	/** Bulk de HQL: un solo UPDATE/DELETE/INSERT ... SELECT, sin pasar por el persistence context. */
 	private HqlResult _runBulkWrite(EntityManagerFactory emf,String statement,long t0,boolean dryRun)
 	{
-		EntityManager em=emf.createEntityManager();
+		EntityManager em=_createEntityManager(emf);
 		try
 		{
 			EntityTransaction tx=_begin(em);
@@ -468,7 +487,7 @@ public class HqlQueryRunner
 			pedirUnaMas=maxRows>0;
 		}
 
-		EntityManager em=emf.createEntityManager();
+		EntityManager em=_createEntityManager(emf);
 		try
 		{
 			// Se resuelve antes de ejecutar la consulta para que un nombre mal escrito dé el error
@@ -670,6 +689,9 @@ public class HqlQueryRunner
 	public HqlResult executeBatch(List<String> statements)
 	{
 		EntityManagerFactory emf=_entityManagerFactory();
+		SqlCapture capture=_sqlCapture(emf);
+		capture.register(emf);
+		_clearSql(capture);
 		long t0=System.nanoTime();
 
 		BatchPlan plan=BatchPlan.parse(statements);
@@ -677,7 +699,7 @@ public class HqlQueryRunner
 		// Vive solamente en esta llamada: ni la sesiÃ³n ni el runner conservan IDs entre lotes.
 		ScriptContext context=new ScriptContext();
 
-		EntityManager em=emf.createEntityManager();
+		EntityManager em=_createEntityManager(emf);
 		try
 		{
 			EntityTransaction tx=_begin(em);
@@ -711,6 +733,7 @@ public class HqlQueryRunner
 		finally
 		{
 			em.close();
+			_printSql(capture);
 		}
 	}
 
@@ -1390,6 +1413,41 @@ public class HqlQueryRunner
 					+"La consola HQL necesita JPA: agregá spring-boot-starter-data-jpa y configurá un datasource.");
 		}
 		return emf;
+	}
+
+	private SqlCapture _sqlCapture(EntityManagerFactory emf)
+	{
+		SqlCapture current=sqlCapture;
+		if( current==null )
+		{
+			synchronized(this)
+			{
+				if( sqlCapture==null ) { sqlCapture=SqlCaptureFactory.createInstance(emf); }
+				current=sqlCapture;
+			}
+		}
+		return current;
+	}
+
+	private EntityManager _createEntityManager(EntityManagerFactory emf)
+	{
+		SqlCapture current=sqlCapture;
+		return current instanceof HibernateSqlCapture hibernate
+				?hibernate.createEntityManager(emf):emf.createEntityManager();
+	}
+
+	private void _printSql(SqlCapture capture)
+	{
+		String sql=capture.getLastSql();
+		if( sql!=null&&!sql.isBlank() )
+		{
+			System.out.println("SQL ejecutado: "+sql);
+		}
+	}
+
+	private void _clearSql(SqlCapture capture)
+	{
+		if( capture instanceof HibernateSqlCapture hibernate ) { hibernate.clear(); }
 	}
 
 	private EntityType<?> _entityType(EntityManagerFactory emf,String name)
