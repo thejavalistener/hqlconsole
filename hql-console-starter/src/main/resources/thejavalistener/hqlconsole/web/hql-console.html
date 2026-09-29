@@ -1530,12 +1530,107 @@ function etiquetaDeResultado(sentencia) {
   return String(sentencia || '').replace(/\s+/g, ' ').trim();
 }
 
+// Formatea sólo la vista del SQL capturado. No pretende validar SQL: tokeniza lo suficiente para
+// no tocar strings, identificadores quoted ni comentarios, y deja intactas las construcciones que
+// no reconoce. Así el SQL original sigue estando disponible sin modificaciones en la pestaña JSON.
+function formatearSqlGenerado(sql) {
+  // Hibernate agrega este límite porque la consola usa setMaxResults para proteger la grilla.
+  // El marcador ? se liga internamente en esa ejecución, pero un SQL copiado no tiene dónde
+  // declararlo; al ser un detalle técnico de la consola, no se muestra en la versión copiable.
+  sql = String(sql).replace(/\s+fetch\s+(?:first|next)\s+\?\s+rows?\s+only\s*$/i, '');
+  const tokens = [];
+  let i = 0;
+  while (i < sql.length) {
+    const ch = sql[i];
+    if (/\s/.test(ch)) { i++; continue; }
+    if (ch === "'" || ch === '"' || ch === '`') {
+      const quote = ch; let token = ch; i++;
+      while (i < sql.length) {
+        token += sql[i];
+        if (sql[i] === quote) {
+          if (sql[i + 1] === quote) { token += sql[i + 1]; i += 2; continue; }
+          i++; break;
+        }
+        i++;
+      }
+      tokens.push({ tipo: 'literal', valor: token }); continue;
+    }
+    if (ch === '-' && sql[i + 1] === '-') {
+      const end = sql.indexOf('\n', i); tokens.push({ tipo: 'literal', valor: sql.slice(i, end < 0 ? sql.length : end) });
+      i = end < 0 ? sql.length : end; continue;
+    }
+    if (ch === '/' && sql[i + 1] === '*') {
+      const end = sql.indexOf('*/', i + 2); const stop = end < 0 ? sql.length : end + 2;
+      tokens.push({ tipo: 'literal', valor: sql.slice(i, stop) }); i = stop; continue;
+    }
+    if (/[A-Za-z_]/.test(ch)) {
+      const start = i++; while (i < sql.length && /[A-Za-z0-9_$]/.test(sql[i])) { i++; }
+      tokens.push({ tipo: 'word', valor: sql.slice(start, i) }); continue;
+    }
+    tokens.push({ tipo: 'symbol', valor: ch }); i++;
+  }
+
+  const keyword = new Set(['SELECT', 'FROM', 'WHERE', 'HAVING', 'AS', 'ON', 'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL', 'OUTER', 'CROSS', 'FETCH', 'DISTINCT', 'UNION', 'ALL', 'EXISTS', 'IN', 'IS', 'NULL', 'NOT', 'LIKE', 'BETWEEN', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'ASC', 'DESC', 'LIMIT', 'OFFSET']);
+  const lineClauses = new Set(['SELECT', 'FROM', 'WHERE', 'HAVING', 'UNION', 'LIMIT', 'OFFSET']);
+  const selectDepths = [];
+  let depth = 0, clause = '', out = '', lineStart = true;
+  const indent = function(extra) { return '    '.repeat(Math.max(0, depth + (extra || 0))); };
+  const write = function(text, spaceBefore) {
+    if (!lineStart && spaceBefore && out.length && !/[\s(.=<>!+\-*/]/.test(out[out.length - 1])) { out += ' '; }
+    out += text; lineStart = false;
+  };
+  const newline = function(prefix) { out = out.replace(/[ \t]+$/, ''); if (out && !out.endsWith('\n')) { out += '\n'; } out += prefix || ''; lineStart = !(prefix || '').length; };
+
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index];
+    const next = tokens[index + 1];
+    if (token.tipo === 'word') {
+      let upper = token.valor.toUpperCase();
+      if ((upper === 'ORDER' || upper === 'GROUP') && next && next.tipo === 'word' && next.valor.toUpperCase() === 'BY') {
+        upper += ' BY'; index++;
+      }
+      if (lineClauses.has(upper) || upper === 'ORDER BY' || upper === 'GROUP BY') {
+        if (out) { newline(indent()); }
+        write(upper, false); write('', true); clause = upper; if (upper === 'SELECT') { selectDepths.push(depth); }
+      } else if (upper === 'AND' || upper === 'OR') {
+        if (clause === 'WHERE' || clause === 'HAVING' || clause === 'ON') { newline(indent(1)); }
+        write(upper, !lineStart); write('', true);
+      } else if (upper === 'JOIN') {
+        if (!/\b(?:LEFT|RIGHT|INNER|FULL|CROSS|OUTER)\s*$/i.test(out)) { newline(indent()); }
+        write(upper, !lineStart); write('', true); clause = 'JOIN';
+      } else if (upper === 'ON') {
+        newline(indent(1)); write(upper, false); write('', true); clause = 'ON';
+      } else {
+        write(keyword.has(upper) ? upper : token.valor, true);
+      }
+    } else if (token.tipo === 'literal') {
+      write(token.valor, true);
+    } else if (token.valor === ',') {
+      out = out.replace(/[ \t]+$/, '') + ',';
+      if (clause === 'SELECT' && selectDepths[selectDepths.length - 1] === depth) { newline(indent(1)); }
+      else { write('', true); }
+    } else if (token.valor === '(') {
+      write('(', false); depth++;
+    } else if (token.valor === ')') {
+      depth = Math.max(0, depth - 1); out = out.replace(/[ \t]+$/, '') + ')';
+      while (selectDepths.length && selectDepths[selectDepths.length - 1] > depth) { selectDepths.pop(); }
+    } else if (token.valor === '.') {
+      out = out.replace(/[ \t]+$/, '') + '.';
+    } else if ('=<>!+-*/'.includes(token.valor)) {
+      out = out.replace(/[ \t]+$/, '') + token.valor;
+    } else {
+      write(token.valor, false);
+    }
+  }
+  return out.trim();
+}
+
 function mostrarResultado(datos, sentencia) {
   const etiqueta = etiquetaDeResultado(sentencia);
   estado.textContent = etiqueta;
   estado.title = etiqueta;
   crudoPre.textContent = JSON.stringify(datos, null, 2);
-  generatedSql.textContent = datos.sql || 'No se generó SQL para esta ejecución.';
+  generatedSql.textContent = datos.sql ? formatearSqlGenerado(datos.sql) : 'No se generó SQL para esta ejecución.';
   activarPestanaResultado('resultado');
   vacio.hidden = true;
 
