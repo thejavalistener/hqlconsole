@@ -1575,6 +1575,13 @@ function formatearSqlGenerado(sql) {
   const selectDepths = [];
   let depth = 0, clause = '', out = '', lineStart = true;
   const indent = function(extra) { return '    '.repeat(Math.max(0, depth + (extra || 0))); };
+  // La continuación empieza justo después del espacio que sigue a la cláusula: SELECT son 7
+  // columnas, FROM 5, y así los elementos quedan alineados con el primero.
+  const continuationIndent = function() { return indent() + ' '.repeat((clause || '').length + 1); };
+  // La condición posterior a AND/OR empieza en la misma columna que la primera de WHERE.
+  const conditionIndent = function(operator) {
+    return indent() + ' '.repeat(Math.max(0, (clause || '').length - operator.length));
+  };
   const write = function(text, spaceBefore) {
     if (!lineStart && spaceBefore && out.length && !/[\s(.=<>!+\-*/]/.test(out[out.length - 1])) { out += ' '; }
     out += text; lineStart = false;
@@ -1593,7 +1600,8 @@ function formatearSqlGenerado(sql) {
         if (out) { newline(indent()); }
         write(upper, false); write('', true); clause = upper; if (upper === 'SELECT') { selectDepths.push(depth); }
       } else if (upper === 'AND' || upper === 'OR') {
-        if (clause === 'WHERE' || clause === 'HAVING' || clause === 'ON') { newline(indent(1)); }
+        if (clause === 'WHERE' || clause === 'HAVING') { newline(conditionIndent(upper)); }
+        else if (clause === 'ON') { newline(indent(1)); }
         write(upper, !lineStart); write('', true);
       } else if (upper === 'JOIN') {
         if (!/\b(?:LEFT|RIGHT|INNER|FULL|CROSS|OUTER)\s*$/i.test(out)) { newline(indent()); }
@@ -1607,7 +1615,7 @@ function formatearSqlGenerado(sql) {
       write(token.valor, true);
     } else if (token.valor === ',') {
       out = out.replace(/[ \t]+$/, '') + ',';
-      if (clause === 'SELECT' && selectDepths[selectDepths.length - 1] === depth) { newline(indent(1)); }
+      if ((clause === 'SELECT' && selectDepths[selectDepths.length - 1] === depth) || clause === 'FROM' || clause === 'GROUP BY' || clause === 'ORDER BY') { newline(continuationIndent()); }
       else { write('', true); }
     } else if (token.valor === '(') {
       write('(', false); depth++;
