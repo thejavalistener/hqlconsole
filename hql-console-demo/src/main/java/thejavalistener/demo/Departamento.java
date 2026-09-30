@@ -37,7 +37,7 @@ public class Departamento
 		return nombre;
 	}
 
-    public String toHqlConsoleString()
+    public String toJPQLConsoleString()
     {
         return nombre;
     }

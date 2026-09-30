@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>HQL Console</title>
+  <title>JPQL Console</title>
   <script>
     (function() {
       try {
@@ -189,7 +189,7 @@
 <body>
 <div class="barra">
   <span class="icono-consola" aria-hidden="true">&#9678;</span>
-   <h1>Consola <span class="separador-titulo">/</span> <span id="idioma-titulo">HQL</span></h1>
+   <h1>Consola <span class="separador-titulo">/</span> <span id="idioma-titulo">JPQL</span></h1>
    <div class="barra-acciones">
      <label class="tema-control"><select id="tema" aria-label="Tema"><option value="sistema">Sistema</option><option value="claro">Claro</option><option value="oscuro">Oscuro</option></select></label>
      <button type="button" id="run" aria-keyshortcuts="Control+Enter Meta+Enter">Ejecutar (Ctrl+Enter)</button>
@@ -197,10 +197,10 @@
   </div>
 </div>
 <dialog id="error"><div id="error-titlebar"><span id="error-icon">!</span><span>Error de ejecución</span><button type="button" id="error-close">Cerrar</button></div><div id="error-body"><div id="error-msg"></div><pre id="error-sql"></pre></div></dialog>
-<dialog id="help-dialog" aria-labelledby="help-dialog-title"><div id="help-dialog-header"><h2 id="help-dialog-title">Ayuda de HQL Console</h2><button type="button" id="help-close">Cerrar</button></div><div id="help-content" aria-live="polite">Cargando ayuda...</div></dialog>
+<dialog id="help-dialog" aria-labelledby="help-dialog-title"><div id="help-dialog-header"><h2 id="help-dialog-title">Ayuda de JPQL Console</h2><button type="button" id="help-close">Cerrar</button></div><div id="help-content" aria-live="polite">Cargando ayuda...</div></dialog>
 <div id="split">
   <div id="solapas" role="tablist" aria-label="Lenguaje de consulta">
-    <button type="button" id="tab-hql" role="tab" aria-selected="true">HQL</button>
+    <button type="button" id="tab-hql" role="tab" aria-selected="true">JPQL</button>
     <button type="button" id="tab-sql" role="tab" aria-selected="false">SQL</button>
   </div>
   <aside id="panel-entidades">
@@ -2061,7 +2061,7 @@ function cambiarSolapa(language) {
   ta.hidden = languageActiva === 'sql'; sqlEditor.hidden = languageActiva !== 'sql';
   tabHql.classList.toggle('solapa-activa', languageActiva === 'hql'); tabSql.classList.toggle('solapa-activa', languageActiva === 'sql');
   tabHql.setAttribute('aria-selected', languageActiva === 'hql' ? 'true' : 'false'); tabSql.setAttribute('aria-selected', languageActiva === 'sql' ? 'true' : 'false');
-  tituloConsola.textContent = languageActiva === 'sql' ? 'SQL' : 'HQL';
+  tituloConsola.textContent = languageActiva === 'sql' ? 'SQL' : 'JPQL';
   filtros.hidden = false; tipoTablas.hidden = languageActiva !== 'sql'; filtroTablas.placeholder = languageActiva === 'sql' ? 'Filtrar tablas' : 'Filtrar entidades'; panelEntidades.querySelector('.entidades-titulo').textContent = languageActiva === 'sql' ? 'Tablas' : 'Entidades';
   ALMACEN.setItem(CLAVE_SOLAPA, languageActiva); if (languageActiva === 'sql') { listaEntidades.textContent = ''; asegurarTablas(); } else { pintarEntidades(); asegurarEntidades(); }
   cargarPestanaEnEditor(languageActiva); renderizarSubsolapas(); enfocarEditor(); refrescarSeleccionActiva();

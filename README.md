@@ -318,7 +318,7 @@ SELECT * FROM Libro l WHERE l.precio > 10000 ORDER BY l.id LIMIT 10
   Cada grilla (resultado y detalle) mantiene su orden mientras esté visible; una nueva ejecución
   arma una grilla nueva en el orden que devolvió el servidor.
 - Una relación `to-one` se muestra como **el id de la FK** (`autor` → `1`). Para un `@ManyToOne`
-  cuyo destino declare opcionalmente `public String toHqlConsoleString()` sin argumentos, las
+  cuyo destino declare opcionalmente `public String toJPQLConsoleString()` sin argumentos, las
   grillas planas de la consola (`from Entidad` y `SELECT *`) cargan esa relación sólo para esa
   consulta y muestran `1 (Jorge Luis Borges)`. No hay que escribir `join fetch`, ni cambiar el
   `fetch` del modelo de la aplicación, ni agregar una anotación o dependencia de la consola al

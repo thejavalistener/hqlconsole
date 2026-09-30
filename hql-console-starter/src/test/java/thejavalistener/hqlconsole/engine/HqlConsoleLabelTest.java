@@ -46,7 +46,7 @@ class HqlConsoleLabelTest
 			this.text=text;
 		}
 
-		public String toHqlConsoleString()
+		public String toJPQLConsoleString()
 		{
 			return text;
 		}
@@ -56,7 +56,7 @@ class HqlConsoleLabelTest
 
 	public static final class WrongReturnType
 	{
-		public CharSequence toHqlConsoleString()
+		public CharSequence toJPQLConsoleString()
 		{
 			return "no";
 		}
@@ -64,7 +64,7 @@ class HqlConsoleLabelTest
 
 	public static final class StaticMethod
 	{
-		public static String toHqlConsoleString()
+		public static String toJPQLConsoleString()
 		{
 			return "no";
 		}
@@ -72,7 +72,7 @@ class HqlConsoleLabelTest
 
 	public static final class Failing
 	{
-		public String toHqlConsoleString()
+		public String toJPQLConsoleString()
 		{
 			throw new IllegalStateException("no disponible");
 		}

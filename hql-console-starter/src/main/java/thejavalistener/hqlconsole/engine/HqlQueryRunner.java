@@ -917,7 +917,7 @@ public class HqlQueryRunner
 	 * Los tipos de la grilla aplanada, que salen del <b>metamodelo</b> y no de las celdas.
 	 *
 	 * <p>Una relación se aplana al id de la FK. Una {@code @ManyToOne} cuyo tipo declare
-	 * {@code toHqlConsoleString()} puede sumar una etiqueta al id, por lo que esa columna pasa a ser
+	 * {@code toJPQLConsoleString()} puede sumar una etiqueta al id, por lo que esa columna pasa a ser
 	 * texto; las demás conservan el tipo del id. El tipo sale del metamodelo y no de una fila, que
 	 * puede tener una relación {@code null}.</p>
 	 */

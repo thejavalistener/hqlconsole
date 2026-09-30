@@ -7,7 +7,7 @@ import java.lang.reflect.Modifier;
  * Convención opcional para dar un texto breve a una entidad relacionada en la consola.
  *
  * <p>No hay anotación ni dependencia de la consola en el dominio: basta declarar un método
- * público de instancia {@code String toHqlConsoleString()} sin argumentos. Si el método no existe,
+ * público de instancia {@code String toJPQLConsoleString()} sin argumentos. Si el método no existe,
  * devuelve un valor inútil o falla, la consola simplemente no muestra una etiqueta.</p>
  */
 final class HqlConsoleLabel
@@ -48,7 +48,7 @@ final class HqlConsoleLabel
 	{
 		try
 		{
-			Method method=type.getMethod("toHqlConsoleString");
+			Method method=type.getMethod("toJPQLConsoleString");
 			return method.getReturnType()==String.class&&!Modifier.isStatic(method.getModifiers())?method:null;
 		}
 		catch(NoSuchMethodException|SecurityException unavailable)

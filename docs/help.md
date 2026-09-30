@@ -72,12 +72,12 @@ Se aceptan comentarios `//`, `#` y `--`. Las consultas aceptan `LIMIT n` y
 
 ## Valores foráneos
 
-Para personalizar el valor de una clave foránea en una entidad (ej. Producto → Categoria), implementa el método `toHqlConsoleString` en la clase relacionada: 
+Para personalizar el valor de una clave foránea en una entidad (ej. Producto → Categoria), implementa el método `toJPQLConsoleString` en la clase relacionada:
 
 ```Java
 public class Categoria
 {
-   public String toHqlConsoleString()
+   public String toJPQLConsoleString()
    {
       return descripcion;
    }

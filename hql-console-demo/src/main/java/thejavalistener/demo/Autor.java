@@ -37,8 +37,8 @@ public class Autor
 		return nombre;
 	}
 
-	/** Texto corto que la HQL Console puede mostrar junto al id de una relación cargada. */
-	public String toHqlConsoleString()
+	/** Texto corto que la JPQL Console puede mostrar junto al id de una relación cargada. */
+	public String toJPQLConsoleString()
 	{
 		return nombre;
 	}
