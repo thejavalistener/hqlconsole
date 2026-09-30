@@ -679,23 +679,25 @@ check('id: deja el nombre igual si no tiene marca', sinMarcaDeId('titulo'), 'tit
 
 // Las filas son las del DESC: [ATRIBUTO, TIPO JAVA, CAMPO, TIPO SQL]
 var descLibro = [['id*','Long','ID','BIGINT'],['titulo','String','TITULO','VARCHAR'],['autor','Autor','ID_AUTOR','BIGINT'],['precio','BigDecimal','PRECIO','DECIMAL']];
-var ins = insertDeEntidad('Libro', descLibro);
+var ins = insertDeEntidad('Libro', descLibro, new Set(['Autor']));
 check('insert: lleva el comentario arriba', ins.indexOf('// Completa y ejecuta esta sentencia') === 0, true);
 check('insert: excluye el id', ins.indexOf('(titulo,autor,precio)') > 0, true);
 check('insert: no escribe la columna id', ins.indexOf('id,') < 0, true);
-check('insert: el texto va entre comillas', ins.indexOf("'999'") > 0, true);
-check('insert: el numero va pelado', ins.indexOf(', 999') > 0 || ins.indexOf(',999') > 0, true);
+check('insert: el texto usa el nombre entre comillas', ins.indexOf("'titulo'") > 0, true);
+check('insert: la FK usa el atributo con Id sin comillas', ins.indexOf(',autorId,') > 0, true);
+check('insert: el numero usa el nombre sin comillas', ins.indexOf(',precio)') > 0, true);
 check('insert: termina en punto y coma', ins.slice(-2) === ');', true);
 check('insert: la entidad es la que se clickeo', insertDeEntidad('Autor', [['id*','Long','ID','BIGINT'],['nombre','String','NOMBRE','VARCHAR']]).indexOf('INSERT INTO Autor (nombre)') > 0, true);
 check('insert: sin columnas no rompe', insertDeEntidad('X', []).indexOf('INSERT INTO X () VALUES ()') > 0, true);
 
-// Los tipos tienen que dar valores que la consola entienda: fecha ISO, NOW, booleano
-check('valor: Long es numerico', valorDeEjemplo('Long'), '999');
-check('valor: BigDecimal es numerico', valorDeEjemplo('BigDecimal'), '999');
-check('valor: String va entre comillas', valorDeEjemplo('String'), "'999'");
-check('valor: LocalDate es ISO', valorDeEjemplo('LocalDate'), "'2024-01-01'");
-check('valor: LocalDateTime usa NOW', valorDeEjemplo('LocalDateTime'), 'NOW');
-check('valor: Boolean es false', valorDeEjemplo('Boolean'), 'false');
+// Los tipos tienen que dar marcadores legibles: fecha ISO, NOW, booleano, atributo o atributoId.
+check('valor: Long usa el atributo', valorDePlantilla('precio', 'Long'), 'precio');
+check('valor: BigDecimal usa el atributo', valorDePlantilla('importe', 'BigDecimal'), 'importe');
+check('valor: String usa el atributo entre comillas', valorDePlantilla('titulo', 'String'), "'titulo'");
+check('valor: relacion usa el atributoId sin comillas', valorDePlantilla('autor', 'Autor', new Set(['Autor'])), 'autorId');
+check('valor: LocalDate es ISO', valorDePlantilla('fecha', 'LocalDate'), "'2024-01-01'");
+check('valor: LocalDateTime usa NOW', valorDePlantilla('fechaAlta', 'LocalDateTime'), 'NOW');
+check('valor: Boolean es false', valorDePlantilla('activo', 'Boolean'), 'false');
 check('tipo numerico: Long si', esTipoNumerico('Long'), true);
 check('tipo numerico: int si', esTipoNumerico('int'), true);
 check('tipo numerico: String no', esTipoNumerico('String'), false);

@@ -700,28 +700,31 @@ function esAtributoId(nombre) {
  * El INSERT de ejemplo de una entidad, a partir de las filas de su DESC.
  *
  * <p>El id se excluye: es el que genera la base, así que ponerlo a mano choca con la
- * secuencia. Las relaciones van por su id (un número), y el resto por un literal del tipo que
- * corresponda —texto entre comillas, número pelado, fecha ISO, booleano— para que la
- * sentencia se pueda ejecutar tal cual después de completarla.</p>
+ * secuencia. Las relaciones se reconocen porque su tipo Java es otra entidad y llevan el
+ * marcador {@code atributoId}, sin comillas, para dejar claro que esperan el id numérico.</p>
  */
-function insertDeEntidad(entidad, filasDesc) {
+function insertDeEntidad(entidad, filasDesc, entidades) {
   const columnas = [];
   const valores = [];
   (filasDesc || []).forEach(function(fila) {
     const atributo = fila[0];
     const tipoJava = String(fila[1] || '');
     if (esAtributoId(atributo)) { return; }
-    columnas.push(sinMarcaDeId(atributo));
-    valores.push(valorDeEjemplo(tipoJava));
+    const nombre = sinMarcaDeId(atributo);
+    columnas.push(nombre);
+    valores.push(valorDePlantilla(nombre, tipoJava, entidades));
   });
   return '// Completa y ejecuta esta sentencia\n'
        + 'INSERT INTO ' + entidad + ' (' + columnas.join(',') + ') VALUES (' + valores.join(',') + ');';
 }
 
-/** Un valor de ejemplo acorde al tipo Java de la columna del DESC. */
-function valorDeEjemplo(tipoJava) {
+/** Un marcador legible acorde al tipo Java de la columna del DESC. */
+function valorDePlantilla(atributo, tipoJava, entidades) {
+  if (entidades && entidades.has(tipoJava)) {
+    return atributo + 'Id';
+  }
   if (esTipoNumerico(tipoJava)) {
-    return '999';
+    return atributo;
   }
   if (/^(Boolean|boolean)$/.test(tipoJava)) {
     return 'false';
@@ -732,7 +735,7 @@ function valorDeEjemplo(tipoJava) {
   if (/^(LocalDateTime|Instant|OffsetDateTime|ZonedDateTime|Date|Timestamp)$/.test(tipoJava)) {
     return 'NOW';
   }
-  return "'999'";
+  return "'" + atributo + "'";
 }
 
 /** Los tipos que van pelados en la sentencia, sin comillas. */
@@ -1247,7 +1250,7 @@ async function generarInsertEntidad(entidad) {
     mostrarError(respuesta.datos || { error: 'No se pudo leer el DESC de ' + entidad });
     return;
   }
-  insertarEnEditor(insertDeEntidad(entidad, respuesta.datos.rows));
+  insertarEnEditor(insertDeEntidad(entidad, respuesta.datos.rows, await asegurarEntidades()));
   estado.textContent = 'INSERT de ' + entidad + ' escrito abajo del párrafo del cursor: completá los valores y ejecutá.';
 }
 
@@ -1599,9 +1602,33 @@ function formatearSqlGenerado(sql) {
       const end = sql.indexOf('*/', i + 2); const stop = end < 0 ? sql.length : end + 2;
       tokens.push({ tipo: 'literal', valor: sql.slice(i, stop) }); i = stop; continue;
     }
+    if (/[0-9]/.test(ch)) {
+      const start = i++;
+      while (i < sql.length && /[0-9]/.test(sql[i])) { i++; }
+      if (sql[i] === '.' && /[0-9]/.test(sql[i + 1])) {
+        i++;
+        while (i < sql.length && /[0-9]/.test(sql[i])) { i++; }
+      }
+      if ((sql[i] === 'e' || sql[i] === 'E') && /[0-9+-]/.test(sql[i + 1])) {
+        i++;
+        if (sql[i] === '+' || sql[i] === '-') { i++; }
+        while (i < sql.length && /[0-9]/.test(sql[i])) { i++; }
+      }
+      tokens.push({ tipo: 'number', valor: sql.slice(start, i) }); continue;
+    }
     if (/[A-Za-z_]/.test(ch)) {
       const start = i++; while (i < sql.length && /[A-Za-z0-9_$]/.test(sql[i])) { i++; }
-      tokens.push({ tipo: 'word', valor: sql.slice(start, i) }); continue;
+      const word = sql.slice(start, i);
+      // Hibernate puede pegar un literal numérico al keyword anterior. Se separan sólo keywords
+      // reservadas: un identificador legítimo como c1_0 conserva sus dígitos.
+      const glued = /^(SELECT|FROM|WHERE|HAVING|AS|ON|IN|IS|NOT|LIKE|BETWEEN|CASE|WHEN|THEN|ELSE|END|AND|OR)([0-9]+)$/i.exec(word);
+      if (glued) {
+        tokens.push({ tipo: 'word', valor: glued[1] });
+        tokens.push({ tipo: 'number', valor: glued[2] });
+      } else {
+        tokens.push({ tipo: 'word', valor: word });
+      }
+      continue;
     }
     tokens.push({ tipo: 'symbol', valor: ch }); i++;
   }
@@ -1609,6 +1636,16 @@ function formatearSqlGenerado(sql) {
   const keyword = new Set(['SELECT', 'FROM', 'WHERE', 'HAVING', 'AS', 'ON', 'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL', 'OUTER', 'CROSS', 'FETCH', 'DISTINCT', 'UNION', 'ALL', 'EXISTS', 'IN', 'IS', 'NULL', 'NOT', 'LIKE', 'BETWEEN', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'ASC', 'DESC', 'LIMIT', 'OFFSET']);
   const lineClauses = new Set(['SELECT', 'FROM', 'WHERE', 'HAVING', 'UNION', 'LIMIT', 'OFFSET']);
   const joinModifiers = new Set(['INNER', 'LEFT', 'RIGHT', 'FULL', 'CROSS']);
+  // Se reconocen como funciones sólo delante de "(": así un atributo llamado "count" no cambia.
+  const sqlFunctions = new Set(['MIN', 'MAX', 'SUM', 'AVG', 'COUNT', 'COALESCE', 'NULLIF', 'IFNULL', 'NVL',
+    'CAST', 'CONVERT', 'LOWER', 'UPPER', 'LENGTH', 'CHAR_LENGTH', 'CHARACTER_LENGTH', 'OCTET_LENGTH',
+    'TRIM', 'LTRIM', 'RTRIM', 'SUBSTRING', 'SUBSTR', 'POSITION', 'REPLACE', 'CONCAT',
+    'ABS', 'CEIL', 'CEILING', 'FLOOR', 'ROUND', 'MOD', 'POWER', 'SQRT', 'SIGN',
+    'EXTRACT', 'DATE_TRUNC', 'DATEADD', 'DATEDIFF', 'NOW', 'STRING_AGG', 'ARRAY_AGG', 'VARCHAR', 'CHAR', 'CHARACTER']);
+  const castTypes = new Set(['VARCHAR', 'CHAR', 'CHARACTER', 'INTEGER', 'BIGINT', 'SMALLINT', 'TINYINT',
+    'DECIMAL', 'NUMERIC', 'REAL', 'DOUBLE', 'FLOAT', 'BOOLEAN', 'DATE', 'TIME', 'TIMESTAMP',
+    'BINARY', 'VARBINARY', 'BLOB', 'CLOB', 'JSON', 'UUID']);
+  const dateKeywords = new Set(['CURRENT_DATE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP', 'LOCALTIME', 'LOCALTIMESTAMP', 'SYSDATE']);
   const selectDepths = [];
   let depth = 0, clause = '', out = '', lineStart = true;
   const indent = function(extra) { return '    '.repeat(Math.max(0, depth + (extra || 0))); };
@@ -1650,9 +1687,13 @@ function formatearSqlGenerado(sql) {
       } else if (upper === 'ON') {
         write(upper, true); write('', true); clause = 'ON';
       } else {
-        write(keyword.has(upper) ? upper : token.valor, true);
+        const previous = tokens[index - 1];
+        const isCastType = previous && previous.tipo === 'word' && previous.valor.toUpperCase() === 'AS' && castTypes.has(upper);
+        const isFunction = next && next.tipo === 'symbol' && next.valor === '(' && sqlFunctions.has(upper);
+        const isDateKeyword = dateKeywords.has(upper);
+        write(keyword.has(upper) || isCastType || isFunction || isDateKeyword ? upper : token.valor, true);
       }
-    } else if (token.tipo === 'literal') {
+    } else if (token.tipo === 'literal' || token.tipo === 'number') {
       write(token.valor, true);
     } else if (token.valor === ',') {
       out = out.replace(/[ \t]+$/, '') + ',';

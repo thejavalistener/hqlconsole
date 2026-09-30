@@ -218,8 +218,9 @@ Detalles del párrafo, que están cubiertos por los tests:
     scroll**, así quedás mirando donde estabas. La sentencia insertada queda **seleccionada**, que es
     lo que hace evidente dónde apareció; la contra es que la próxima tecla la reemplaza, así que para
     completarla hay que hacer clic adentro. Excluye el `id` —lo genera la base— y pone un valor
-    acorde al tipo de cada columna: `999` para los números, `'999'` para los textos, `'2024-01-01'`
-    para las fechas, `NOW` para los timestamps y `false` para los booleanos.
+    que sirve de marcador al completar: el nombre del atributo para los números, `'atributo'` para
+    los textos y `atributoId` (sin comillas) para las relaciones. Las fechas, timestamps y booleanos
+    conservan valores acordes a su tipo: `'2024-01-01'`, `NOW` y `false`.
   - El **clic sigue haciendo el `DESC`**, que es el atajo rápido: el menú es para lo demás. Al hacer
     clic el menú se **cierra y no vuelve** hasta que saques el mouse y vuelvas a entrar.
   - El menú se **cancela** si sacás el mouse antes del segundo, y **se cierra si alejás el mouse**:
