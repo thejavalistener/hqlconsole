@@ -865,7 +865,7 @@ hql-console-starter/            el jar que se distribuye (java-library, ~20 KB, 
   web/
     HqlConsoleController          GET {path} y POST {path}/api/execute
     HqlConsolePage                renderer de la plantilla HTML y su configuración dinámica
-  resources/thejavalistener/hqlconsole/web/hql-console.html
+  resources/com/thejavalistener/hqlconsole/web/hql-console.html
                                    el HTML+CSS+JS de la consola
 hql-console-demo/               aplicación de ejemplo: Empleado/Departamento/Libro + H2, sin config
                                 (Etiqueta -> EtiquetaRara está sólo para probar las mayúsculas)

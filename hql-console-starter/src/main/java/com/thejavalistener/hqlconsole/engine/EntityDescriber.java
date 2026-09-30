@@ -1,0 +1,466 @@
+package com.thejavalistener.hqlconsole.engine;
+
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.ZonedDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
+import javax.sql.DataSource;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Lob;
+import jakarta.persistence.Temporal;
+import jakarta.persistence.TemporalType;
+import jakarta.persistence.metamodel.Attribute;
+import jakarta.persistence.metamodel.EntityType;
+import jakarta.persistence.metamodel.Metamodel;
+
+import static com.thejavalistener.hqlconsole.engine.HqlResult.ColumnType;
+
+/**
+ * Arma las respuestas de {@code DESC}.
+ *
+ * <p>{@code DESC <Entidad>} devuelve {@code ATRIBUTO | TIPO JAVA | CAMPO | TIPO SQL}, en ese orden:
+ * primero lo que uno escribe en una sentencia (el atributo y su tipo Java) y después lo que existe
+ * en la base (la columna física y su tipo SQL). Las dos últimas salen de la <b>base</b>, preguntando
+ * por JDBC ({@code DatabaseMetaData}): el metamodelo de JPA no expone nombres de columna ni tipos
+ * SQL, y los que se deducen del mapping pueden no coincidir con lo que hay realmente en la tabla. Si
+ * no hay {@code DataSource} en el contexto o la tabla no aparece, cae a lo derivado del mapping en
+ * vez de fallar.</p>
+ *
+ * <p>{@code DESC} sin argumentos devuelve la lista de entidades.</p>
+ *
+ * <p>El metamodelo se pasa por parámetro en vez de guardarlo en un campo: este bean es un
+ * singleton y lo pueden estar usando varias requests a la vez.</p>
+ */
+public class EntityDescriber
+{
+	private static final Logger log=LoggerFactory.getLogger(EntityDescriber.class);
+
+	private static final List<String> HEADERS=List.of("ATRIBUTO","TIPO JAVA","CAMPO","TIPO SQL");
+	private static final List<String> LIST_HEADERS=List.of("ENTIDAD","TABLA","CAMPOS");
+
+	private final ObjectProvider<DataSource> dataSource;
+
+	public EntityDescriber(ObjectProvider<DataSource> dataSource)
+	{
+		this.dataSource=dataSource;
+	}
+
+	/** {@code DESC} sin argumentos: todas las entidades del contexto. */
+	public HqlResult describeEntities(Metamodel metamodel,long t0)
+	{
+		List<EntityType<?>> entities=new ArrayList<>(metamodel.getEntities());
+		entities.sort(Comparator.comparing(EntityType::getName));
+
+		List<List<Object>> rows=new ArrayList<>(entities.size());
+		for(EntityType<?> entityType:entities)
+		{
+			rows.add(List.of(
+					entityType.getName(),
+					Mapping.physicalName(Mapping.tableName(entityType)),
+					String.valueOf(Mapping.columnsInDeclarationOrder(entityType).size())));
+		}
+		return HqlResult.query(LIST_HEADERS,_tipos(ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.NUMERO),rows,false,_millis(t0),
+				entities.size()+" entidad(es). Hacé DESC <Entidad> para ver sus columnas.");
+	}
+
+	public HqlResult describe(Metamodel metamodel,EntityType<?> entityType,long t0)
+	{
+		Map<String,SqlColumn> columns=_columnsFromDatabase(entityType);
+		List<Attribute<?,?>> attributes=new ArrayList<>(entityType.getAttributes());
+		attributes.sort(Comparator.comparingInt(attribute -> {
+			int index=Mapping.declarationOrder(entityType.getJavaType()).indexOf(Mapping.memberName(attribute));
+			return index<0?Integer.MAX_VALUE:index;
+		}));
+
+		Attribute<?,?> id=Mapping.idOf(entityType);
+
+		List<List<Object>> rows=new ArrayList<>(attributes.size());
+		for(Attribute<?,?> attribute:attributes)
+		{
+			boolean isColumn=Mapping.isColumn(attribute);
+			String derived=isColumn?Mapping.columnName(metamodel,attribute):"-";
+			SqlColumn real=isColumn?columns.get(derived.toLowerCase(Locale.ROOT)):null;
+
+			// Convención de la consola: las tablas y las columnas (cosas de la base) se muestran en
+			// MAYÚSCULAS cuando vienen en un solo caso; los atributos y las clases, tal cual están.
+			String campo=Mapping.physicalName(real!=null?real.name():derived);
+			String sqlType=real!=null?real.typeName():(isColumn?_derivedSqlType(metamodel,attribute):"-");
+
+			// El asterisco del @Id va pegado al ATRIBUTO (y no en una columna nueva) para no romper el
+			// contrato que dice que los títulos de "from <Entidad>" son exactamente estos atributos.
+			String nombre=attribute.getName()+(attribute.equals(id)?"*":"");
+
+			// El orden es el de la sentencia: ATRIBUTO y TIPO JAVA son lo que uno escribe, CAMPO y
+			// TIPO SQL son cómo se llama y qué es eso en la base.
+			rows.add(List.of(nombre,Mapping.javaTypeName(attribute),campo,sqlType));
+		}
+		// Todos los tipos de esta grilla son texto: son nombres. Ordenar por "TIPO JAVA" o por
+		// "CAMPO" es ordenar alfabéticamente, que es exactamente lo que se espera.
+		return HqlResult.query(HEADERS,_tipos(ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO),
+				rows,false,_millis(t0));
+	}
+
+	/** Los tipos de una grilla, en el orden de sus columnas. */
+	private static List<String> _tipos(HqlResult.ColumnType... tipos)
+	{
+		List<String> nombres=new ArrayList<>(tipos.length);
+		for(HqlResult.ColumnType tipo:tipos)
+		{
+			nombres.add(tipo.name());
+		}
+		return nombres;
+	}
+
+	/** Una columna tal como la reporta la base. */
+	private record SqlColumn(String name,String typeName) {}
+
+	// ==================== metadata real de la base ====================
+
+	/** {@code DESC} SQL sin argumentos: tablas y vistas del esquema de la conexiÃ³n. */
+	public HqlResult describeTables(Metamodel metamodel,long t0)
+	{
+		DataSource source=dataSource.getIfAvailable();
+		if( source==null )
+		{
+			return HqlResult.query(List.of("TABLA","TIPO","ES_ENTIDAD"),
+					_tipos(ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO),List.of(),false,_millis(t0));
+		}
+		Set<String> mapped=new LinkedHashSet<>();
+		for(EntityType<?> entity:metamodel.getEntities())
+		{
+			mapped.add(Mapping.physicalName(Mapping.tableName(entity)).toLowerCase(Locale.ROOT));
+		}
+		List<List<Object>> rows=new ArrayList<>();
+		try( Connection connection=source.getConnection() )
+		{
+			String schema=_schema(connection);
+			String[] types={"TABLE","VIEW","MATERIALIZED VIEW"};
+			try( ResultSet result=connection.getMetaData().getTables(null,schema,"%",types) )
+			{
+				while(result.next())
+				{
+					String table=result.getString("TABLE_NAME");
+					String tableSchema=result.getString("TABLE_SCHEM");
+					String type=result.getString("TABLE_TYPE");
+					if( table==null||_systemSchema(tableSchema)||(type!=null&&type.toUpperCase(Locale.ROOT).contains("TEMP")) )
+					{
+						continue;
+					}
+					String shown=Mapping.physicalName(table);
+					String kind=type!=null&&type.toUpperCase(Locale.ROOT).contains("VIEW")?"VISTA":"TABLA";
+					rows.add(List.of(shown,kind,mapped.contains(shown.toLowerCase(Locale.ROOT))?"SI":"NO"));
+				}
+			}
+		}
+		catch(SQLException e)
+		{
+			log.debug("No se pudo leer la lista de tablas SQL: {}",e.getMessage());
+		}
+		rows.sort(Comparator.comparing(row -> String.valueOf(row.get(0))));
+		return HqlResult.query(List.of("TABLA","TIPO","ES_ENTIDAD"),
+				_tipos(ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO),rows,false,_millis(t0));
+	}
+
+	/** {@code DESC <tabla>} SQL: columnas y restricciones que expone JDBC. */
+	public HqlResult describeTable(String table,long t0)
+	{
+		DataSource source=dataSource.getIfAvailable();
+		List<List<Object>> rows=new ArrayList<>();
+		if( source==null )
+		{
+			return _tableResult(rows,t0);
+		}
+		try( Connection connection=source.getConnection() )
+		{
+			DatabaseMetaData metadata=connection.getMetaData();
+			String schema=_schema(connection);
+			String actual=_tableWithColumns(metadata,schema,table);
+			if( actual==null )
+			{
+				throw new IllegalArgumentException("No conozco la tabla '"+table+"'.");
+			}
+			Set<String> primary=_primaryKeys(metadata,schema,actual);
+			Map<String,List<String>> foreign=_foreignKeys(metadata,schema,actual);
+			List<List<Object>> primaryRows=new ArrayList<>();
+			try( ResultSet columns=metadata.getColumns(null,schema,actual,null) )
+			{
+				while(columns.next())
+				{
+					String name=columns.getString("COLUMN_NAME");
+					List<String> destinations=foreign.getOrDefault(name.toLowerCase(Locale.ROOT),List.of());
+					String field=Mapping.physicalName(name)
+							+(primary.contains(name.toLowerCase(Locale.ROOT))?" (PK)":"")
+							+(destinations.isEmpty()?"":" (FK)");
+					List<Object> row=List.of(field,columns.getString("TYPE_NAME"),
+							destinations.isEmpty()?"-":String.join(",",destinations));
+					if( primary.contains(name.toLowerCase(Locale.ROOT)) ) { primaryRows.add(row); }
+					else { rows.add(row); }
+				}
+			}
+			primaryRows.addAll(rows);
+			rows=primaryRows;
+		}
+		catch(SQLException e)
+		{
+			throw new IllegalArgumentException("No pude leer la metadata de la tabla '"+table+"': "+e.getMessage(),e);
+		}
+		return _tableResult(rows,t0);
+	}
+
+	private HqlResult _tableResult(List<List<Object>> rows,long t0)
+	{
+		return HqlResult.query(List.of("CAMPO","TIPO SQL","RELACION"),
+				_tipos(ColumnType.TEXTO,ColumnType.TEXTO,ColumnType.TEXTO),
+				rows,false,_millis(t0));
+	}
+
+	private String _schema(Connection connection)
+	{
+		try { return connection.getSchema(); }
+		catch(AbstractMethodError|SQLException|UnsupportedOperationException e) { return null; }
+	}
+
+	private boolean _systemSchema(String schema)
+	{
+		if( schema==null ) { return false; }
+		String value=schema.toLowerCase(Locale.ROOT);
+		return value.equals("information_schema")||value.equals("pg_catalog")||value.equals("sys")
+				||value.equals("mysql")||value.equals("performance_schema");
+	}
+
+	private String _tableWithColumns(DatabaseMetaData metadata,String schema,String table) throws SQLException
+	{
+		for(String candidate:List.of(table,table.toUpperCase(Locale.ROOT),table.toLowerCase(Locale.ROOT)))
+		{
+			try( ResultSet columns=metadata.getColumns(null,schema,candidate,null) )
+			{
+				if( columns.next() ) { return candidate; }
+			}
+		}
+		return null;
+	}
+
+	private Set<String> _primaryKeys(DatabaseMetaData metadata,String schema,String table) throws SQLException
+	{
+		Set<String> keys=new LinkedHashSet<>();
+		try( ResultSet result=metadata.getPrimaryKeys(null,schema,table) )
+		{
+			while(result.next()) { keys.add(result.getString("COLUMN_NAME").toLowerCase(Locale.ROOT)); }
+		}
+		return keys;
+	}
+
+	private Map<String,List<String>> _foreignKeys(DatabaseMetaData metadata,String schema,String table) throws SQLException
+	{
+		Map<String,List<String>> keys=new LinkedHashMap<>();
+		try( ResultSet result=metadata.getImportedKeys(null,schema,table) )
+		{
+			while(result.next())
+			{
+				String column=result.getString("FKCOLUMN_NAME").toLowerCase(Locale.ROOT);
+				String target=Mapping.physicalName(result.getString("PKTABLE_NAME"))+" ("
+						+Mapping.physicalName(result.getString("PKCOLUMN_NAME"))+")";
+				keys.computeIfAbsent(column,ignored -> new ArrayList<>()).add(target);
+			}
+		}
+		return keys;
+	}
+
+	private Map<String,SqlColumn> _columnsFromDatabase(EntityType<?> entityType)
+	{
+		DataSource source=dataSource.getIfAvailable();
+		if( source==null )
+		{
+			return Map.of();
+		}
+
+		Set<String> candidates=_tableNameCandidates(entityType);
+		try( Connection connection=source.getConnection() )
+		{
+			DatabaseMetaData metadata=connection.getMetaData();
+			String schema=null;
+			try
+			{
+				schema=connection.getSchema();
+			}
+			catch(RuntimeException notSupported)
+			{
+				schema=null;
+			}
+
+			for(String table:candidates)
+			{
+				Map<String,SqlColumn> found=_columns(metadata,schema,table);
+				if( found.isEmpty() )
+				{
+					found=_columns(metadata,null,table);
+				}
+				if( !found.isEmpty() )
+				{
+					return found;
+				}
+			}
+			log.debug("El DESC no encontró la tabla de {} entre {}; se usa el mapping",entityType.getName(),candidates);
+		}
+		catch(SQLException e)
+		{
+			log.debug("El DESC no pudo leer la metadata de la base: {}",e.getMessage());
+		}
+		return Map.of();
+	}
+
+	private Map<String,SqlColumn> _columns(DatabaseMetaData metadata,String schema,String table) throws SQLException
+	{
+		Map<String,SqlColumn> columns=new LinkedHashMap<>();
+		try( ResultSet result=metadata.getColumns(null,schema,table,null) )
+		{
+			while( result.next() )
+			{
+				String name=result.getString("COLUMN_NAME");
+				columns.put(name.toLowerCase(Locale.ROOT),new SqlColumn(name,result.getString("TYPE_NAME")));
+			}
+		}
+		return columns;
+	}
+
+	/** El nombre físico de la tabla no lo expone JPA: se prueban las variantes razonables. */
+	private Set<String> _tableNameCandidates(EntityType<?> entityType)
+	{
+		Set<String> bases=new LinkedHashSet<>();
+		bases.add(Mapping.tableName(entityType));
+		bases.add(Mapping.snakeCase(entityType.getName()));
+		bases.add(Mapping.snakeCase(entityType.getJavaType().getSimpleName()));
+
+		Set<String> candidates=new LinkedHashSet<>();
+		for(String base:bases)
+		{
+			candidates.add(base);
+			candidates.add(base.toUpperCase(Locale.ROOT));
+			candidates.add(base.toLowerCase(Locale.ROOT));
+		}
+		return candidates;
+	}
+
+	// ==================== derivado del mapping (fallback) ====================
+
+	private String _derivedSqlType(Metamodel metamodel,Attribute<?,?> attribute)
+	{
+		if( Mapping.isToOne(attribute) )
+		{
+			EntityType<?> related=Mapping.relatedEntity(metamodel,attribute);
+			return related==null?"INTEGER":_derivedSqlType(metamodel,Mapping.idOf(related));
+		}
+
+		Class<?> type=attribute.getJavaType();
+		Column column=Mapping.annotation(attribute,Column.class);
+
+		if( Mapping.annotation(attribute,Lob.class)!=null )
+		{
+			return type==String.class?"CLOB":"BLOB";
+		}
+		if( column!=null&&!column.columnDefinition().isEmpty() )
+		{
+			return column.columnDefinition();
+		}
+		if( type.isEnum() )
+		{
+			Enumerated enumerated=Mapping.annotation(attribute,Enumerated.class);
+			return enumerated!=null&&enumerated.value()==EnumType.STRING?"VARCHAR":"INTEGER";
+		}
+		Temporal temporal=Mapping.annotation(attribute,Temporal.class);
+		if( temporal!=null )
+		{
+			return temporal.value()==TemporalType.DATE?"DATE"
+					:temporal.value()==TemporalType.TIME?"TIME":"TIMESTAMP";
+		}
+
+		if( type==String.class||type==Character.class||type==char.class )
+		{
+			return column!=null&&column.length()>0?"VARCHAR("+column.length()+")":"VARCHAR";
+		}
+		if( type==Integer.class||type==int.class )
+		{
+			return "INTEGER";
+		}
+		if( type==Long.class||type==long.class )
+		{
+			return "BIGINT";
+		}
+		if( type==Short.class||type==short.class )
+		{
+			return "SMALLINT";
+		}
+		if( type==Byte.class||type==byte.class )
+		{
+			return "TINYINT";
+		}
+		if( type==Boolean.class||type==boolean.class )
+		{
+			return "BOOLEAN";
+		}
+		if( type==BigDecimal.class||type==BigInteger.class )
+		{
+			return column!=null&&column.precision()>0?"DECIMAL("+column.precision()+","+column.scale()+")":"DECIMAL";
+		}
+		if( type==Double.class||type==double.class )
+		{
+			return "DOUBLE";
+		}
+		if( type==Float.class||type==float.class )
+		{
+			return "REAL";
+		}
+		if( type==LocalDate.class||type==java.sql.Date.class )
+		{
+			return "DATE";
+		}
+		if( type==LocalTime.class||type==java.sql.Time.class )
+		{
+			return "TIME";
+		}
+		if( type==LocalDateTime.class||type==Instant.class||type==OffsetDateTime.class||type==ZonedDateTime.class
+				||type==java.sql.Timestamp.class||type==java.util.Date.class )
+		{
+			return "TIMESTAMP";
+		}
+		if( type==UUID.class )
+		{
+			return "UUID";
+		}
+		if( type==byte[].class||type==Byte[].class )
+		{
+			return "VARBINARY";
+		}
+		return type.getSimpleName().toUpperCase(Locale.ROOT);
+	}
+
+	private long _millis(long t0)
+	{
+		return (System.nanoTime()-t0)/1_000_000L;
+	}
+}
