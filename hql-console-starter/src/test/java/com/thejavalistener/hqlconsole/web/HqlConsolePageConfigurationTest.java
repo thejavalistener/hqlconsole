@@ -10,8 +10,8 @@ class HqlConsolePageConfigurationTest
 	@Test
 	void writesOrdinaryBaseAndNumberAsJson()
 	{
-		assertEquals("{\"base\":\"/demo/hqlconsole\",\"maxRows\":3}",
-				HqlConsolePageConfiguration.json("/demo/hqlconsole",3));
+		assertEquals("{\"base\":\"/demo/jpql-console\",\"maxRows\":3}",
+				HqlConsolePageConfiguration.json("/demo/jpql-console",3));
 	}
 
 	@Test

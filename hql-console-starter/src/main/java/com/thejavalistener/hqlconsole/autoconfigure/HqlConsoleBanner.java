@@ -46,7 +46,7 @@ public class HqlConsoleBanner implements ApplicationRunner
 			String port=_property("local.server.port",_property("server.port","8080"));
 			String contextPath=_contextPath();
 
-			log.warn("Consola HQL en http://localhost:{}{}{}  [escrituras {}] — herramienta de desarrollo, no la dejes habilitada en producción",
+			log.warn("Consola JPQL en http://localhost:{}{}{}  [escrituras {}] — herramienta de desarrollo, no la dejes habilitada en producción",
 					port,contextPath,properties.normalizedPath(),
 					properties.isAllowWrites()?"HABILITADAS":"bloqueadas");
 		}

@@ -1,6 +1,6 @@
 # Manual rápido de la consola HQL
 
-Abrí `http://localhost:8080/hqlconsole`. Es una herramienta de desarrollo: no
+Abrí `http://localhost:8080/jpql-console`. Es una herramienta de desarrollo: no
 la dejes habilitada en producción.
 
 ## Ayuda

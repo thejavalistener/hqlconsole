@@ -48,18 +48,18 @@ class HqlConsolePageTemplateTest
 	@Test
 	void rendererInjectsSafeJsonAndRemovesTheMarker()
 	{
-		String page=HqlConsolePage.render("<script>__HQL_CONSOLE_CONFIG__</script>","/demo/hqlconsole",3);
+		String page=HqlConsolePage.render("<script>__HQL_CONSOLE_CONFIG__</script>","/demo/jpql-console",3);
 
-		assertEquals("<script>{\"base\":\"/demo/hqlconsole\",\"maxRows\":3}</script>",page);
+		assertEquals("<script>{\"base\":\"/demo/jpql-console\",\"maxRows\":3}</script>",page);
 		assertFalse(page.contains(CONFIG_MARKER));
 	}
 
 	@Test
 	void rendererRejectsMissingOrDuplicatedConfigurationMarkers()
 	{
-		assertThrows(IllegalArgumentException.class,()->HqlConsolePage.render("<html></html>","/hqlconsole",500));
+		assertThrows(IllegalArgumentException.class,()->HqlConsolePage.render("<html></html>","/jpql-console",500));
 		assertThrows(IllegalArgumentException.class,
-				()->HqlConsolePage.render(CONFIG_MARKER+CONFIG_MARKER,"/hqlconsole",500));
+				()->HqlConsolePage.render(CONFIG_MARKER+CONFIG_MARKER,"/jpql-console",500));
 	}
 
 	@Test

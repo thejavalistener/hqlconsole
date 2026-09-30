@@ -8,6 +8,12 @@ import org.junit.jupiter.api.Test;
 class HqlConsolePropertiesTest
 {
 	@Test
+	void defaultPathIsTheJpqlConsole()
+	{
+		assertEquals("/jpql-console",new HqlConsoleProperties().normalizedPath());
+	}
+
+	@Test
 	void defaultHelpUrlPointsToTheConsoleManual()
 	{
 		assertEquals("https://raw.githubusercontent.com/thejavalistener/hqlconsole/main/docs/help.md",

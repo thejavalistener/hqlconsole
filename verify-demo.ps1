@@ -45,7 +45,7 @@ function Exec([string]$hql, $DryRun = $null, [string]$Language = 'hql') {
 	$payload['language'] = $Language
     $body = $payload | ConvertTo-Json -Compress
     try {
-        $r = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$base/hqlconsole/api/execute" `
+        $r = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$base/jpql-console/api/execute" `
                                -ContentType 'application/json' -Body $body -TimeoutSec 30
         return @{ status = $r.StatusCode; json = ($r.Content | ConvertFrom-Json); raw = $r.Content }
     } catch {
@@ -88,7 +88,7 @@ $proc = Start-Process -FilePath 'java' -ArgumentList $javaArgs -PassThru -Window
 try {
     $page = $null
     for ($i = 0; $i -lt 90; $i++) {
-        try { $page = Invoke-WebRequest -UseBasicParsing "$base/hqlconsole" -TimeoutSec 2; break }
+        try { $page = Invoke-WebRequest -UseBasicParsing "$base/jpql-console" -TimeoutSec 2; break }
         catch { Start-Sleep -Milliseconds 500 }
     }
 
@@ -99,16 +99,16 @@ try {
         throw 'La aplicacion no arranco.'
     }
 
-    Check 'GET /hqlconsole responde 200 HTML' ($page.StatusCode -eq 200 -and "$($page.Headers['Content-Type'])" -like 'text/html*') $page.StatusCode
+    Check 'GET /jpql-console responde 200 HTML' ($page.StatusCode -eq 200 -and "$($page.Headers['Content-Type'])" -like 'text/html*') $page.StatusCode
     Check 'la pagina trae el textarea y el boton Ejecutar' ($page.Content -match '<textarea' -and $page.Content -match 'id="run"')
     Check 'la pagina trae las dos solapas, los dos editores y las subpestanas' ($page.Content -match 'id="tab-hql"' -and $page.Content -match 'id="tab-sql"' -and $page.Content -match 'id="sql"' -and $page.Content -match 'id="subsolapas"') 'falta HQL, SQL o las subpestanas'
     Check 'la pagina persiste SQL y la solapa activa' ($page.Content -match 'hql-console.consulta-sql' -and $page.Content -match 'hql-console.solapa') 'faltan claves SQL'
     $barra = [regex]::Match($page.Content, '(?s)<div class="barra">(.*?)</div>')
     Check 'el encabezado trae consola, idioma y ayuda alineada a la derecha' ($barra.Success -and $barra.Groups[1].Value -match 'Consola' -and $barra.Groups[1].Value -match 'id="idioma-titulo"' -and $barra.Groups[1].Value -match 'class="barra-acciones"' -and $barra.Groups[1].Value -match 'id="help"' -and $barra.Groups[1].Value -notmatch 'atajo-ejecutar') 'faltan elementos del encabezado'
-    $helpPage = Invoke-WebRequest -UseBasicParsing "$base/hqlconsole/help" -TimeoutSec 5
+    $helpPage = Invoke-WebRequest -UseBasicParsing "$base/jpql-console/help" -TimeoutSec 5
     Check 'la ayuda sirve el manual Markdown o su fallback con literales y NOW/TODAY' ($helpPage.StatusCode -eq 200 -and $helpPage.Content -match 'Literales y variables' -and $helpPage.Content -match '(?s)NOW.*TODAY') 'no se sirvio el manual de ayuda'
     Check 'la pagina ya no muestra la ruta ni el aviso' ($page.Content -notmatch 'class="ruta"' -and $page.Content -notmatch 'herramienta de desarrollo') 'quedo la ruta o el aviso'
-    $configEsperada = "{`"base`":`"$ContextPath/hqlconsole`",`"maxRows`":$MaxRows}"
+    $configEsperada = "{`"base`":`"$ContextPath/jpql-console`",`"maxRows`":$MaxRows}"
     Check 'la pagina inyecta la configuracion correcta' `
           ($page.Content -match [regex]::Escape($configEsperada) -and $page.Content -match [regex]::Escape('const BASE = CONFIG.base;')) `
           "no encontro la configuracion $configEsperada"
@@ -116,7 +116,7 @@ try {
           ($page.Content -match 'id="help-content"' -and $page.Content -notmatch 'help-frame' -and $page.Content -match "const CLAVE_AYUDA = 'hql-console\.ayuda\.md\.v2';" -and $page.Content -match 'function contenidoMarkdownAyuda' -and $page.Content -match "fetch\(BASE \+ '/help'") 'falta la ayuda Markdown dentro del diálogo'
     # Ojo: (Get-Content -Raw) puede devolver un array si el archivo tiene una sola linea, y entonces
     # -match devuelve un array y Check explota. El cast a [bool] lo deja siempre booleano.
-    Check 'el banner avisa la URL en el log' ([bool]((Get-Content $log -Raw) -match 'Consola HQL en http')) 'no aparece el banner'
+    Check 'el banner avisa la URL en el log' ([bool]((Get-Content $log -Raw) -match 'Consola JPQL en http')) 'no aparece el banner'
 
     # --- consultas ---
     $r = Exec 'SELECT e.id, e.nombre FROM Empleado e'
@@ -986,7 +986,7 @@ check('insertar: en un editor vacio no agrega lineas de mas al principio', vacio
     # --- context-path ---
     if ($ContextPath) {
         $sinContexto = 0
-        try { Invoke-WebRequest -UseBasicParsing "http://localhost:$Port/hqlconsole" -TimeoutSec 5 | Out-Null; $sinContexto = 200 }
+        try { Invoke-WebRequest -UseBasicParsing "http://localhost:$Port/jpql-console" -TimeoutSec 5 | Out-Null; $sinContexto = 200 }
         catch { $sinContexto = [int]$_.Exception.Response.StatusCode }
         Check 'la ruta sin context-path da 404' ($sinContexto -eq 404) $sinContexto
     }

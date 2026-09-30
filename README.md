@@ -1,7 +1,7 @@
 # hql-console — consola HQL para Spring Boot
 
 Un jar. Lo ponés en el classpath de tu aplicación Spring Boot, levantás el server, y tenés una
-consola HQL en `http://localhost:8080/hqlconsole` ejecutando consultas contra el `EntityManager`
+consola JPQL en `http://localhost:8080/jpql-console` ejecutando consultas contra el `EntityManager`
 **vivo** de tu aplicación.
 
 ```
@@ -29,7 +29,7 @@ En [Releases](https://github.com/thejavalistener/hqlconsole/releases) hay un jar
 
 | Asset | Qué es |
 |---|---|
-| `hql-console-demo.jar` | fat jar ejecutable de la demo: `java -jar hql-console-demo.jar` y la consola queda en `http://localhost:18080/hqlconsole` (Tomcat, Hibernate y H2 adentro) |
+| `hql-console-demo.jar` | fat jar ejecutable de la demo: `java -jar hql-console-demo.jar` y la consola queda en `http://localhost:18080/jpql-console` (Tomcat, Hibernate y H2 adentro) |
 | `hql-console-starter-<version>.jar` | la consola sola, para usar como dependencia |
 | `hql-console-starter-<version>-sources.jar` | las fuentes |
 | `SHA256SUMS` | el sha256 de los tres |
@@ -88,7 +88,7 @@ este build necesita 17. El comando de build es el default de JitPack para Gradle
 Al arrancar, el log avisa dónde quedó:
 
 ```
-WARN  Consola HQL en http://localhost:8080/hqlconsole  [escrituras HABILITADAS]
+WARN  Consola JPQL en http://localhost:8080/jpql-console  [escrituras HABILITADAS]
       — herramienta de desarrollo, no la dejes habilitada en producción
 ```
 
@@ -138,7 +138,7 @@ Con `server.port=0` Tomcat elige un puerto libre, y el log de la consola te dice
 `local.server.port`, la misma propiedad que resuelve `@LocalServerPort`.
 
 Si cambiás el `server.servlet.context-path`, la consola se mueve con él sin que hagas nada
-(`http://localhost:8081/miapp/hqlconsole`). Y si querés cambiar sólo la ruta de la consola:
+(`http://localhost:8081/miapp/jpql-console`). Y si querés cambiar sólo la ruta de la consola:
 `hql-console.path=/consola`.
 
 ## Propiedades (`hql-console.*`)
@@ -146,7 +146,7 @@ Si cambiás el `server.servlet.context-path`, la consola se mueve con él sin qu
 | Propiedad | Default | Descripción |
 |---|---|---|
 | `enabled` | `true` | Kill switch. `false` deja el jar completamente inerte. |
-| `path` | `/hqlconsole` | Ruta base. Tiene que empezar con `/`. |
+| `path` | `/jpql-console` | Ruta base. Tiene que empezar con `/`. |
 | `max-rows` | `500` | Tope de filas por consulta (0 = sin tope). Avisa cuando trunca. |
 | `allow-writes` | `true` | Habilita las sentencias de escritura (`insert`, `update`, `delete`), incluidas las de un lote. |
 | `show-stacktrace` | `false` | Incluye el stacktrace completo en la respuesta de error. |

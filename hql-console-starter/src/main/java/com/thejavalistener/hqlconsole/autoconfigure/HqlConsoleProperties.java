@@ -21,7 +21,7 @@ public class HqlConsoleProperties
 	private boolean enabled=true;
 
 	/** Ruta base de la consola. Tiene que empezar con "/". */
-	private String path="/hqlconsole";
+	private String path="/jpql-console";
 
 	/** Tope de filas que devuelve una consulta (0 = sin tope). */
 	private int maxRows=500;
@@ -54,12 +54,12 @@ public class HqlConsoleProperties
 	 * La ruta base ya lista para usar: con "/" adelante y sin "/" al final.
 	 *
 	 * <p>Ojo: el mapeo del controller se resuelve con el placeholder crudo
-	 * ({@code ${hql-console.path:/hqlconsole}}), así que si configurás {@code path} tiene que
+	 * ({@code ${hql-console.path:/jpql-console}}), así que si configurás {@code path} tiene que
 	 * empezar con "/".</p>
 	 */
 	public String normalizedPath()
 	{
-		String value=path==null||path.isBlank()?"/hqlconsole":path.trim();
+		String value=path==null||path.isBlank()?"/jpql-console":path.trim();
 		if( !value.startsWith("/") )
 		{
 			value="/"+value;

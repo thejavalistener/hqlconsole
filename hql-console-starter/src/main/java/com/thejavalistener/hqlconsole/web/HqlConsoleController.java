@@ -48,7 +48,7 @@ public class HqlConsoleController
 	}
 
 	/** La página de la consola. Se mapean las dos variantes para tolerar la barra final. */
-	@GetMapping(path={"${hql-console.path:/hqlconsole}","${hql-console.path:/hqlconsole}/"},
+	@GetMapping(path={"${hql-console.path:/jpql-console}","${hql-console.path:/jpql-console}/"},
 	            produces=MediaType.TEXT_HTML_VALUE)
 	@ResponseBody
 	public String page(HttpServletRequest request,HttpServletResponse response)
@@ -67,7 +67,7 @@ public class HqlConsoleController
 	}
 
 	/** Manual de uso renderizado como HTML estático y sin acceso a la base. */
-	@GetMapping(path="${hql-console.path:/hqlconsole}/help",produces=MediaType.TEXT_HTML_VALUE)
+	@GetMapping(path="${hql-console.path:/jpql-console}/help",produces=MediaType.TEXT_HTML_VALUE)
 	@ResponseBody
 	public String help(HttpServletRequest request,HttpServletResponse response)
 	{
@@ -88,7 +88,7 @@ public class HqlConsoleController
 	 * como siempre (y de paso se le saca el {@code ;} final, que si no termina dentro del último
 	 * valor), y varias se ejecutan como lote de INSERT en una única transacción.</p>
 	 */
-	@PostMapping(path="${hql-console.path:/hqlconsole}/api/execute",
+	@PostMapping(path="${hql-console.path:/jpql-console}/api/execute",
 	             consumes=MediaType.APPLICATION_JSON_VALUE,produces=MediaType.APPLICATION_JSON_VALUE)
 	@ResponseBody
 	public ResponseEntity<Object> execute(@RequestBody(required=false) Map<String,Object> body)
