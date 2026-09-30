@@ -80,6 +80,10 @@
   .result-raw { flex:1 1 auto; min-height:0; margin:0; padding:10px; overflow:auto; color:var(--texto);
                 background:var(--superficie); border:1px solid var(--borde); border-radius:6px;
                 font:13px/1.5 ui-monospace, Consolas, monospace; white-space:pre; }
+  #toast { position:fixed; left:50%; bottom:24px; z-index:30; max-width:calc(100vw - 32px); padding:10px 16px;
+           color:#fff; background:var(--texto); border-radius:22px; box-shadow:0 3px 12px rgb(0 0 0 / .24);
+           font-size:13px; transform:translate(-50%,16px); opacity:0; pointer-events:none; transition:opacity .18s ease,transform .18s ease; }
+  #toast.visible { transform:translate(-50%,0); opacity:1; }
   .vacio { flex:0 0 auto; padding:16px; text-align:center; color:var(--texto-nulo); font-size:13px;
            border:1px dashed var(--borde); border-radius:6px; }
   .tabla { flex:1 1 auto; min-height:0; overflow:auto; border:1px solid var(--borde); border-radius:6px; background:var(--superficie); }
@@ -239,6 +243,7 @@
     <div id="result-pane-json" class="result-pane" role="tabpanel" hidden><pre id="crudo-pre" class="result-raw"></pre></div>
   </div>
 </div>
+<div id="toast" role="status" aria-live="polite"></div>
 <script id="hql-console-config" type="application/json">__HQL_CONSOLE_CONFIG__</script>
 <script>
 const CONFIG = JSON.parse(document.getElementById('hql-console-config').textContent);
@@ -266,6 +271,8 @@ const crudoPre = document.getElementById('crudo-pre');
 const generatedSql = document.getElementById('generated-sql');
 const resultTabs = { resultado: document.getElementById('result-tab-result'), sql: document.getElementById('result-tab-sql'), json: document.getElementById('result-tab-json') };
 const resultPanes = { resultado: document.getElementById('result-pane-result'), sql: document.getElementById('result-pane-sql'), json: document.getElementById('result-pane-json') };
+const toast = document.getElementById('toast');
+let toastTimer;
 const split = document.getElementById('split');
 const divisor = document.getElementById('divisor');
 const panelEditor = document.getElementById('panel-editor');
@@ -279,6 +286,32 @@ const tablaDetalle = document.getElementById('t-detalle');
 const panelEntidades = document.getElementById('panel-entidades');
 const toggleEntidades = document.getElementById('toggle-entidades');
 const listaEntidades = document.getElementById('lista-entidades');
+
+function mostrarToast(mensaje) {
+  window.clearTimeout(toastTimer);
+  toast.textContent = mensaje;
+  toast.classList.add('visible');
+  toastTimer = window.setTimeout(function() { toast.classList.remove('visible'); }, 2200);
+}
+
+async function copiarSqlGenerado() {
+  if (generatedSql.dataset.copiable !== 'true') { return; }
+  const texto = generatedSql.textContent;
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(texto);
+    } else {
+      const auxiliar = document.createElement('textarea');
+      auxiliar.value = texto; auxiliar.setAttribute('readonly', ''); auxiliar.style.position = 'fixed'; auxiliar.style.opacity = '0';
+      document.body.appendChild(auxiliar); auxiliar.select();
+      const copiado = document.execCommand('copy'); auxiliar.remove();
+      if (!copiado) { throw new Error('El navegador no permitió copiar.'); }
+    }
+    mostrarToast('SQL copiado al portapapeles');
+  } catch (error) {
+    mostrarToast('No se pudo copiar el SQL');
+  }
+}
 
 function activarPestanaResultado(nombre) {
   Object.keys(resultTabs).forEach(function(clave) {
@@ -296,7 +329,10 @@ function configurarPestanasResultado(language) {
 }
 
 Object.keys(resultTabs).forEach(function(clave) {
-  resultTabs[clave].addEventListener('click', function() { activarPestanaResultado(clave); });
+  resultTabs[clave].addEventListener('click', function() {
+    activarPestanaResultado(clave);
+    if (clave === 'sql') { copiarSqlGenerado(); }
+  });
 });
 
 const EJEMPLO = 'SELECT e.id, e.nombre, e.salario FROM Empleado e';
@@ -1638,6 +1674,7 @@ function mostrarResultado(datos, sentencia) {
   estado.textContent = etiqueta;
   estado.title = etiqueta;
   crudoPre.textContent = JSON.stringify(datos, null, 2);
+  generatedSql.dataset.copiable = datos.sql ? 'true' : 'false';
   generatedSql.textContent = datos.sql ? formatearSqlGenerado(datos.sql) : 'No se generó SQL para esta ejecución.';
   activarPestanaResultado('resultado');
   vacio.hidden = true;
@@ -1819,6 +1856,7 @@ function resetPanelDerecho() {
   vacio.hidden = true;
   crudoPre.textContent = '';
   generatedSql.textContent = '';
+  generatedSql.dataset.copiable = 'false';
 }
 
 function cabecerasDeFilas(filas) {
