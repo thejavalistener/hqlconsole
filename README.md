@@ -25,13 +25,13 @@ está corriendo, así que consulta exactamente lo mismo que consulta tu código.
 
 ## Descargar los jars
 
-En [Releases](https://github.com/thejavalistener/hqlconsole/releases) hay un jar por versión:
+En [Releases](https://github.com/thejavalistener/jpqlconsole/releases) hay un jar por versión:
 
 | Asset | Qué es |
 |---|---|
-| `hql-console-demo.jar` | fat jar ejecutable de la demo: `java -jar hql-console-demo.jar` y la consola queda en `http://localhost:18080/jpql-console` (Tomcat, Hibernate y H2 adentro) |
-| `hql-console-starter-<version>.jar` | la consola sola, para usar como dependencia |
-| `hql-console-starter-<version>-sources.jar` | las fuentes |
+| `jpql-console-demo.jar` | fat jar ejecutable de la demo: `java -jar jpql-console-demo.jar` y la consola queda en `http://localhost:18080/jpql-console` (Tomcat, Hibernate y H2 adentro) |
+| `jpql-console-starter-<version>.jar` | la consola sola, para usar como dependencia |
+| `jpql-console-starter-<version>-sources.jar` | las fuentes |
 | `SHA256SUMS` | el sha256 de los tres |
 
 Los jars **no** están versionados en el repositorio: se construyen en cada release. El workflow
@@ -58,7 +58,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.thejavalistener.hqlconsole:hql-console-starter:v0.1.3'
+    implementation 'com.github.thejavalistener.jpqlconsole:jpql-console-starter:v0.1.3'
 }
 ```
 
@@ -70,7 +70,7 @@ descubre sola.
 La coordenada tiene dos particularidades que se pagan una vez y después se olvidan:
 
 - **El groupId incluye el repo**: `com.github.<usuario>.<repo>`, o sea
-  `com.github.thejavalistener.hqlconsole`. Es la convención de JitPack para builds multi-módulo,
+  `com.github.thejavalistener.jpqlconsole`. Es la convención de JitPack para builds multi-módulo,
   donde cada módulo se publica por separado con el nombre del módulo como artifactId. La forma
   corta de un solo módulo (`com.github.usuario:repo`) no aplica acá.
 - **La versión es el tag**, no el `version` de `build.gradle`: `v0.1.0`. Es el mismo tag que dispara
@@ -78,8 +78,8 @@ La coordenada tiene dos particularidades que se pagan una vez y después se olvi
 
 La primera vez que alguien pide el artefacto, JitPack compila el tag (tarda unos minutos) y lo deja
 cacheado; de ahí en adelante la descarga es instantánea. El log de ese build está en
-`https://jitpack.io/com/github/thejavalistener/hqlconsole/v0.1.0/build.log`, y el estado se puede
-ver en `https://jitpack.io/#thejavalistener/hqlconsole`.
+`https://jitpack.io/com/github/thejavalistener/jpqlconsole/v0.1.0/build.log`, y el estado se puede
+ver en `https://jitpack.io/#thejavalistener/jpqlconsole`.
 
 El `jitpack.yml` de la raíz existe sólo para fijar el JDK: JitPack compila con Java 8 por defecto y
 este build necesita 17. El comando de build es el default de JitPack para Gradle
@@ -99,7 +99,7 @@ Las dos formas que funcionan:
 1. **Como dependencia** (lo normal): el `implementation` de arriba, o el `<dependency>` de Maven.
 2. **Copiando el jar a mano** dentro de `BOOT-INF/lib/` de un fat jar ya construido.
 
-Lo que **no** funciona es `java -cp app.jar;hql-console-starter.jar`: un fat jar de Spring Boot usa
+Lo que **no** funciona es `java -cp app.jar;jpql-console-starter.jar`: un fat jar de Spring Boot usa
 su propio classloader (`JarLauncher`), así que el `-cp` de la línea de comandos no llega.
 
 > **Importante al publicar:** el jar de la consola **no debe repackagarse** con
@@ -848,7 +848,7 @@ $env:GRADLE_USER_HOME = (Resolve-Path ..\.gradle-home).Path
 ## Estructura
 
 ```
-hql-console-starter/            el jar que se distribuye (java-library, ~20 KB, sin dependencias)
+jpql-console-starter/            el jar que se distribuye (java-library, ~20 KB, sin dependencias)
   build.gradle                  incluye la tarea checkBootSurface (la guarda de compatibilidad)
   autoconfigure/
     HqlConsoleAutoConfiguration   @AutoConfiguration + @ConditionalOn* + los @Bean
@@ -865,9 +865,9 @@ hql-console-starter/            el jar que se distribuye (java-library, ~20 KB, 
   web/
     HqlConsoleController          GET {path} y POST {path}/api/execute
     HqlConsolePage                renderer de la plantilla HTML y su configuración dinámica
-  resources/com/thejavalistener/hqlconsole/web/hql-console.html
+  resources/com/thejavalistener/jpqlconsole/web/hql-console.html
                                    el HTML+CSS+JS de la consola
-hql-console-demo/               aplicación de ejemplo: Empleado/Departamento/Libro + H2, sin config
+jpql-console-demo/               aplicación de ejemplo: Empleado/Departamento/Libro + H2, sin config
                                 (Etiqueta -> EtiquetaRara está sólo para probar las mayúsculas)
 verify-demo.ps1                 la verificación end-to-end
 .github/workflows/release.yml   tag v* -> construye y publica el release con los jars

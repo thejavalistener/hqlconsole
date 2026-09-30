@@ -23,8 +23,8 @@ $root = $PSScriptRoot
 $gradleHome = Join-Path (Split-Path $root -Parent) '.gradle-home'
 if (Test-Path $gradleHome) { $env:GRADLE_USER_HOME = $gradleHome }
 
-$jar = Join-Path $root 'hql-console-demo\build\libs\hql-console-demo.jar'
-$log = Join-Path $env:TEMP "hql-console-demo-$Port.log"
+$jar = Join-Path $root 'jpql-console-demo\build\libs\jpql-console-demo.jar'
+$log = Join-Path $env:TEMP "jpql-console-demo-$Port.log"
 $base = "http://localhost:$Port$ContextPath"
 $script:ok = 0
 $script:fail = 0
@@ -72,7 +72,7 @@ if ($LASTEXITCODE -ne 0) { throw 'El build fallo.' }
 # releases hay jars de versiones viejas y agarrar el primero daba un FAIL falso.
 $versionImpreso = (& (Join-Path $root 'gradlew.bat') -p $root --console=plain -q printVersion | Where-Object { $_ -match '^\d+\.\d+\.\d+$' } | Select-Object -Last 1)
 $versionImpreso = "$versionImpreso".Trim()
-$jarEsperado = Join-Path $root "hql-console-starter\build\libs\hql-console-starter-$versionImpreso.jar"
+$jarEsperado = Join-Path $root "jpql-console-starter\build\libs\jpql-console-starter-$versionImpreso.jar"
 $jarStarter = Get-Item $jarEsperado -ErrorAction SilentlyContinue
 Check 'printVersion coincide con el nombre del jar del starter' `
       ($null -ne $jarStarter -and $versionImpreso -ne '') `
