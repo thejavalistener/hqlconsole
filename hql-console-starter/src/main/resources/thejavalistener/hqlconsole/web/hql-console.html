@@ -1608,6 +1608,7 @@ function formatearSqlGenerado(sql) {
 
   const keyword = new Set(['SELECT', 'FROM', 'WHERE', 'HAVING', 'AS', 'ON', 'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL', 'OUTER', 'CROSS', 'FETCH', 'DISTINCT', 'UNION', 'ALL', 'EXISTS', 'IN', 'IS', 'NULL', 'NOT', 'LIKE', 'BETWEEN', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'ASC', 'DESC', 'LIMIT', 'OFFSET']);
   const lineClauses = new Set(['SELECT', 'FROM', 'WHERE', 'HAVING', 'UNION', 'LIMIT', 'OFFSET']);
+  const joinModifiers = new Set(['INNER', 'LEFT', 'RIGHT', 'FULL', 'CROSS']);
   const selectDepths = [];
   let depth = 0, clause = '', out = '', lineStart = true;
   const indent = function(extra) { return '    '.repeat(Math.max(0, depth + (extra || 0))); };
@@ -1639,11 +1640,15 @@ function formatearSqlGenerado(sql) {
         if (clause === 'WHERE' || clause === 'HAVING') { newline(conditionIndent(upper)); }
         else if (clause === 'ON') { newline(indent(1)); }
         write(upper, !lineStart); write('', true);
+      } else if (joinModifiers.has(upper) && next && next.tipo === 'word' &&
+          (next.valor.toUpperCase() === 'JOIN' || (next.valor.toUpperCase() === 'OUTER' && tokens[index + 2] &&
+              tokens[index + 2].tipo === 'word' && tokens[index + 2].valor.toUpperCase() === 'JOIN'))) {
+        newline(indent(1)); write(upper, false); write('', true); clause = 'JOIN';
       } else if (upper === 'JOIN') {
-        if (!/\b(?:LEFT|RIGHT|INNER|FULL|CROSS|OUTER)\s*$/i.test(out)) { newline(indent()); }
+        if (!/\b(?:LEFT|RIGHT|INNER|FULL|CROSS|OUTER)\s*$/i.test(out)) { newline(indent(1)); }
         write(upper, !lineStart); write('', true); clause = 'JOIN';
       } else if (upper === 'ON') {
-        newline(indent(1)); write(upper, false); write('', true); clause = 'ON';
+        write(upper, true); write('', true); clause = 'ON';
       } else {
         write(keyword.has(upper) ? upper : token.valor, true);
       }
